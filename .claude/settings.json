@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "deny": ["AskUserQuestion"]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'cd \"$(git rev-parse --show-toplevel)\" && .orchestrix-core/scripts/acp-stop-hook.sh'"
+          }
+        ]
+      }
+    ]
+  }
+}
