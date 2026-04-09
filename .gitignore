@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Runtime data
+data/*.db
+data/*.json
+
+# IDE & tool configs
+.mcp.json
+.opencode/
+.youlidao-pod
+.youlidao/
+opencode.jsonc
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db

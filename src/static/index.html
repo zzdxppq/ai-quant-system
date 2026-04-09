@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI量化周期看板</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: #0a0e1a;
+            color: #e0e6ed;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1f35, #0d1220);
+            border-bottom: 1px solid #2a3050;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            background: linear-gradient(90deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header .date { color: #8892a8; font-size: 14px; }
+        .header .actions { display: flex; gap: 8px; }
+        .btn {
+            padding: 6px 14px;
+            border: 1px solid #3a4568;
+            border-radius: 6px;
+            background: #1a2040;
+            color: #a0aec0;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        .btn:hover { border-color: #60a5fa; color: #60a5fa; }
+        .btn.loading { opacity: 0.5; pointer-events: none; }
+        .btn-accent { border-color: #a78bfa; color: #a78bfa; }
+        .btn-accent:hover { border-color: #c4b5fd; color: #c4b5fd; }
+
+        .dashboard {
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: #111827;
+            border: 1px solid #1e2a45;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .card-title {
+            font-size: 14px;
+            color: #8892a8;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-title .icon { font-size: 16px; }
+        .full-width { grid-column: 1 / -1; }
+
+        /* 周期状态卡片 */
+        .cycle-card { display: flex; gap: 24px; align-items: flex-start; }
+        .phase-badge {
+            font-size: 28px; font-weight: 700;
+            padding: 12px 24px; border-radius: 12px; white-space: nowrap;
+        }
+        .phase-breeding { background: #1a1a2e; color: #6b7280; border: 1px solid #374151; }
+        .phase-small-start { background: #1a2332; color: #fbbf24; border: 1px solid #92400e; }
+        .phase-chaos { background: #2a1a1a; color: #ef4444; border: 1px solid #7f1d1d; }
+        .phase-small-done { background: #1a2e1a; color: #34d399; border: 1px solid #065f46; }
+        .phase-full { background: #0f2a1a; color: #10b981; border: 1px solid #047857; }
+        .phase-afterglow { background: #2a2a1a; color: #f59e0b; border: 1px solid #92400e; }
+        .phase-ebb { background: #1a1a2a; color: #8b5cf6; border: 1px solid #5b21b6; }
+
+        .cycle-info { flex: 1; }
+        .cycle-info .meta { color: #8892a8; font-size: 13px; margin-top: 4px; }
+        .rep {
+            margin-top: 12px; padding: 10px 14px;
+            background: #0d1220; border-radius: 8px; border-left: 3px solid #60a5fa;
+        }
+        .rep .label { color: #8892a8; font-size: 12px; }
+        .rep .value { font-size: 18px; font-weight: 600; color: #60a5fa; margin-top: 2px; }
+        .rep .gain { color: #ef4444; font-weight: 600; }
+        .prev-cycle { margin-top: 8px; font-size: 12px; color: #6b7280; }
+
+        /* 龙头反馈 */
+        .leader-card {
+            display: flex; align-items: center; gap: 16px;
+            padding: 14px 18px; border-radius: 10px; margin-top: 12px;
+        }
+        .leader-strong-pos { background: #0f2a1a; border: 1px solid #065f46; }
+        .leader-pos { background: #1a2332; border: 1px solid #1e3a5f; }
+        .leader-neutral { background: #1a1a2e; border: 1px solid #2a2a45; }
+        .leader-neg { background: #2a1a1a; border: 1px solid #7f1d1d; }
+        .leader-limit-down { background: #2a0a0a; border: 2px solid #ef4444; }
+        .leader-icon { font-size: 32px; }
+        .leader-info { flex: 1; }
+        .leader-info .title { font-size: 15px; font-weight: 600; }
+        .leader-info .desc { font-size: 12px; color: #8892a8; margin-top: 3px; }
+        .leader-badge {
+            padding: 4px 12px; border-radius: 6px; font-size: 13px; font-weight: 600;
+        }
+        .badge-green { background: #065f46; color: #34d399; }
+        .badge-blue { background: #1e3a5f; color: #60a5fa; }
+        .badge-yellow { background: #78350f; color: #fbbf24; }
+        .badge-red { background: #7f1d1d; color: #ef4444; }
+
+        /* 进度条 */
+        .progress-bar {
+            margin-top: 12px; background: #1a2040; border-radius: 8px;
+            height: 32px; position: relative; overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%; border-radius: 8px; transition: width 0.5s ease;
+            display: flex; align-items: center; padding-left: 10px;
+            font-size: 12px; font-weight: 600;
+        }
+        .progress-fill.low { background: linear-gradient(90deg, #374151, #4b5563); }
+        .progress-fill.mid { background: linear-gradient(90deg, #92400e, #fbbf24); }
+        .progress-fill.high { background: linear-gradient(90deg, #065f46, #10b981); }
+        .progress-fill.full { background: linear-gradient(90deg, #047857, #34d399); }
+        .progress-markers { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+        .marker {
+            position: absolute; height: 100%; border-left: 1px dashed #4b5563;
+            display: flex; align-items: flex-end; padding-bottom: 2px;
+        }
+        .marker span { font-size: 10px; color: #6b7280; transform: translateX(-50%); }
+
+        /* 表格 */
+        table { width: 100%; border-collapse: collapse; }
+        th {
+            text-align: left; padding: 8px 10px; font-size: 12px;
+            color: #6b7280; border-bottom: 1px solid #1e2a45; font-weight: 500;
+        }
+        td { padding: 8px 10px; font-size: 13px; border-bottom: 1px solid #0d1220; }
+        tr:hover td { background: #0d1220; }
+        .gain-pos { color: #ef4444; }
+        .gain-neg { color: #10b981; }
+        .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+        .tag-rep { background: #1e3a5f; color: #60a5fa; }
+        .tag-candidate { background: #1a2e1a; color: #34d399; }
+        .tag-main { background: #2a2a1a; color: #fbbf24; }
+        .tag-gem { background: #1a1a2e; color: #8b5cf6; }
+        .tag-warn { background: #7f1d1d; color: #fca5a5; }
+
+        /* 信号 */
+        .signal-item {
+            display: flex; align-items: center;
+            padding: 12px 16px; margin-bottom: 8px; border-radius: 8px; gap: 16px;
+        }
+        .signal-strong { background: #0f2a1a; border: 1px solid #065f46; }
+        .signal-normal { background: #1a2332; border: 1px solid #1e3a5f; }
+        .signal-watch { background: #1a1a2e; border: 1px solid #2a2a45; }
+        .signal-avoid { background: #1a1a1a; border: 1px solid #2a2a2a; }
+        .signal-level { font-size: 24px; width: 40px; text-align: center; }
+        .signal-info { flex: 1; }
+        .signal-info .stock { font-size: 15px; font-weight: 600; }
+        .signal-info .reason { font-size: 12px; color: #8892a8; margin-top: 2px; }
+        .signal-position { text-align: right; font-size: 13px; color: #a78bfa; white-space: nowrap; }
+
+        /* 回测统计 */
+        .stats-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+        }
+        .stat-box {
+            background: #0d1220; border-radius: 8px; padding: 12px; text-align: center;
+        }
+        .stat-box .label { font-size: 11px; color: #6b7280; }
+        .stat-box .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+        .stat-box .value.green { color: #10b981; }
+        .stat-box .value.red { color: #ef4444; }
+        .stat-box .value.blue { color: #60a5fa; }
+        .stat-box .value.yellow { color: #fbbf24; }
+
+        .empty-state { text-align: center; padding: 40px; color: #4b5563; }
+
+        @media (max-width: 768px) {
+            .dashboard { grid-template-columns: 1fr; }
+            .cycle-card { flex-direction: column; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="header">
+        <div>
+            <h1>AI量化周期看板</h1>
+            <div class="date">{{ today }}</div>
+        </div>
+        <div class="actions">
+            <button class="btn" :class="{loading: refreshing}" @click="refreshCycle">
+                {{ refreshing ? '更新中...' : '刷新周期' }}
+            </button>
+            <button class="btn" :class="{loading: screening}" @click="refreshScreener">
+                {{ screening ? '选股中...' : '执行选股' }}
+            </button>
+            <button class="btn btn-accent" :class="{loading: backtesting}" @click="runBacktest">
+                {{ backtesting ? '回测中...' : '运行回测' }}
+            </button>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <!-- 周期状态 + 龙头反馈 -->
+        <div class="card full-width cycle-card">
+            <div class="phase-badge" :class="phaseClass">
+                {{ snapshot.phase || '加载中...' }}
+            </div>
+            <div class="cycle-info">
+                <div class="meta">第 {{ snapshot.phase_day || 0 }} 天</div>
+                <div class="rep" v-if="snapshot.representative">
+                    <div class="label">周期代表股</div>
+                    <div class="value">
+                        {{ snapshot.representative.name }}
+                        ({{ snapshot.representative.code }})
+                        <span class="gain">{{ snapshot.representative.gain_10d }}%</span>
+                    </div>
+                    <div class="meta">
+                        持续 {{ snapshot.representative.sustain_days }} 天 ·
+                        榜首 {{ snapshot.representative.top_days }} 天 ·
+                        峰值 {{ snapshot.representative.peak_gain }}%
+                        <span v-if="!snapshot.representative.is_main_board" class="tag tag-gem">创/科</span>
+                        <span v-else class="tag tag-main">主板</span>
+                    </div>
+                </div>
+                <div class="rep" v-else>
+                    <div class="label">周期代表股</div>
+                    <div class="value" style="color:#6b7280;">暂无</div>
+                </div>
+                <div class="prev-cycle" v-if="snapshot.prev_cycle">
+                    上轮周期：{{ snapshot.prev_cycle.name }}({{ snapshot.prev_cycle.code }})
+                    峰值 {{ snapshot.prev_cycle.peak_gain }}%
+                </div>
+
+                <!-- 龙头反馈 -->
+                <div v-if="leader.signal" class="leader-card" :class="leaderClass">
+                    <div class="leader-icon">{{ leaderIcon }}</div>
+                    <div class="leader-info">
+                        <div class="title">
+                            高标龙头：{{ leader.leader_name }}
+                            竞价 <span :class="leader.auction_change_pct >= 0 ? 'gain-pos' : 'gain-neg'">
+                                {{ leader.auction_change_pct > 0 ? '+' : '' }}{{ leader.auction_change_pct }}%
+                            </span>
+                        </div>
+                        <div class="desc">{{ leader.reason }}</div>
+                    </div>
+                    <div class="leader-badge" :class="leaderBadgeClass">
+                        {{ leader.can_trade ? leader.aggression : '不操作' }}
+                    </div>
+                </div>
+
+                <!-- 进度条 -->
+                <div class="progress-bar" v-if="snapshot.representative">
+                    <div class="progress-fill" :class="progressClass"
+                         :style="{width: progressPct + '%'}">
+                        {{ snapshot.representative.gain_10d }}% → 120%
+                    </div>
+                    <div class="progress-markers">
+                        <div class="marker" style="left:37.5%"><span>45%</span></div>
+                        <div class="marker" style="left:83.3%"><span>100%</span></div>
+                        <div class="marker" style="left:100%"><span>120%</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 10日涨幅榜 -->
+        <div class="card">
+            <div class="card-title"><span class="icon">📊</span> 10日涨幅榜 TOP20</div>
+            <div style="max-height:400px;overflow-y:auto">
+            <table v-if="ranking.length">
+                <thead><tr><th>#</th><th>代码</th><th>名称</th><th>10日涨幅</th><th>持续</th><th>标记</th></tr></thead>
+                <tbody>
+                    <tr v-for="(item, idx) in ranking.slice(0, 20)" :key="item.code">
+                        <td>{{ idx + 1 }}</td>
+                        <td>{{ item.code }}</td>
+                        <td>{{ item.name }}</td>
+                        <td :class="item.gain_10d >= 0 ? 'gain-pos' : 'gain-neg'">{{ item.gain_10d.toFixed(1) }}%</td>
+                        <td>{{ item.sustain_days || '-' }}天</td>
+                        <td>
+                            <span v-if="isRepresentative(item.code)" class="tag tag-rep">代表股</span>
+                            <span v-else-if="isCandidate(item.code)" class="tag tag-candidate">候选</span>
+                            <span v-if="!item.is_main_board" class="tag tag-gem">创/科</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            </div>
+            <div v-else class="empty-state">暂无数据，点击"刷新周期"获取</div>
+        </div>
+
+        <!-- 选股结果 -->
+        <div class="card">
+            <div class="card-title"><span class="icon">🔍</span> 今日选股（{{ screenerDate }}）</div>
+            <table v-if="screenerHits.length">
+                <thead><tr><th>代码</th><th>名称</th><th>连板</th><th>竞价涨幅</th><th>换手</th><th>市值</th><th>偏离</th></tr></thead>
+                <tbody>
+                    <tr v-for="hit in screenerHits" :key="hit.code">
+                        <td>{{ hit.code }}</td>
+                        <td>
+                            {{ hit.name }}
+                            <span v-if="hit.matched_cycle" class="tag tag-rep">🎯</span>
+                        </td>
+                        <td>{{ hit.continuous_limit_up }}板</td>
+                        <td class="gain-pos">{{ hit.auction_gain }}%</td>
+                        <td>{{ hit.auction_turnover }}%</td>
+                        <td>{{ hit.market_cap }}亿</td>
+                        <td>
+                            <span v-if="getDeviation(hit.code)" :class="getDeviation(hit.code).is_excessive ? 'gain-pos' : ''">
+                                {{ getDeviation(hit.code).deviation_pct }}%
+                                <span v-if="getDeviation(hit.code).is_excessive" class="tag tag-warn">偏离大</span>
+                            </span>
+                            <span v-else>-</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <div v-else class="empty-state">暂无结果，点击"执行选股"或等待9:27自动执行</div>
+        </div>
+
+        <!-- 交叉验证信号 -->
+        <div class="card full-width">
+            <div class="card-title"><span class="icon">🎯</span> 交叉验证信号</div>
+            <div v-if="signals.length">
+                <div v-for="sig in signals" :key="sig.code"
+                     class="signal-item" :class="'signal-' + sig.level">
+                    <div class="signal-level">{{ levelIcon(sig.level) }}</div>
+                    <div class="signal-info">
+                        <div class="stock">
+                            {{ sig.name }} ({{ sig.code }})
+                            <span v-if="sig.is_cycle_rep" class="tag tag-rep">周期代表股</span>
+                            <span v-else-if="sig.is_cycle_candidate" class="tag tag-candidate">周期候选</span>
+                        </div>
+                        <div class="reason">{{ sig.reason }}</div>
+                    </div>
+                    <div class="signal-position">{{ sig.suggested_position }}</div>
+                </div>
+            </div>
+            <div v-else class="empty-state">等待选股引擎与周期引擎结果交叉验证</div>
+        </div>
+
+        <!-- 回测统计 -->
+        <div class="card full-width" v-if="btResult">
+            <div class="card-title"><span class="icon">📈</span> 回测统计（{{ btResult.period }}）</div>
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="label">总交易数</div>
+                    <div class="value blue">{{ btResult.total_trades }}</div>
+                </div>
+                <div class="stat-box">
+                    <div class="label">胜率</div>
+                    <div class="value" :class="btResult.win_rate >= 50 ? 'green' : 'red'">
+                        {{ btResult.win_rate }}%
+                    </div>
+                </div>
+                <div class="stat-box">
+                    <div class="label">盈亏比</div>
+                    <div class="value" :class="btResult.profit_loss_ratio >= 1.5 ? 'green' : 'yellow'">
+                        {{ btResult.profit_loss_ratio }}
+                    </div>
+                </div>
+                <div class="stat-box">
+                    <div class="label">总收益率</div>
+                    <div class="value" :class="btResult.total_pnl_pct >= 0 ? 'green' : 'red'">
+                        {{ btResult.total_pnl_pct }}%
+                    </div>
+                </div>
+                <div class="stat-box">
+                    <div class="label">平均盈利</div>
+                    <div class="value green">+{{ btResult.avg_win_pct }}%</div>
+                </div>
+                <div class="stat-box">
+                    <div class="label">平均亏损</div>
+                    <div class="value red">{{ btResult.avg_lose_pct }}%</div>
+                </div>
+                <div class="stat-box">
+                    <div class="label">最大回撤</div>
+                    <div class="value red">{{ btResult.max_drawdown_pct }}%</div>
+                </div>
+                <div class="stat-box">
+                    <div class="label">最大连胜/连亏</div>
+                    <div class="value blue">{{ btResult.max_consecutive_win }}/{{ btResult.max_consecutive_lose }}</div>
+                </div>
+            </div>
+
+            <!-- 按周期阶段统计 -->
+            <div style="margin-top:16px" v-if="Object.keys(btResult.cycle_stats || {}).length">
+                <div class="card-title" style="margin-bottom:8px">按周期阶段统计</div>
+                <table>
+                    <thead><tr><th>周期阶段</th><th>交易数</th><th>胜率</th><th>平均盈亏</th></tr></thead>
+                    <tbody>
+                        <tr v-for="(stats, phase) in btResult.cycle_stats" :key="phase">
+                            <td>{{ phase }}</td>
+                            <td>{{ stats.total }}</td>
+                            <td :class="stats.win_rate >= 50 ? 'gain-neg' : 'gain-pos'">{{ stats.win_rate }}%</td>
+                            <td :class="stats.avg_pnl >= 0 ? 'gain-pos' : 'gain-neg'">{{ stats.avg_pnl }}%</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const { createApp, ref, computed, onMounted } = Vue
+
+createApp({
+    setup() {
+        const snapshot = ref({})
+        const ranking = ref([])
+        const screenerHits = ref([])
+        const screenerDate = ref('')
+        const signals = ref([])
+        const leader = ref({})
+        const deviations = ref([])
+        const btResult = ref(null)
+        const refreshing = ref(false)
+        const screening = ref(false)
+        const backtesting = ref(false)
+
+        const today = new Date().toLocaleDateString('zh-CN', {
+            year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
+        })
+
+        const phaseClass = computed(() => {
+            const map = {
+                '孕育期': 'phase-breeding', '小周期启动': 'phase-small-start',
+                '混沌期': 'phase-chaos', '小周期完成': 'phase-small-done',
+                '完整周期': 'phase-full', '余温期': 'phase-afterglow', '退潮期': 'phase-ebb',
+            }
+            return map[snapshot.value.phase] || 'phase-breeding'
+        })
+
+        const progressPct = computed(() => {
+            if (!snapshot.value.representative) return 0
+            return Math.min(100, (snapshot.value.representative.gain_10d / 120) * 100)
+        })
+
+        const progressClass = computed(() => {
+            if (!snapshot.value.representative) return 'low'
+            const g = snapshot.value.representative.gain_10d
+            if (g >= 120) return 'full'; if (g >= 100) return 'high'
+            if (g >= 45) return 'mid'; return 'low'
+        })
+
+        const leaderClass = computed(() => {
+            const map = {
+                '强正反馈': 'leader-strong-pos', '正反馈': 'leader-pos',
+                '中性': 'leader-neutral', '负反馈': 'leader-neg', '跌停': 'leader-limit-down',
+            }
+            return map[leader.value.signal] || 'leader-neutral'
+        })
+
+        const leaderIcon = computed(() => {
+            const map = { '强正反馈': '🚀', '正反馈': '☀️', '中性': '☁️', '负反馈': '🌧️', '跌停': '⛔' }
+            return map[leader.value.signal] || '❓'
+        })
+
+        const leaderBadgeClass = computed(() => {
+            if (!leader.value.can_trade) return 'badge-red'
+            const map = { '积极': 'badge-green', '正常': 'badge-blue', '谨慎': 'badge-yellow' }
+            return map[leader.value.aggression] || 'badge-blue'
+        })
+
+        function isRepresentative(code) { return snapshot.value.representative?.code === code }
+        function isCandidate(code) { return snapshot.value.candidates?.some(c => c.code === code) }
+        function levelIcon(level) { return { strong: '🟢', normal: '🔵', watch: '🟡', avoid: '🔴' }[level] || '⚪' }
+
+        function getDeviation(code) {
+            return deviations.value.find(d => d.code === code)
+        }
+
+        async function loadData() {
+            try {
+                const [snapRes, rankRes, scrRes, sigRes, leaderRes, devRes] = await Promise.all([
+                    fetch('/api/snapshot').then(r => r.json()),
+                    fetch('/api/gain-ranking').then(r => r.json()),
+                    fetch('/api/screener').then(r => r.json()),
+                    fetch('/api/signals').then(r => r.json()),
+                    fetch('/api/leader').then(r => r.json()),
+                    fetch('/api/deviation').then(r => r.json()),
+                ])
+                snapshot.value = snapRes
+                ranking.value = rankRes.ranking || []
+                screenerHits.value = scrRes.hits || []
+                screenerDate.value = scrRes.date || ''
+                signals.value = sigRes.signals || []
+                leader.value = leaderRes
+                deviations.value = devRes.results || []
+            } catch (e) { console.error('加载数据失败:', e) }
+        }
+
+        async function refreshCycle() {
+            refreshing.value = true
+            try { await fetch('/api/refresh-cycle', { method: 'POST' }); await loadData() }
+            catch (e) { alert('刷新失败: ' + e.message) }
+            refreshing.value = false
+        }
+
+        async function refreshScreener() {
+            screening.value = true
+            try { await fetch('/api/refresh-screener', { method: 'POST' }); await loadData() }
+            catch (e) { alert('选股失败: ' + e.message) }
+            screening.value = false
+        }
+
+        async function runBacktest() {
+            backtesting.value = true
+            try {
+                const res = await fetch('/api/backtest', { method: 'POST' }).then(r => r.json())
+                if (res.status === 'ok') btResult.value = res.result
+                else alert('回测失败: ' + res.message)
+            } catch (e) { alert('回测失败: ' + e.message) }
+            backtesting.value = false
+        }
+
+        onMounted(loadData)
+        setInterval(loadData, 60000)
+
+        return {
+            snapshot, ranking, screenerHits, screenerDate, signals,
+            leader, deviations, btResult,
+            today, phaseClass, progressPct, progressClass,
+            leaderClass, leaderIcon, leaderBadgeClass,
+            refreshing, screening, backtesting,
+            isRepresentative, isCandidate, levelIcon, getDeviation,
+            refreshCycle, refreshScreener, runBacktest,
+        }
+    }
+}).mount('#app')
+</script>
+</body>
+</html>
