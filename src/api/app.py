@@ -84,6 +84,76 @@ async def get_gain_ranking():
     return JSONResponse({"date": "", "ranking": []})
 
 
+@app.get("/api/ranking-live")
+async def get_ranking_live():
+    """实时刷新 TOP30 涨幅并重新排序
+
+    从 latest_ranking.json 读取基准数据，调腾讯接口拉实时行情，
+    用 live close 重算 gain_10d，按 gain_10d 降序重排。
+    """
+    ranking_file = DATA_DIR / "latest_ranking.json"
+    if not ranking_file.exists():
+        return JSONResponse({"date": "", "ranking": [], "live": False})
+
+    data = json.loads(ranking_file.read_text())
+    items = data.get("ranking", [])
+    if not items:
+        return JSONResponse({**data, "live": False})
+
+    codes = [str(r["code"]) for r in items]
+    base_map = {}
+    for r in items:
+        gain = float(r.get("gain_10d", 0))
+        close = float(r.get("close", 0))
+        close_10d_ago = close / (1 + gain / 100) if gain != -100 and close > 0 else 0
+        base_map[str(r["code"])] = {**r, "_close_10d_ago": close_10d_ago}
+
+    try:
+        from src.data.tencent_api import fetch_stock_details
+        live = fetch_stock_details(codes)
+    except Exception as e:
+        return JSONResponse({**data, "live": False, "error": str(e)})
+
+    if live is not None and not live.empty:
+        live_map = {str(row["code"]): row for _, row in live.iterrows()}
+        for code, base in base_map.items():
+            lr = live_map.get(code)
+            if lr is None:
+                continue
+            lc = float(lr.get("close", 0))
+            if lc <= 0:
+                continue
+            base["close"] = round(lc, 2)
+            base["change_pct"] = round(float(lr.get("change_pct", 0)), 2)
+            c10 = base["_close_10d_ago"]
+            if c10 > 0:
+                base["gain_10d"] = round((lc / c10 - 1) * 100, 2)
+            mc = float(lr.get("market_cap_yi", 0))
+            if mc > 0:
+                base["market_cap_yi"] = round(mc, 2)
+
+    result = sorted(base_map.values(), key=lambda x: x.get("gain_10d", 0), reverse=True)
+    for i, r in enumerate(result):
+        r["rank"] = i + 1
+        r.pop("_close_10d_ago", None)
+
+    return JSONResponse({
+        "date": data.get("date", ""),
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "ranking": result,
+        "live": True,
+    })
+
+
+@app.get("/api/sentiment")
+async def get_pool_sentiment():
+    """获取 top30 梯队情绪（竞价分布判定）"""
+    p = DATA_DIR / "latest_sentiment.json"
+    if p.exists():
+        return JSONResponse(json.loads(p.read_text()))
+    return JSONResponse({})
+
+
 @app.get("/api/history")
 async def get_cycle_history():
     """获取周期历史时间线"""

@@ -1,9 +1,10 @@
 """交叉验证引擎
 
-三层过滤交叉：
+四层评估交叉：
 1. 周期状态（大环境）
-2. 高标龙头竞价反馈（一票否决）
-3. 选股公式命中（标的筛选）
+2. 高标龙头竞价反馈（单只龙头当日操作建议 + 仓位调节）
+3. 梯队情绪池（top30 龙头竞价分布 → 当日接力意愿）
+4. 选股公式命中（标的筛选）
 """
 from dataclasses import dataclass
 from typing import Optional
@@ -11,6 +12,7 @@ from typing import Optional
 from src.engine.cycle import CycleSnapshot, CyclePhase
 from src.engine.screener import ScreenerHit
 from src.engine.leader_feedback import LeaderFeedback, LeaderSignal
+from src.engine.sentiment_pool import PoolSentiment
 
 
 @dataclass
@@ -32,13 +34,15 @@ def cross_validate(
     cycle: CycleSnapshot,
     screener_hits: list[ScreenerHit],
     leader_fb: Optional[LeaderFeedback] = None,
+    pool_sentiment: Optional[PoolSentiment] = None,
 ) -> list[Signal]:
-    """三层交叉验证
+    """四层交叉验证
 
     Args:
         cycle: 周期快照
         screener_hits: 选股结果
         leader_fb: 高标龙头竞价反馈（可选）
+        pool_sentiment: 梯队情绪池（可选）
 
     Returns:
         信号列表，按强度排序
@@ -50,23 +54,18 @@ def cross_validate(
     phase = cycle.phase
     leader_sig = leader_fb.signal if leader_fb else None
 
-    # 龙头一票否决：深水开或跌停 → 全部降为 avoid
-    leader_veto = leader_fb is not None and not leader_fb.can_trade
-
     for hit in screener_hits:
         is_rep = hit.code == rep_code
         is_candidate = hit.code in candidate_codes
 
-        if leader_veto:
-            # 一票否决模式
-            level = "avoid"
-            reason = f"高标龙头{leader_fb.leader_name}竞价{leader_fb.auction_change_pct:+.1f}%（{leader_fb.signal.value}），当日不操作"
-            position = "不开仓"
-        else:
-            # 正常三层评估
-            level, reason, position = _evaluate(
-                phase, is_rep, is_candidate, hit, leader_fb
-            )
+        level, reason, position = _evaluate(
+            phase, is_rep, is_candidate, hit, leader_fb
+        )
+
+        # 梯队情绪调节：周期层评完后，用情绪做最后一层调节
+        level, reason, position = _apply_sentiment(
+            level, reason, position, pool_sentiment
+        )
 
         signal = Signal(
             code=hit.code,
@@ -87,6 +86,59 @@ def cross_validate(
     signals.sort(key=lambda s: level_order.get(s.level, 99))
 
     return signals
+
+
+def _apply_sentiment(
+    level: str,
+    reason: str,
+    position: str,
+    sent: Optional[PoolSentiment],
+) -> tuple[str, str, str]:
+    """梯队情绪池对信号的调节规则
+
+    规则：
+    - 不操作：不改等级，但追加"梯队情绪压制"标签，仓位打对折
+    - 谨慎：strong→normal / normal→watch；仓位写"减半"
+    - 正常：不变
+    - 积极：avoid→watch（破例开观察仓）；watch→normal
+    """
+    if sent is None or not sent.verdict:
+        return level, reason, position
+
+    verdict = sent.verdict
+    wavg = sent.weighted_auction_gain
+    tag = f"[情绪:{verdict} {wavg:+.1f}%]"
+
+    if verdict == "不操作":
+        # 不强行改 avoid，但把 strong/normal 强压成 watch
+        if level in ("strong", "normal"):
+            return "watch", f"{reason}；{tag} 梯队接力意愿极弱，压至观察仓", "1-2层试探（情绪压制）"
+        return level, f"{reason}；{tag}", position
+
+    if verdict == "谨慎":
+        if level == "strong":
+            return "normal", f"{reason}；{tag} 梯队偏弱，降一档", _half_position(position)
+        if level == "normal":
+            return "watch", f"{reason}；{tag} 梯队偏弱，降至观察", _half_position(position)
+        return level, f"{reason}；{tag}", position
+
+    if verdict == "积极":
+        if level == "avoid":
+            # 周期不支持但梯队强势 → 破例开试探
+            return "watch", f"{reason}；{tag} 梯队强势，破例开 1 层试探", "1层试探（情绪破例）"
+        if level == "watch":
+            return "normal", f"{reason}；{tag} 梯队强势，升一档", position
+        return level, f"{reason}；{tag}", position
+
+    # 正常：保持
+    return level, f"{reason}；{tag}", position
+
+
+def _half_position(position: str) -> str:
+    """在仓位建议后追加"减半"标注，不重写具体数字"""
+    if not position or position == "不开仓":
+        return position
+    return f"{position}（情绪压制减半）"
 
 
 def _evaluate(

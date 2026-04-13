@@ -1,247 +1,257 @@
-"""AKShare 数据拉取模块"""
-import akshare as ak
+"""数据拉取统一入口
+
+数据源优先级（2026-04 调整，east money push2 被 WAF 限流后）：
+1. 东方财富 push2（如可用，字段最全）
+2. 新浪（via akshare stock_zh_a_spot，全市场 5500+，缺 volume_ratio / market_cap / turnover）
+3. Mock 数据（最终降级）
+
+Screener 对 volume_ratio / market_cap 已做 "有则过滤，无则放行" 软检查
+"""
+import os
+
 import pandas as pd
-from datetime import datetime, timedelta
-from sqlalchemy import text
 
-from src.data.models import get_engine, init_db, DailyQuote
-
-
-def fetch_all_daily(start_date: str = None, end_date: str = None) -> pd.DataFrame:
-    """拉取全市场日线行情并存入数据库
-
-    Args:
-        start_date: 起始日期 YYYYMMDD，默认20个交易日前
-        end_date: 结束日期 YYYYMMDD，默认今天
-    """
-    if end_date is None:
-        end_date = datetime.now().strftime("%Y%m%d")
-    if start_date is None:
-        start_date = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
-
-    engine = init_db()
-
-    # 拉取A股日线行情（包含所有板块，用于周期排名）
-    print(f"正在拉取 {start_date} ~ {end_date} 行情数据...")
-    df = ak.stock_zh_a_hist(
-        symbol="000001",  # 先获取交易日历
-        period="daily",
-        start_date=start_date,
-        end_date=end_date,
-        adjust="qfq"
-    )
-    # 实际上 akshare 需要逐个拉取或用批量接口
-    # 使用 stock_zh_a_spot_em 获取实时全市场快照更高效
-    return _fetch_spot_and_history(engine, start_date, end_date)
-
-
-def _fetch_spot_and_history(engine, start_date: str, end_date: str) -> pd.DataFrame:
-    """用日频行情接口拉取数据"""
-    # 获取全市场股票列表
-    print("正在获取股票列表...")
-    stock_list = ak.stock_info_a_code_name()
-    print(f"共 {len(stock_list)} 只股票")
-
-    # 使用每日行情接口（更高效）
-    # stock_zh_a_hist_pre_min_em 用于获取历史数据
-    # 为了效率，用 stock_zh_a_spot_em 获取今日快照
-    # 历史数据用 stock_zh_a_hist 逐日拉取
-    return stock_list
-
-
-def fetch_daily_history_batch(days: int = 15) -> pd.DataFrame:
-    """批量拉取最近N天全市场日线数据
-
-    使用东方财富每日行情接口，按日期拉取
-    """
-    engine = init_db()
-    all_data = []
-
-    # 获取最近的交易日列表
-    trade_dates = _get_recent_trade_dates(days)
-
-    for date_str in trade_dates:
-        print(f"  拉取 {date_str} 数据...")
-        try:
-            df = ak.stock_zh_a_hist_pre_min_em(symbol="000001", start_date=date_str, end_date=date_str)
-        except Exception:
-            pass
-        # 使用另一个接口
-        try:
-            df = _fetch_one_day(date_str)
-            if df is not None and len(df) > 0:
-                all_data.append(df)
-        except Exception as e:
-            print(f"  {date_str} 拉取失败: {e}")
-
-    if all_data:
-        result = pd.concat(all_data, ignore_index=True)
-        _save_to_db(result, engine)
-        return result
-    return pd.DataFrame()
-
-
-def _fetch_one_day(date_str: str) -> pd.DataFrame:
-    """拉取某一天全市场行情"""
-    try:
-        # 使用东方财富历史行情
-        df = ak.stock_zh_a_spot_em()
-        # 这个接口只返回当日实时数据，历史数据需要其他方式
-        return df
-    except Exception as e:
-        print(f"  拉取失败: {e}")
-        return None
+USE_MOCK = os.getenv("MOCK", "0") == "1"
 
 
 def fetch_realtime_spot() -> pd.DataFrame:
-    """获取全市场实时快照（用于选股引擎 9:27 调用）"""
-    print("正在获取实时行情快照...")
-    df = ak.stock_zh_a_spot_em()
+    """获取全市场实时快照
 
-    # 标准化列名
-    col_map = {
-        "代码": "code",
-        "名称": "name",
-        "最新价": "close",
-        "今开": "open",
-        "最高": "high",
-        "最低": "low",
-        "昨收": "pre_close",
-        "成交量": "volume",
-        "成交额": "amount",
-        "换手率": "turnover",
-        "流通市值": "market_cap",
-        "量比": "volume_ratio",
-        "涨跌幅": "change_pct",
-    }
-    df = df.rename(columns=col_map)
-    available_cols = [v for v in col_map.values() if v in df.columns]
-    df = df[available_cols]
-
-    print(f"获取到 {len(df)} 只股票实时数据")
-    return df
-
-
-def fetch_history_for_cycle(days: int = 15) -> pd.DataFrame:
-    """拉取最近N天历史数据用于周期计算
-
-    使用逐只股票拉取的方式太慢，改用板块/指数+个股涨幅排行
-    最高效的方式：直接用 stock_zh_a_hist 拉取每日全市场数据
+    用途：选股引擎9:27调用
     """
-    engine = init_db()
+    if USE_MOCK:
+        from src.data.mock_data import generate_mock_spot
+        print("[MOCK] 使用模拟实时行情")
+        return generate_mock_spot()
 
-    # 检查数据库中已有数据
-    existing_dates = _get_existing_dates(engine)
-
-    # 确定需要拉取的日期范围
-    end_date = datetime.now().strftime("%Y%m%d")
-    start_date = (datetime.now() - timedelta(days=days + 10)).strftime("%Y%m%d")
-
-    # 使用 stock_board_industry_hist_em 或逐个拉取
-    # 最实用的方案：用 stock_zh_a_hist 按个股拉取，但只拉取在榜的
-    # 或者用 stock_rank_lxsz_ths 获取连涨排行
-
-    # 方案：先拉实时快照获取当前涨幅排名靠前的股票，再拉它们的历史
-    return _fetch_targeted_history(engine, days)
-
-
-def _fetch_targeted_history(engine, days: int) -> pd.DataFrame:
-    """先获取全市场快照，再对目标股拉取历史"""
-    # 获取实时快照
-    spot = fetch_realtime_spot()
-
-    # 获取需要历史数据的股票列表（用于计算10日涨幅）
-    # 实际上10日涨幅可以直接从快照计算（如果接口提供）
-    # 或者拉取所有股票的历史收盘价
-
-    # 最高效方案：使用 stock_zh_a_hist_min_em 或直接计算
-    # akshare 有 stock_changes_em 可以获取涨幅排行
-    return spot
-
-
-def fetch_limit_up_pool(date: str = None) -> pd.DataFrame:
-    """获取涨停板池（用于连板检测）"""
-    if date is None:
-        date = datetime.now().strftime("%Y%m%d")
+    # 优先东方财富（字段最全）
     try:
-        df = ak.stock_zt_pool_em(date=date)
-        print(f"获取到 {len(df)} 只涨停股")
-        return df
+        from src.data.eastmoney_api import fetch_a_share_list
+        df = fetch_a_share_list()
+        if not df.empty:
+            return df
+        print("东方财富返回空，尝试新浪兜底")
     except Exception as e:
-        print(f"获取涨停池失败: {e}")
+        print(f"东方财富实时行情失败: {e}，尝试新浪兜底")
+
+    # 兜底：新浪 via akshare
+    try:
+        from src.data.sina_spot_api import fetch_a_share_list_sina
+        df = fetch_a_share_list_sina()
+        if not df.empty:
+            return df
+    except Exception as e:
+        print(f"新浪兜底失败: {e}")
+
+    from src.data.mock_data import generate_mock_spot
+    print("[降级] 使用模拟数据")
+    return generate_mock_spot()
+
+
+def fetch_realtime_batch(codes: list[str]) -> pd.DataFrame:
+    """批量获取指定股票实时行情（新浪接口，速度快）
+
+    用途：龙头竞价反馈、单股查询
+    """
+    if USE_MOCK:
+        from src.data.mock_data import generate_mock_spot
+        return generate_mock_spot()
+
+    try:
+        from src.data.sina_api import fetch_realtime_batch as sina_batch
+        return sina_batch(codes)
+    except Exception as e:
+        print(f"新浪实时接口失败: {e}")
         return pd.DataFrame()
 
 
-def fetch_limit_up_history(days: int = 5) -> dict[str, pd.DataFrame]:
-    """获取最近N天的涨停股池，用于连板检测
+def fetch_gain_10d_ranking(top_n: int = 30) -> pd.DataFrame:
+    """获取10日涨幅排行 top_n（盘后全市场扫描）
 
-    Returns:
-        {date_str: DataFrame} 每天的涨停股列表
+    主路径：ranking_scanner.scan_full_market_10d_ranking
+        - 全市场 spot → 过滤ST/停牌 → 并行60根日K → 剔除新股 → 排序取top_n
+        - 富化：涨停板池(连板数+最后封板时间) + 240周线偏离度
+    兜底：旧的 eastmoney calc_10d_gain_ranking（候选池采样）
     """
-    result = {}
-    trade_dates = _get_recent_trade_dates(days)
+    if USE_MOCK:
+        from src.data.mock_data import generate_mock_ranking
+        scenario = os.getenv("MOCK_SCENARIO", "small_cycle_start")
+        print(f"[MOCK] 使用模拟排行数据，场景: {scenario}")
+        return generate_mock_ranking(scenario)
 
-    for date_str in trade_dates:
+    # 主路径：全市场扫描
+    try:
+        from src.data.ranking_scanner import scan_full_market_10d_ranking
+        result = scan_full_market_10d_ranking(top_n)
+        if not result.empty:
+            return result
+        print("全市场扫描返回空，尝试候选池兜底")
+    except Exception as e:
+        print(f"全市场扫描失败: {e}，尝试候选池兜底")
+
+    # 兜底：候选池采样（东财 clist 前300只今日涨幅）
+    try:
+        from src.data.eastmoney_api import calc_10d_gain_ranking
+        result = calc_10d_gain_ranking(top_n)
+        if not result.empty:
+            return result
+    except Exception as e:
+        print(f"东方财富候选池兜底失败: {e}")
+
+    from src.data.mock_data import generate_mock_ranking
+    print("[降级] 使用模拟排行数据")
+    return generate_mock_ranking("small_cycle_start")
+
+
+def fetch_limit_up_history(days: int = 5) -> dict[str, pd.DataFrame]:
+    """获取最近N天涨停股列表
+
+    用途：选股引擎连板检测
+    策略：今日涨停池（东财→新浪兜底） + 历史涨停池（cache → sina K线回溯补足 → 写回cache）
+    保证：返回字典至少覆盖今日+days-1个历史交易日（若 cache 不足会主动回溯并持久化）
+    """
+    if USE_MOCK:
+        from src.data.mock_data import generate_mock_limit_up_history
+        print("[MOCK] 使用模拟涨停数据")
+        return generate_mock_limit_up_history()
+
+    from datetime import datetime
+    today_str = datetime.now().strftime("%Y%m%d")
+
+    # Step 1: 今日涨停池（东财主路径，新浪兜底）
+    today_df = None
+    try:
+        from src.data.eastmoney_api import fetch_limit_up_stocks
+        today_df = fetch_limit_up_stocks()
+    except Exception as e:
+        print(f"东方财富涨停池失败: {e}，尝试新浪")
+
+    if today_df is None or today_df.empty:
         try:
-            df = ak.stock_zt_pool_em(date=date_str)
-            result[date_str] = df
-            print(f"  {date_str}: {len(df)} 只涨停")
+            from src.data.sina_spot_api import fetch_limit_up_stocks_sina
+            today_df = fetch_limit_up_stocks_sina()
         except Exception as e:
-            print(f"  {date_str} 涨停池获取失败: {e}")
+            print(f"新浪涨停池失败: {e}")
+
+    result: dict[str, pd.DataFrame] = {}
+    if today_df is not None and not today_df.empty:
+        result[today_str] = today_df
+        _save_limit_up_cache(today_str, today_df)
+
+    # Step 2: 加载本地缓存（昨日及更早的持久化历史）
+    cache = _load_limit_up_cache()
+    for d, df in cache.items():
+        result.setdefault(d, df)
+
+    # Step 3: 若历史不足，用 sina K 线回溯补足并写回 cache
+    #   历史天数 = 除今日外的天数；至少需要 days-1 个过去交易日才能判多连板
+    past_count = sum(1 for d in result.keys() if d != today_str)
+    if past_count < days - 1:
+        print(f"历史涨停仅 {past_count} 天，不足 {days - 1} 天，启动 sina K线回溯补足...")
+        try:
+            from src.data.sina_spot_api import fetch_limit_up_history_sina
+            hist = fetch_limit_up_history_sina(days=days)
+            for d, df in hist.items():
+                if d not in result:
+                    result[d] = df
+                # 持久化补回的历史，下次无需再回溯
+                _save_limit_up_cache(d, df)
+        except Exception as e:
+            print(f"sina K线回溯补足失败: {e}")
+
+    if not result:
+        from src.data.mock_data import generate_mock_limit_up_history
+        print("[降级] 使用模拟涨停数据")
+        return generate_mock_limit_up_history()
 
     return result
 
 
-def fetch_stock_history(code: str, days: int = 15) -> pd.DataFrame:
-    """拉取单只股票历史日线"""
-    end_date = datetime.now().strftime("%Y%m%d")
-    start_date = (datetime.now() - timedelta(days=days + 10)).strftime("%Y%m%d")
+def fetch_stock_kline(
+    code: str,
+    klt: str = "101",
+    limit: int = 15,
+) -> pd.DataFrame:
+    """获取单只股票K线
+
+    用途：240周线偏离度、历史回测
+
+    Args:
+        code: 股票代码
+        klt: K线类型（101=日K, 102=周K）
+        limit: K线条数
+    """
+    if USE_MOCK:
+        return pd.DataFrame()
+
     try:
-        df = ak.stock_zh_a_hist(
-            symbol=code,
-            period="daily",
-            start_date=start_date,
-            end_date=end_date,
-            adjust="qfq"
-        )
-        return df
+        from src.data.eastmoney_api import fetch_kline
+        return fetch_kline(code, klt=klt, limit=limit)
     except Exception as e:
-        print(f"拉取 {code} 历史失败: {e}")
+        print(f"K线获取失败({code}): {e}")
         return pd.DataFrame()
 
 
-def _get_recent_trade_dates(n: int) -> list[str]:
-    """获取最近N个交易日日期"""
-    try:
-        df = ak.tool_trade_date_hist_sina()
-        dates = df["trade_date"].dt.strftime("%Y%m%d").tolist()
-        today = datetime.now().strftime("%Y%m%d")
-        # 过滤到今天及之前
-        dates = [d for d in dates if d <= today]
-        return dates[-n:]
-    except Exception as e:
-        print(f"获取交易日历失败: {e}")
-        # 回退：简单估算
-        dates = []
-        d = datetime.now()
-        while len(dates) < n:
-            if d.weekday() < 5:
-                dates.append(d.strftime("%Y%m%d"))
-            d -= timedelta(days=1)
-        return sorted(dates)
+def fetch_stock_list() -> pd.DataFrame:
+    """获取全市场股票列表（代码+名称）"""
+    if USE_MOCK:
+        return pd.DataFrame({"code": ["600519"], "name": ["贵州茅台"]})
 
-
-def _get_existing_dates(engine) -> set:
-    """获取数据库中已有的日期"""
     try:
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT DISTINCT date FROM daily_quote"))
-            return {str(row[0]) for row in result}
+        from src.data.eastmoney_api import fetch_a_share_list
+        df = fetch_a_share_list()
+        if not df.empty:
+            return df[["code", "name"]]
     except Exception:
-        return set()
+        pass
+
+    try:
+        import akshare as ak
+        df = ak.stock_info_a_code_name()
+        return df.rename(columns={"code": "code", "name": "name"})
+    except Exception:
+        return pd.DataFrame(columns=["code", "name"])
 
 
-def _save_to_db(df: pd.DataFrame, engine):
-    """保存数据到数据库"""
-    df.to_sql("daily_quote", engine, if_exists="append", index=False)
-    print(f"已保存 {len(df)} 条记录到数据库")
+# === 涨停缓存 ===
+
+def _load_limit_up_cache() -> dict[str, pd.DataFrame]:
+    """从本地文件加载历史涨停缓存"""
+    import json
+    from src.config import DATA_DIR
+
+    cache_file = DATA_DIR / "limit_up_cache.json"
+    if not cache_file.exists():
+        return {}
+
+    try:
+        data = json.loads(cache_file.read_text())
+        result = {}
+        for date_str, records in data.items():
+            result[date_str] = pd.DataFrame(records)
+        return result
+    except Exception:
+        return {}
+
+
+def _save_limit_up_cache(date_str: str, df: pd.DataFrame):
+    """保存涨停数据到本地缓存"""
+    import json
+    from src.config import DATA_DIR
+
+    cache_file = DATA_DIR / "limit_up_cache.json"
+
+    # 加载已有缓存
+    cache = {}
+    if cache_file.exists():
+        try:
+            cache = json.loads(cache_file.read_text())
+        except Exception:
+            pass
+
+    # 只保留最近10天
+    cache[date_str] = df.to_dict("records")
+    sorted_dates = sorted(cache.keys(), reverse=True)[:10]
+    cache = {d: cache[d] for d in sorted_dates}
+
+    cache_file.write_text(json.dumps(cache, ensure_ascii=False, indent=2))

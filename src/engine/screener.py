@@ -92,36 +92,43 @@ def run_screener(
         if not (cfg["auction_gain_min"] <= auction_gain <= cfg["auction_gain_max"]):
             continue
 
-        # 竞价换手率（使用开盘时的成交数据）
+        # 竞价换手率 — 软过滤：缺 market_cap 和 turnover 时放行
         auction_turnover = float(row.get("turnover", 0))
-        # 注意：实时快照的换手率可能是全天的，竞价换手需要特殊处理
-        # 简化处理：用 volume * open / market_cap 估算
         market_cap_yuan = float(row.get("market_cap", 0))
         volume = float(row.get("volume", 0))
 
         if market_cap_yuan > 0:
             # 竞价换手率 ≈ 竞价成交额 / 流通市值
             auction_amount_yuan = float(row.get("amount", 0))
-            auction_turnover_calc = auction_amount_yuan / market_cap_yuan * 100 if market_cap_yuan > 0 else 0
+            auction_turnover_calc = auction_amount_yuan / market_cap_yuan * 100
         else:
             auction_turnover_calc = auction_turnover
 
-        if auction_turnover_calc < cfg["auction_turnover_min"]:
+        # 只在有效值下做下限检查，避免数据缺失误杀
+        if auction_turnover_calc > 0 and auction_turnover_calc < cfg["auction_turnover_min"]:
             continue
 
-        # 竞价金额（万元）
+        # PD1: 竞价成交量(手) > 阈值
+        # 通达信 JJL := DYNAINFO(15)/DYNAINFO(4)/100 = 成交额/昨收/100 ≈ 成交量(手)
+        # 1 手 = 100 股
+        if pre_close > 0:
+            auction_amount_yuan = float(row.get("amount", 0))
+            auction_lots = auction_amount_yuan / pre_close / 100
+        else:
+            auction_lots = float(row.get("volume", 0)) / 100
+        if auction_lots < cfg["auction_volume_lots_min"]:
+            continue
+        # 折算为万元，仅用于报告展示
         auction_amount = float(row.get("amount", 0)) / 10000
-        if auction_amount < cfg["auction_amount_min"]:
-            continue
 
-        # 流通市值（亿）
+        # 流通市值（亿）— 软过滤：缺字段（market_cap<=0）则放行
         market_cap_yi = market_cap_yuan / 1e8 if market_cap_yuan > 1e6 else float(row.get("market_cap", 0))
-        if market_cap_yi > cfg["market_cap_max"]:
+        if market_cap_yi > 0 and market_cap_yi > cfg["market_cap_max"]:
             continue
 
-        # 量比
+        # 量比 — 软过滤：缺字段则放行
         volume_ratio = float(row.get("volume_ratio", 0))
-        if volume_ratio < cfg["volume_ratio_min"]:
+        if volume_ratio > 0 and volume_ratio < cfg["volume_ratio_min"]:
             continue
 
         # 通过所有筛选
@@ -144,48 +151,65 @@ def run_screener(
 
 
 def _detect_continuous_limit_up(limit_up_history: dict[str, pd.DataFrame]) -> dict[str, int]:
-    """检测连板天数
+    """检测「昨日起向前」的连续涨停天数（严格对齐通达信 LIANBAN 语义）
 
-    从最近日期往前回溯，统计每只股票连续出现在涨停池中的天数
+    通达信公式: LIANBAN := REF(ZT0,1) AND REF(ZT0,2)
+    要求：**昨日涨停 AND 前日涨停**（今日涨停状态不参与判定）
+
+    算法：
+    1. 排除今日（最大日期如果等于当日）
+    2. 从昨日（day -1）涨停股开始，继续向前回溯
+    3. 每只股票遇到非涨停日时「封档」——streak 终结，不再递增，但保留已有计数
 
     Returns:
-        {code: continuous_days}
+        {code: consecutive_days_prior_to_today}
+        只包含昨日在涨停池的股票；值为 1 代表只昨日涨停，2 代表昨+前两日连板，依此类推
     """
     if not limit_up_history:
         return {}
 
-    # 按日期降序排列
-    sorted_dates = sorted(limit_up_history.keys(), reverse=True)
+    from datetime import datetime
+    today_str = datetime.now().strftime("%Y%m%d")
 
-    # 统计每只股票在最近几天中连续涨停的天数
-    continuous = {}
+    # 降序，排除今日
+    all_dates = sorted(limit_up_history.keys(), reverse=True)
+    past_dates = [d for d in all_dates if d != today_str]
+    if not past_dates:
+        return {}
 
-    # 从最近一天开始
-    if sorted_dates:
-        latest_df = limit_up_history[sorted_dates[0]]
-        if not latest_df.empty:
-            code_col = _find_code_column(latest_df)
-            if code_col:
-                for code in latest_df[code_col].astype(str).tolist():
-                    continuous[code] = 1
+    # 昨日涨停池
+    yesterday_df = limit_up_history[past_dates[0]]
+    if yesterday_df.empty:
+        return {}
+    col = _find_code_column(yesterday_df)
+    if not col:
+        return {}
+
+    continuous: dict[str, int] = {}
+    active: set[str] = set()  # 仍在连续中的 code
+    for code in yesterday_df[col].astype(str).tolist():
+        continuous[code] = 1
+        active.add(code)
 
     # 向前回溯
-    for date_str in sorted_dates[1:]:
+    for date_str in past_dates[1:]:
+        if not active:
+            break
         df = limit_up_history[date_str]
         if df.empty:
             break
-
-        code_col = _find_code_column(df)
-        if not code_col:
+        col = _find_code_column(df)
+        if not col:
             break
+        day_codes = set(df[col].astype(str).tolist())
 
-        day_codes = set(df[code_col].astype(str).tolist())
-
-        # 只保留仍然连续的
-        for code in list(continuous.keys()):
+        still_active: set[str] = set()
+        for code in active:
             if code in day_codes:
                 continuous[code] += 1
-            # 不在当天涨停的，停止计数（但保留已有天数）
+                still_active.add(code)
+            # 非涨停 → streak 终结；continuous[code] 保留已有值，不再处理
+        active = still_active
 
     return continuous
 

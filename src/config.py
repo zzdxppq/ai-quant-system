@@ -5,6 +5,25 @@ from pathlib import Path
 # 项目根目录
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def _load_dotenv():
+    """轻量 .env 加载器。只在 key 未显式 export 时注入，避免 shell 环境被覆盖"""
+    env_file = BASE_DIR / ".env"
+    if not env_file.exists():
+        return
+    try:
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+    except Exception:
+        pass
+
+
+_load_dotenv()
+
 # 数据库
 DB_PATH = BASE_DIR / "data" / "quant.db"
 
@@ -23,18 +42,27 @@ CYCLE_CONFIG = {
 }
 
 # 选股引擎参数
+# 对齐通达信公式 docs/选股公式.md
+#   XG := LIANBAN AND PD1 AND PD2 AND PD3 AND PD4 AND PD5 AND VAR5
+#         AND DYNAINFO(17)>1 AND 竞换手>0.5 AND 竞价涨幅<7.5
+# 其中：
+#   JJL := DYNAINFO(15)/DYNAINFO(4)/100   → 竞价成交量(手)
+#   PD1 := JJL > 1000                      → 成交量 > 1000 手 = 10 万股
+#   PD2 := JJL/CAPITAL*100 > 0.5           → 竞价换手率 > 0.5%
+#   PD3 := ZFF > 4 AND ZFF < 7.5           → 竞价涨幅 4%~7.5%
+#   PD4 := CAPITAL*C*100/1e8 < 100         → 流通市值 < 100 亿
 SCREENER_CONFIG = {
-    "min_continuous_limit_up": 2,   # 最小连板数
-    "auction_gain_min": 4.0,        # 竞价涨幅下限(%)
-    "auction_gain_max": 7.5,        # 竞价涨幅上限(%)
-    "auction_turnover_min": 0.5,    # 竞价换手率下限(%)
-    "auction_amount_min": 1000,     # 竞价金额下限(万元)
-    "market_cap_max": 100,          # 流通市值上限(亿)
-    "volume_ratio_min": 1.0,        # 量比下限
+    "min_continuous_limit_up": 2,       # 最小连板数 (LIANBAN)
+    "auction_gain_min": 4.0,            # 竞价涨幅下限% (PD3)
+    "auction_gain_max": 7.5,            # 竞价涨幅上限% (PD3)
+    "auction_turnover_min": 0.5,        # 竞价换手率下限% (PD2)
+    "auction_volume_lots_min": 1000,    # 竞价成交量下限(手), PD1; 1 手=100 股
+    "market_cap_max": 100,              # 流通市值上限(亿) (PD4)
+    "volume_ratio_min": 1.0,            # 量比下限 (DYNAINFO(17))
     "exclude_st": True,
-    "exclude_kcb": True,            # 排除科创板(688)
-    "exclude_cyb": True,            # 排除创业板(300/301)
-    "exclude_bse": True,            # 排除北交所(8/4开头)
+    "exclude_kcb": True,                # 排除科创板(688)
+    "exclude_cyb": True,                # 排除创业板(300/301)
+    "exclude_bse": True,                # 排除北交所(8/4开头)
 }
 
 # 选股执行时间

@@ -150,6 +150,15 @@
         tr:hover td { background: #0d1220; }
         .gain-pos { color: #ef4444; }
         .gain-neg { color: #10b981; }
+        /* 吸顶表头：表格放在 scroll 容器内时 thead 不随滚动消失 */
+        .sticky-thead thead th {
+            position: sticky; top: 0; z-index: 2;
+            background: #111827;
+            box-shadow: inset 0 -1px 0 #1e2a45;
+        }
+        /* 当日涨停股整行红色高亮 */
+        .limit-up-row td { color: #ef4444; font-weight: 600; }
+        .limit-up-row:hover td { background: #2a0a0a; }
         .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
         .tag-rep { background: #1e3a5f; color: #60a5fa; }
         .tag-candidate { background: #1a2e1a; color: #34d399; }
@@ -187,6 +196,21 @@
         .stat-box .value.yellow { color: #fbbf24; }
 
         .empty-state { text-align: center; padding: 40px; color: #4b5563; }
+
+        /* 梯队情绪 · 内联在今日选股卡片标题右侧 */
+        .sentiment-inline {
+            margin-left: auto;
+            display: inline-flex; align-items: center; gap: 10px;
+            padding: 6px 12px; border-radius: 6px; font-size: 12px;
+            font-weight: 500;
+        }
+        .sentiment-inline .sent-verdict { font-size: 13px; font-weight: 700; }
+        .sentiment-inline .sent-avg { font-weight: 600; }
+        .sentiment-inline .sent-breakdown { opacity: 0.8; font-size: 11px; }
+        .sent-active { background: #0f2a1a; border: 1px solid #065f46; color: #34d399; }
+        .sent-normal { background: #1a2332; border: 1px solid #1e3a5f; color: #60a5fa; }
+        .sent-cautious { background: #2a2a1a; border: 1px solid #92400e; color: #fbbf24; }
+        .sent-no { background: #2a1a1a; border: 1px solid #7f1d1d; color: #ef4444; }
 
         @media (max-width: 768px) {
             .dashboard { grid-template-columns: 1fr; }
@@ -279,34 +303,23 @@
             </div>
         </div>
 
-        <!-- 10日涨幅榜 -->
-        <div class="card">
-            <div class="card-title"><span class="icon">📊</span> 10日涨幅榜 TOP20</div>
-            <div style="max-height:400px;overflow-y:auto">
-            <table v-if="ranking.length">
-                <thead><tr><th>#</th><th>代码</th><th>名称</th><th>10日涨幅</th><th>持续</th><th>标记</th></tr></thead>
-                <tbody>
-                    <tr v-for="(item, idx) in ranking.slice(0, 20)" :key="item.code">
-                        <td>{{ idx + 1 }}</td>
-                        <td>{{ item.code }}</td>
-                        <td>{{ item.name }}</td>
-                        <td :class="item.gain_10d >= 0 ? 'gain-pos' : 'gain-neg'">{{ item.gain_10d.toFixed(1) }}%</td>
-                        <td>{{ item.sustain_days || '-' }}天</td>
-                        <td>
-                            <span v-if="isRepresentative(item.code)" class="tag tag-rep">代表股</span>
-                            <span v-else-if="isCandidate(item.code)" class="tag tag-candidate">候选</span>
-                            <span v-if="!item.is_main_board" class="tag tag-gem">创/科</span>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+        <!-- 选股结果（含梯队情绪右侧横幅）-->
+        <div class="card full-width">
+            <div class="card-title">
+                <span class="icon">🔍</span> 今日选股（{{ screenerDate }}）
+                <div v-if="sentiment.verdict" class="sentiment-inline" :class="sentimentClass">
+                    <span style="font-size:14px;">{{ sentimentIcon }}</span>
+                    <span class="sent-verdict">梯队情绪：{{ sentiment.verdict }}</span>
+                    <span class="sent-avg">
+                        加权竞价 {{ sentiment.weighted_auction_gain >= 0 ? '+' : '' }}{{ sentiment.weighted_auction_gain }}%
+                    </span>
+                    <span class="sent-breakdown">
+                        池{{ sentiment.pool_size }} ·
+                        一字{{ sentiment.limit_up_flat || 0 }} · 高开{{ sentiment.high_open }} ·
+                        平开{{ sentiment.flat_open }} · 低开{{ sentiment.low_open }} · 跌停{{ sentiment.limit_down || 0 }}
+                    </span>
+                </div>
             </div>
-            <div v-else class="empty-state">暂无数据，点击"刷新周期"获取</div>
-        </div>
-
-        <!-- 选股结果 -->
-        <div class="card">
-            <div class="card-title"><span class="icon">🔍</span> 今日选股（{{ screenerDate }}）</div>
             <table v-if="screenerHits.length">
                 <thead><tr><th>代码</th><th>名称</th><th>连板</th><th>竞价涨幅</th><th>换手</th><th>市值</th><th>偏离</th></tr></thead>
                 <tbody>
@@ -352,6 +365,62 @@
                 </div>
             </div>
             <div v-else class="empty-state">等待选股引擎与周期引擎结果交叉验证</div>
+        </div>
+
+        <!-- 10日涨幅榜（最底部）-->
+        <div class="card full-width">
+            <div class="card-title">
+                <span class="icon">📊</span> 10日涨幅榜 TOP30
+                <span v-if="rankingLive" style="margin-left:8px;font-size:11px;color:#34d399;">● 实时</span>
+                <span v-if="rankingUpdatedAt" style="margin-left:auto;font-size:12px;color:#6b7280;">
+                    {{ rankingUpdatedAt }}
+                </span>
+            </div>
+            <div style="max-height:560px;overflow-y:auto;overflow-x:auto">
+                <table v-if="ranking.length" class="sticky-thead">
+                    <thead><tr>
+                        <th>#</th>
+                        <th>代码</th>
+                        <th>名称</th>
+                        <th>板块</th>
+                        <th>最新价</th>
+                        <th>市值(亿)</th>
+                        <th>涨幅</th>
+                        <th>竞价涨幅</th>
+                        <th>10日涨幅</th>
+                        <th>连板</th>
+                        <th>最后封板</th>
+                        <th>偏离(%)</th>
+                        <th>标记</th>
+                    </tr></thead>
+                    <tbody>
+                        <tr v-for="(item, idx) in ranking" :key="item.code"
+                            :class="isLimitUp(item) ? 'limit-up-row' : ''">
+                            <td>{{ item.rank || (idx + 1) }}</td>
+                            <td>{{ item.code }}</td>
+                            <td>{{ item.name }}</td>
+                            <td>{{ item.industry || '-' }}</td>
+                            <td>{{ fmtNum(item.close, 2) }}</td>
+                            <td>{{ fmtNum(item.market_cap_yi, 1) }}</td>
+                            <td :class="numClass(item.change_pct)">{{ fmtPct(item.change_pct) }}</td>
+                            <td :class="numClass(item.auction_gain)">{{ fmtPct(item.auction_gain) }}</td>
+                            <td :class="numClass(item.gain_10d)">{{ fmtPct(item.gain_10d) }}</td>
+                            <td>{{ item.continuous_limit_up ? item.continuous_limit_up + '板' : '-' }}</td>
+                            <td>{{ item.last_limit_up_time || '-' }}</td>
+                            <td :class="item.deviation_pct > 100 ? 'gain-pos' : ''">
+                                {{ fmtNum(item.deviation_pct, 1) }}
+                            </td>
+                            <td>
+                                <span v-if="isRepresentative(item.code)" class="tag tag-rep">代表股</span>
+                                <span v-else-if="isCandidate(item.code)" class="tag tag-candidate">候选</span>
+                                <span v-if="item.is_main_board === false" class="tag tag-gem">创/科</span>
+                                <span v-else class="tag tag-main">主板</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div v-else class="empty-state">暂无数据，点击"刷新周期"获取</div>
+            </div>
         </div>
 
         <!-- 回测统计 -->
@@ -424,6 +493,9 @@ createApp({
     setup() {
         const snapshot = ref({})
         const ranking = ref([])
+        const rankingUpdatedAt = ref('')
+        const rankingLive = ref(false)
+        const sentiment = ref({})
         const screenerHits = ref([])
         const screenerDate = ref('')
         const signals = ref([])
@@ -478,32 +550,84 @@ createApp({
             return map[leader.value.aggression] || 'badge-blue'
         })
 
+        const sentimentClass = computed(() => {
+            const map = { '积极': 'sent-active', '正常': 'sent-normal', '谨慎': 'sent-cautious', '不操作': 'sent-no' }
+            return map[sentiment.value.verdict] || 'sent-normal'
+        })
+        const sentimentIcon = computed(() => {
+            const map = { '积极': '🔥', '正常': '✅', '谨慎': '⚠️', '不操作': '🛑' }
+            return map[sentiment.value.verdict] || '❓'
+        })
+
         function isRepresentative(code) { return snapshot.value.representative?.code === code }
         function isCandidate(code) { return snapshot.value.candidates?.some(c => c.code === code) }
         function levelIcon(level) { return { strong: '🟢', normal: '🔵', watch: '🟡', avoid: '🔴' }[level] || '⚪' }
+        function isLimitUp(item) {
+            // 今日涨停：ZT 池命中(连板≥1) 或 今日涨幅达到板块涨停阈值
+            if ((item.continuous_limit_up || 0) >= 1) return true
+            const isGem = !item.is_main_board
+            const thr = isGem ? 19.5 : 9.8
+            return (item.change_pct || 0) >= thr
+        }
+        function fmtNum(v, digits = 2) {
+            if (v === null || v === undefined || v === '' || isNaN(v)) return '-'
+            return Number(v).toFixed(digits)
+        }
+        function fmtPct(v) {
+            if (v === null || v === undefined || v === '' || isNaN(v)) return '-'
+            const n = Number(v); return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
+        }
+        function numClass(v) {
+            if (v === null || v === undefined || v === '' || isNaN(v)) return ''
+            return Number(v) >= 0 ? 'gain-pos' : 'gain-neg'
+        }
 
         function getDeviation(code) {
             return deviations.value.find(d => d.code === code)
         }
 
+        function isTradingTime() {
+            const now = new Date()
+            const d = now.getDay()
+            if (d === 0 || d === 6) return false
+            const m = now.getHours() * 60 + now.getMinutes()
+            return (m >= 555 && m <= 690) || (m >= 780 && m <= 900)
+        }
+
+        async function loadRankingLive() {
+            try {
+                const res = await fetch('/api/ranking-live').then(r => r.json())
+                if (res.ranking && res.ranking.length) {
+                    ranking.value = res.ranking
+                    rankingUpdatedAt.value = res.updated_at || ''
+                    rankingLive.value = !!res.live
+                }
+            } catch (e) { console.error('实时排行刷新失败:', e) }
+        }
+
         async function loadData() {
             try {
-                const [snapRes, rankRes, scrRes, sigRes, leaderRes, devRes] = await Promise.all([
+                const [snapRes, rankRes, scrRes, sigRes, leaderRes, devRes, sentRes] = await Promise.all([
                     fetch('/api/snapshot').then(r => r.json()),
                     fetch('/api/gain-ranking').then(r => r.json()),
                     fetch('/api/screener').then(r => r.json()),
                     fetch('/api/signals').then(r => r.json()),
                     fetch('/api/leader').then(r => r.json()),
                     fetch('/api/deviation').then(r => r.json()),
+                    fetch('/api/sentiment').then(r => r.json()),
                 ])
                 snapshot.value = snapRes
                 ranking.value = rankRes.ranking || []
+                rankingUpdatedAt.value = rankRes.updated_at || rankRes.date || ''
+                rankingLive.value = false
+                sentiment.value = sentRes || {}
                 screenerHits.value = scrRes.hits || []
                 screenerDate.value = scrRes.date || ''
                 signals.value = sigRes.signals || []
                 leader.value = leaderRes
                 deviations.value = devRes.results || []
             } catch (e) { console.error('加载数据失败:', e) }
+            if (isTradingTime()) loadRankingLive()
         }
 
         async function refreshCycle() {
@@ -532,14 +656,18 @@ createApp({
 
         onMounted(loadData)
         setInterval(loadData, 60000)
+        setInterval(() => { if (isTradingTime()) loadRankingLive() }, 10000)
 
         return {
-            snapshot, ranking, screenerHits, screenerDate, signals,
+            snapshot, ranking, rankingUpdatedAt, rankingLive, sentiment,
+            screenerHits, screenerDate, signals,
             leader, deviations, btResult,
             today, phaseClass, progressPct, progressClass,
             leaderClass, leaderIcon, leaderBadgeClass,
+            sentimentClass, sentimentIcon,
             refreshing, screening, backtesting,
-            isRepresentative, isCandidate, levelIcon, getDeviation,
+            isRepresentative, isCandidate, isLimitUp, levelIcon, getDeviation,
+            fmtNum, fmtPct, numClass,
             refreshCycle, refreshScreener, runBacktest,
         }
     }

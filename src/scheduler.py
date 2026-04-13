@@ -1,8 +1,8 @@
 """定时任务调度器
 
 - 收盘后（15:30）：更新10日涨幅排行 + 周期状态
-- 早盘（9:27）：执行选股 + 交叉验证
-- 支持 mock 模式（网络不通时使用模拟数据）
+- 早盘（9:27）：执行选股 + 交叉验证 + 邮件推送
+- 数据源：新浪财经(实时) + 东方财富(K线/排行) → AKShare(兜底) → Mock(降级)
 """
 import json
 import os
@@ -16,42 +16,40 @@ from src.engine.cycle import CycleEngine, calc_gain_10d
 from src.engine.screener import run_screener
 from src.engine.cross_validator import cross_validate
 
-# 是否使用模拟数据（环境变量 MOCK=1 或网络不通时自动降级）
-USE_MOCK = os.getenv("MOCK", "0") == "1"
-
 
 def _fetch_ranking() -> pd.DataFrame:
-    """获取10日涨幅排行，网络失败时降级为mock"""
-    if USE_MOCK:
-        from src.data.mock_data import generate_mock_ranking
-        scenario = os.getenv("MOCK_SCENARIO", "small_cycle_start")
-        print(f"[MOCK] 使用模拟数据，场景: {scenario}")
-        return generate_mock_ranking(scenario)
-
-    try:
-        from src.data.fetcher import fetch_realtime_spot
-        spot_df = fetch_realtime_spot()
-        return _calc_10d_gain_from_spot(spot_df)
-    except Exception as e:
-        print(f"实时数据拉取失败: {e}")
-        print("降级为模拟数据...")
-        from src.data.mock_data import generate_mock_ranking
-        return generate_mock_ranking("small_cycle_start")
+    """获取10日涨幅排行（全市场 top30，过滤 ST+新股，含富化字段）"""
+    from src.data.fetcher import fetch_gain_10d_ranking
+    return fetch_gain_10d_ranking(top_n=30)
 
 
 def _fetch_screener_data():
     """获取选股所需数据"""
-    if USE_MOCK:
-        from src.data.mock_data import generate_mock_spot, generate_mock_limit_up_history
-        return generate_mock_spot(), generate_mock_limit_up_history()
+    from src.data.fetcher import fetch_realtime_spot, fetch_limit_up_history
+    return fetch_realtime_spot(), fetch_limit_up_history(days=5)
 
-    try:
-        from src.data.fetcher import fetch_realtime_spot, fetch_limit_up_history
-        return fetch_realtime_spot(), fetch_limit_up_history(days=5)
-    except Exception as e:
-        print(f"数据拉取失败: {e}，降级为模拟数据")
-        from src.data.mock_data import generate_mock_spot, generate_mock_limit_up_history
-        return generate_mock_spot(), generate_mock_limit_up_history()
+
+def run_ranking_refresh() -> dict:
+    """仅刷新10日涨幅排行（不触发周期状态机更新）
+
+    用于盘中 10:00 拉取最新排行数据，使实时刷新的基准更贴近当天盘面。
+    """
+    print("=" * 50)
+    print(f"[{datetime.now()}] 盘中排行刷新...")
+
+    ranking_df = _fetch_ranking()
+    ranking_data = {
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "ranking": ranking_df.to_dict("records"),
+    }
+    (DATA_DIR / "latest_ranking.json").write_text(
+        json.dumps(ranking_data, ensure_ascii=False, indent=2)
+    )
+
+    print(f"排行刷新完成: {len(ranking_df)} 只")
+    print("=" * 50)
+    return ranking_data
 
 
 def run_cycle_update() -> dict:
@@ -68,10 +66,11 @@ def run_cycle_update() -> dict:
     # 1-2. 获取排行数据
     ranking_df = _fetch_ranking()
 
-    # 保存排行
+    # 保存排行（已是 top30，不再截断）
     ranking_data = {
         "date": datetime.now().strftime("%Y-%m-%d"),
-        "ranking": ranking_df.head(50).to_dict("records"),
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "ranking": ranking_df.to_dict("records"),
     }
     (DATA_DIR / "latest_ranking.json").write_text(
         json.dumps(ranking_data, ensure_ascii=False, indent=2)
@@ -112,9 +111,9 @@ def run_screener_update() -> dict:
 
     1. 拉取实时竞价数据
     2. 获取涨停历史（连板检测）
-    3. 高标龙头竞价反馈（一票否决层）
+    3. 高标龙头竞价反馈（仅作当日操作建议，不过滤选股结果）
     4. 执行选股筛选
-    5. 交叉验证（结合龙头反馈调整信号强度）
+    5. 交叉验证（结合龙头反馈微调仓位建议）
     """
     print("=" * 50)
     print(f"[{datetime.now()}] 开始选股...")
@@ -163,8 +162,38 @@ def run_screener_update() -> dict:
                 json.dumps(leader_data, ensure_ascii=False, indent=2)
             )
 
+    # 4.5 梯队情绪池：用 top30 龙头池的竞价分布衡量今日接力意愿
+    pool_sent = None
+    try:
+        from src.engine.sentiment_pool import (
+            compute_pool_sentiment, load_pool_from_ranking, save_sentiment,
+        )
+        pool_codes = load_pool_from_ranking()
+        if pool_codes:
+            pool_sent = compute_pool_sentiment(pool_codes, spot_df)
+            if pool_sent:
+                save_sentiment(pool_sent)
+                print(f"梯队情绪: {pool_sent.verdict} · {pool_sent.reason}")
+            else:
+                print("梯队情绪: 无有效样本")
+        else:
+            print("梯队情绪: latest_ranking.json 池为空，跳过")
+    except Exception as e:
+        print(f"梯队情绪计算失败: {e}")
+
     # 5. 执行选股
     hits = run_screener(spot_df, limit_up_hist, cycle_codes)
+
+    # 5.1 腾讯接口富化：补全 market_cap / volume_ratio / turnover 并做严格二次过滤
+    # 必要性：sina spot 源缺这些字段，screener 用了软过滤放行；此处用腾讯补齐后按通达信公式严格筛
+    if hits:
+        from src.config import SCREENER_CONFIG
+        from src.data.tencent_api import enrich_screener_hits
+        hits = enrich_screener_hits(
+            hits,
+            market_cap_max=SCREENER_CONFIG["market_cap_max"],
+            volume_ratio_min=SCREENER_CONFIG["volume_ratio_min"],
+        )
 
     # 5.5 240周线偏离度过滤
     from src.engine.ma_deviation import batch_check_deviation
@@ -222,7 +251,7 @@ def run_screener_update() -> dict:
             candidates=cycle_snapshot.get("candidates", []),
             prev_cycle=cycle_snapshot.get("prev_cycle"),
         )
-        signals = cross_validate(cs, hits, leader_fb)
+        signals = cross_validate(cs, hits, leader_fb, pool_sent)
         signals_data = {
             "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "cycle_phase": cycle_snapshot.get("phase", "孕育期"),
@@ -277,131 +306,6 @@ def run_screener_update() -> dict:
 
     return hits_data
 
-
-def _calc_10d_gain_from_spot(spot_df: pd.DataFrame) -> pd.DataFrame:
-    """从实时快照估算10日涨幅
-
-    AKShare stock_zh_a_spot_em 不直接提供10日涨幅，
-    需要拉取个股历史或使用其他接口。
-
-    方案：使用 stock_board_concept_hist_em 或逐个拉取
-    高效方案：使用 stock_rank_ljqs_ths（同花顺连续上涨排行）
-    或者用 stock_zh_a_hist 按个股拉取10天前收盘价
-    """
-    import akshare as ak
-
-    # 方案A：尝试用同花顺接口获取区间涨幅
-    try:
-        # 使用东方财富涨幅排行（可指定区间）
-        # stock_rank_cxg_ths: 创新高  stock_rank_lxsz_ths: 连续上涨
-        # 这些不直接给10日涨幅
-
-        # 最可靠方案：用全市场快照 + 历史收盘价计算
-        # 先获取当前价格
-        if spot_df.empty:
-            return pd.DataFrame()
-
-        # 获取10天前的收盘价：用 stock_zh_a_hist 拉取每只股票太慢
-        # 改用：stock_zh_a_spot_em 的60日涨跌幅 或自行计算
-        # 检查是否有相关列
-        available_cols = spot_df.columns.tolist()
-
-        # 尝试找到可用的涨幅列
-        gain_col_map = {
-            "60日涨跌幅": 60,
-            "年初至今涨跌幅": 0,
-        }
-
-        # 如果有"涨跌幅"列，我们需要累计10天的
-        # 最实用方案：选取涨幅前100的股票，逐个拉历史算精确10日涨幅
-        result = _calc_10d_precise(spot_df)
-        return result
-
-    except Exception as e:
-        print(f"计算10日涨幅失败: {e}")
-        return pd.DataFrame()
-
-
-def _calc_10d_precise(spot_df: pd.DataFrame) -> pd.DataFrame:
-    """精确计算10日涨幅：先粗筛再精算"""
-    import akshare as ak
-    from src.data.fetcher import fetch_stock_history
-
-    # 粗筛：用当日涨幅排前面的 + 最近活跃的股票
-    # 取全市场当日涨幅>0的股票
-    if "change_pct" in spot_df.columns:
-        active = spot_df[spot_df["change_pct"] > -5].copy()
-    else:
-        active = spot_df.copy()
-
-    # 对所有股票计算10日涨幅（批量拉取）
-    # 使用 stock_zh_a_hist 单只拉取，限制数量
-    # 先取最可能上榜的：当日涨停或近涨停的
-    results = []
-    codes_to_check = active["code"].tolist()
-
-    # 优化：使用 stock_board_industry_hist_em 或 stock_rank_lxsz_ths
-    # 尝试用连续上涨排行
-    try:
-        lx_df = ak.stock_rank_lxsz_ths()
-        if not lx_df.empty:
-            code_col = None
-            for col in ["股票代码", "代码", "code"]:
-                if col in lx_df.columns:
-                    code_col = col
-                    break
-            gain_col = None
-            for col in ["累计涨幅", "区间涨跌幅", "连续涨跌幅"]:
-                if col in lx_df.columns:
-                    gain_col = col
-                    break
-            name_col = None
-            for col in ["股票简称", "名称", "name"]:
-                if col in lx_df.columns:
-                    name_col = col
-                    break
-
-            if code_col and gain_col:
-                result = pd.DataFrame({
-                    "code": lx_df[code_col].astype(str),
-                    "name": lx_df[name_col] if name_col else "",
-                    "gain_10d": pd.to_numeric(lx_df[gain_col], errors="coerce"),
-                })
-                result = result.dropna(subset=["gain_10d"])
-                result["is_main_board"] = result["code"].apply(
-                    lambda c: not str(c).startswith(("300", "301", "688", "8", "4"))
-                )
-                return result.sort_values("gain_10d", ascending=False).head(100)
-    except Exception as e:
-        print(f"连续上涨排行获取失败: {e}")
-
-    # 兜底：逐个拉取Top标的的10日历史
-    # 限制数量避免太慢
-    check_limit = min(200, len(codes_to_check))
-    for code in codes_to_check[:check_limit]:
-        try:
-            hist = fetch_stock_history(str(code), days=15)
-            if hist is not None and len(hist) >= 10:
-                close_now = hist.iloc[-1]["收盘"]
-                close_10d = hist.iloc[-11]["收盘"] if len(hist) >= 11 else hist.iloc[0]["收盘"]
-                gain = (close_now / close_10d - 1) * 100
-                name_val = spot_df[spot_df["code"] == code]["name"].values
-                results.append({
-                    "code": str(code),
-                    "name": name_val[0] if len(name_val) > 0 else "",
-                    "gain_10d": round(gain, 2),
-                })
-        except Exception:
-            continue
-
-    if results:
-        result_df = pd.DataFrame(results)
-        result_df["is_main_board"] = result_df["code"].apply(
-            lambda c: not str(c).startswith(("300", "301", "688", "8", "4"))
-        )
-        return result_df.sort_values("gain_10d", ascending=False)
-
-    return pd.DataFrame(columns=["code", "name", "gain_10d", "is_main_board"])
 
 
 def _append_history(snapshot: dict):

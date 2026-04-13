@@ -3,13 +3,14 @@ import sys
 import uvicorn
 from apscheduler.schedulers.background import BackgroundScheduler
 
+# src.config 内部会自动加载 .env
 from src.config import API_HOST, API_PORT, SCREENER_CRON_HOUR, SCREENER_CRON_MINUTE, DATA_DIR
 from src.data.models import init_db
 
 
 def setup_scheduler():
     """配置定时任务"""
-    from src.scheduler import run_cycle_update, run_screener_update
+    from src.scheduler import run_cycle_update, run_screener_update, run_ranking_refresh
 
     scheduler = BackgroundScheduler()
 
@@ -35,10 +36,22 @@ def setup_scheduler():
         misfire_grace_time=300,
     )
 
+    # 盘中排行刷新（交易日 10:00）
+    scheduler.add_job(
+        run_ranking_refresh,
+        "cron",
+        day_of_week="mon-fri",
+        hour=10,
+        minute=0,
+        id="ranking_refresh",
+        misfire_grace_time=600,
+    )
+
     scheduler.start()
     print(f"定时任务已启动:")
     print(f"  - 周期更新: 周一至周五 15:30")
     print(f"  - 选股执行: 周一至周五 {SCREENER_CRON_HOUR}:{SCREENER_CRON_MINUTE:02d}")
+    print(f"  - 排行刷新: 周一至周五 10:00")
 
     return scheduler
 

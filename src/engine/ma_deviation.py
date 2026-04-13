@@ -122,7 +122,7 @@ def batch_check_deviation(
 def _get_weekly_closes(code: str) -> list[float]:
     """获取股票周线收盘价
 
-    优先从缓存读取，否则通过AKShare拉取
+    优先级：新浪K线（scale=1200=周K） → akshare(东方财富, 可能被WAF封)
     """
     import os
     use_mock = os.getenv("MOCK", "0") == "1"
@@ -130,19 +130,26 @@ def _get_weekly_closes(code: str) -> list[float]:
     if use_mock:
         return _mock_weekly_closes(code)
 
+    # 优先新浪周K（稳定可用）
+    try:
+        from src.data.sina_kline_api import fetch_kline, SCALE_WEEKLY
+        df = fetch_kline(code, scale=SCALE_WEEKLY, datalen=260)
+        if df is not None and not df.empty and "close" in df.columns:
+            return df["close"].astype(float).tolist()
+    except Exception as e:
+        print(f"  新浪周K{code}失败: {e}")
+
+    # 兜底 akshare 东财
     try:
         import akshare as ak
         df = ak.stock_zh_a_hist(
-            symbol=code,
-            period="weekly",
-            start_date="20210101",
-            adjust="qfq",
+            symbol=code, period="weekly", start_date="20210101", adjust="qfq",
         )
         if df is not None and not df.empty:
             close_col = "收盘" if "收盘" in df.columns else "close"
             return df[close_col].tolist()
     except Exception as e:
-        print(f"  获取{code}周线数据失败: {e}")
+        print(f"  akshare周K{code}失败: {e}")
 
     return []
 

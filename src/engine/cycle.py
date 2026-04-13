@@ -92,6 +92,18 @@ class CycleEngine:
         # 2. 状态转换
         self._transition()
 
+        # 2b. 转换后清理：代表股已被剔除但仍残留在 self.representative 的情况
+        #     （主要发生在 EBB 阶段 rep 掉出跟踪池、但状态机未走 _enter_ebb 的残留路径）
+        if self.representative and self.representative.code not in self.tracked:
+            if not self.prev_cycle:
+                self.prev_cycle = {
+                    "code": self.representative.code,
+                    "name": self.representative.name,
+                    "peak_gain": self.representative.peak_gain,
+                    "phase": self.phase.value,
+                }
+            self.representative = None
+
         # 3. 生成快照
         snapshot = self._build_snapshot(today)
 
@@ -323,8 +335,17 @@ class CycleEngine:
         self.phase_day = 1
 
     def _enter_ebb(self):
+        # 代表股谢幕 → 归档到 prev_cycle 并清空，避免快照继续显示陈旧代表股
+        if self.representative:
+            self.prev_cycle = {
+                "code": self.representative.code,
+                "name": self.representative.name,
+                "peak_gain": self.representative.peak_gain,
+                "phase": CyclePhase.EBB.value,
+            }
         self.phase = CyclePhase.EBB
         self.phase_day = 1
+        self.representative = None
 
     def _enter_chaos(self):
         self.phase = CyclePhase.CHAOS
@@ -335,8 +356,9 @@ class CycleEngine:
     def _build_snapshot(self, today: str) -> CycleSnapshot:
         """构建当日快照"""
         rep_dict = None
-        if self.representative:
-            rep = self.tracked.get(self.representative.code, self.representative)
+        # 只在代表股仍处于跟踪池内时渲染；已被剔除的直接不显示
+        if self.representative and self.representative.code in self.tracked:
+            rep = self.tracked[self.representative.code]
             rep_dict = {
                 "code": rep.code,
                 "name": rep.name,
