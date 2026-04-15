@@ -103,11 +103,13 @@ def fetch_limit_up_stocks_sina(
 
 
 def fetch_limit_up_history_sina(
-    days: int = 5, scan_change_pct_min: float = 5.0
+    days: int = 5, scan_change_pct_min: float = 2.0
 ) -> dict[str, pd.DataFrame]:
     """通过新浪K线回溯最近 N 天的涨停池
 
-    策略：对今日涨幅 >= scan_change_pct_min% 的股票批量拉 K 线，
+    策略：
+    1. 对今日涨幅 >= scan_change_pct_min% 的股票批量拉 K 线
+    2. 额外纳入涨停缓存中近期出现过的股票（防止遗漏连板断裂的标的）
     统计每一天 change_pct 达到该股票涨停线的股票，组成历史涨停池。
 
     返回格式与 fetch_limit_up_stocks 一致，key=YYYYMMDD
@@ -118,14 +120,32 @@ def fetch_limit_up_history_sina(
     if spot.empty:
         return {}
 
-    # 选候选：今日涨幅 >= 5%（连板股近期必在涨幅榜前列）
+    # 选候选：今日涨幅 >= 2%（降低门槛，避免遗漏昨日涨停但今天竞价低开的标的）
     strong = spot[spot["change_pct"] >= scan_change_pct_min][["code", "name"]].copy()
+
+    # 额外纳入涨停缓存中近期出现过的所有股票（确保连板不断裂）
+    try:
+        import json
+        from src.config import DATA_DIR
+        cache_file = DATA_DIR / "limit_up_cache.json"
+        if cache_file.exists():
+            cache = json.loads(cache_file.read_text())
+            cached_codes = set()
+            for records in cache.values():
+                for r in records:
+                    cached_codes.add(str(r.get("code", "")))
+            # 从 spot 中找到这些股票，补入候选
+            cached_in_spot = spot[spot["code"].astype(str).isin(cached_codes)][["code", "name"]]
+            strong = pd.concat([strong, cached_in_spot]).drop_duplicates(subset="code")
+    except Exception:
+        pass
+
     if strong.empty:
         return {}
 
     name_map = dict(zip(strong["code"].astype(str), strong["name"]))
     codes = strong["code"].astype(str).tolist()
-    print(f"回溯近{days}日涨停历史，扫描 {len(codes)} 只今日涨幅>{scan_change_pct_min}%的候选...")
+    print(f"回溯近{days}日涨停历史，扫描 {len(codes)} 只候选（涨幅>{scan_change_pct_min}% + 缓存历史涨停股）...")
 
     # 按日期聚合涨停股
     daily_lu: dict[str, list[dict]] = {}

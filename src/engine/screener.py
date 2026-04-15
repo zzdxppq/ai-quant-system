@@ -15,7 +15,7 @@ from typing import Optional
 
 import pandas as pd
 
-from src.config import SCREENER_CONFIG
+from src.config import SCREENER_CONFIG, now_cn
 
 
 @dataclass
@@ -169,7 +169,7 @@ def _detect_continuous_limit_up(limit_up_history: dict[str, pd.DataFrame]) -> di
         return {}
 
     from datetime import datetime
-    today_str = datetime.now().strftime("%Y%m%d")
+    today_str = now_cn().strftime("%Y%m%d")
 
     # 降序，排除今日
     all_dates = sorted(limit_up_history.keys(), reverse=True)

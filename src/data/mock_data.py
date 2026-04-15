@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
+from src.config import now_cn
+
 
 def generate_mock_ranking(scenario: str = "small_cycle_start") -> pd.DataFrame:
     """生成模拟10日涨幅排行数据
@@ -135,7 +137,7 @@ def generate_mock_spot() -> pd.DataFrame:
 def generate_mock_limit_up_history() -> dict[str, pd.DataFrame]:
     """生成模拟涨停历史"""
     dates = []
-    d = datetime.now()
+    d = now_cn()
     for _ in range(5):
         if d.weekday() < 5:
             dates.append(d.strftime("%Y%m%d"))

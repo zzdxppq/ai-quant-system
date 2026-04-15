@@ -115,8 +115,8 @@ def fetch_limit_up_history(days: int = 5) -> dict[str, pd.DataFrame]:
         print("[MOCK] 使用模拟涨停数据")
         return generate_mock_limit_up_history()
 
-    from datetime import datetime
-    today_str = datetime.now().strftime("%Y%m%d")
+    from src.config import now_cn
+    today_str = now_cn().strftime("%Y%m%d")
 
     # Step 1: 今日涨停池（东财主路径，新浪兜底）
     today_df = None
@@ -143,19 +143,26 @@ def fetch_limit_up_history(days: int = 5) -> dict[str, pd.DataFrame]:
     for d, df in cache.items():
         result.setdefault(d, df)
 
-    # Step 3: 若历史不足，用 sina K 线回溯补足并写回 cache
-    #   历史天数 = 除今日外的天数；至少需要 days-1 个过去交易日才能判多连板
+    # Step 3: 用 sina K线回溯补足历史涨停池
+    #   两种触发条件：
+    #   a) 历史天数不足（past_count < days-1）
+    #   b) 最近交易日的涨停数据量过少（可能采集不完整，如<10只）
     past_count = sum(1 for d in result.keys() if d != today_str)
-    if past_count < days - 1:
-        print(f"历史涨停仅 {past_count} 天，不足 {days - 1} 天，启动 sina K线回溯补足...")
+    # 检查最近2个交易日涨停数量是否可疑（正常A股每天至少有10+只涨停）
+    recent_dates = sorted([d for d in result if d != today_str], reverse=True)[:2]
+    cache_suspect = any(len(result[d]) < 10 for d in recent_dates) if recent_dates else False
+
+    if past_count < days - 1 or cache_suspect:
+        reason = f"历史仅{past_count}天" if past_count < days - 1 else f"近期涨停数据量可疑({', '.join(f'{d}={len(result[d])}只' for d in recent_dates)})"
+        print(f"涨停缓存不完整（{reason}），启动 sina K线回溯补足...")
         try:
             from src.data.sina_spot_api import fetch_limit_up_history_sina
             hist = fetch_limit_up_history_sina(days=days)
             for d, df in hist.items():
-                if d not in result:
+                # 回溯结果覆盖缓存中数据量更少的版本
+                if d not in result or len(df) > len(result[d]):
                     result[d] = df
-                # 持久化补回的历史，下次无需再回溯
-                _save_limit_up_cache(d, df)
+                    _save_limit_up_cache(d, df)
         except Exception as e:
             print(f"sina K线回溯补足失败: {e}")
 

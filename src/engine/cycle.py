@@ -15,7 +15,7 @@ from typing import Optional
 
 import pandas as pd
 
-from src.config import CYCLE_CONFIG, DATA_DIR
+from src.config import CYCLE_CONFIG, DATA_DIR, now_cn
 
 
 class CyclePhase(str, Enum):
@@ -84,7 +84,7 @@ class CycleEngine:
         Returns:
             CycleSnapshot 当日周期快照
         """
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = now_cn().strftime("%Y-%m-%d %H:%M:%S")
 
         # 1. 更新跟踪池
         self._update_tracked(gain_ranking)
@@ -162,7 +162,7 @@ class CycleEngine:
                 if code == top_code:
                     stock.top_days += 1
                     if not stock.first_top_date:
-                        stock.first_top_date = datetime.now().strftime("%Y-%m-%d")
+                        stock.first_top_date = now_cn().strftime("%Y-%m-%d")
                 # 非榜首时不重置top_days（可能暂时被超过后又回来）
 
             else:
@@ -174,7 +174,7 @@ class CycleEngine:
                     sustain_days=1 if gain >= self.cfg["gain_threshold_start"] else 0,
                     peak_gain=gain,
                     top_days=1 if code == top_code else 0,
-                    first_top_date=datetime.now().strftime("%Y-%m-%d") if code == top_code else "",
+                    first_top_date=now_cn().strftime("%Y-%m-%d") if code == top_code else "",
                     is_main_board=is_main,
                 )
                 self.tracked[code] = stock
@@ -397,7 +397,7 @@ class CycleEngine:
             "representative": asdict(self.representative) if self.representative else None,
             "tracked": {k: asdict(v) for k, v in self.tracked.items()},
             "prev_cycle": self.prev_cycle,
-            "updated_at": datetime.now().isoformat(),
+            "updated_at": now_cn().isoformat(),
         }
         self.state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2))
 

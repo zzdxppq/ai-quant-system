@@ -1,6 +1,13 @@
 """全局配置"""
 import os
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+TZ_CN = timezone(timedelta(hours=8))
+
+
+def now_cn() -> datetime:
+    return datetime.now(TZ_CN)
 
 # 项目根目录
 BASE_DIR = Path(__file__).resolve().parent.parent

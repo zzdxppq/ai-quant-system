@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from src.config import BASE_DIR, DATA_DIR
+from src.config import BASE_DIR, DATA_DIR, now_cn
 from src.engine.cycle import CycleEngine, CycleSnapshot, calc_gain_10d
 from src.engine.screener import run_screener, ScreenerHit
 from src.engine.cross_validator import cross_validate
@@ -139,7 +139,7 @@ async def get_ranking_live():
 
     return JSONResponse({
         "date": data.get("date", ""),
-        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "updated_at": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
         "ranking": result,
         "live": True,
     })
@@ -193,6 +193,15 @@ async def get_deviation():
     if dev_file.exists():
         return JSONResponse(json.loads(dev_file.read_text()))
     return JSONResponse({"date": "", "results": []})
+
+
+@app.get("/api/market-insight")
+async def get_market_insight():
+    """获取四维市场洞察（板块集中度/资金行为/情绪领袖/周期波形）"""
+    insight_file = DATA_DIR / "latest_insight.json"
+    if insight_file.exists():
+        return JSONResponse(json.loads(insight_file.read_text()))
+    return JSONResponse({"date": "", "sector_heats": [], "wave": None})
 
 
 @app.post("/api/backtest")

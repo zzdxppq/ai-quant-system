@@ -61,6 +61,17 @@ def evaluate_leader(
     # 在实时行情中找到龙头
     row = realtime_df[realtime_df["code"].astype(str) == str(leader_code)]
 
+    # 全市场快照未命中时，定向查询该股（科创板等在竞价时段可能不在全市场快照中）
+    if row.empty:
+        try:
+            from src.data.fetcher import fetch_realtime_batch
+            fallback_df = fetch_realtime_batch([str(leader_code)])
+            if not fallback_df.empty:
+                row = fallback_df[fallback_df["code"].astype(str) == str(leader_code)]
+                print(f"  [龙头反馈] 全市场快照未命中{leader_name}({leader_code})，定向查询成功")
+        except Exception as e:
+            print(f"  [龙头反馈] 定向查询{leader_code}失败: {e}")
+
     if row.empty:
         return LeaderFeedback(
             leader_code=leader_code,
@@ -180,7 +191,7 @@ def _classify(
 
 
 def find_leader_from_snapshot(snapshot: dict) -> Optional[tuple[str, str, float]]:
-    """从周期快照中找到高标龙头（10日涨幅榜第一）
+    """从周期快照中找到高标龙头（10日涨幅榜第一，全市场）
 
     Returns:
         (code, name, gain_10d) or None
@@ -195,5 +206,70 @@ def find_leader_from_snapshot(snapshot: dict) -> Optional[tuple[str, str, float]
     if candidates:
         top = max(candidates, key=lambda c: c.get("gain_10d", 0))
         return top["code"], top["name"], top["gain_10d"]
+
+    return None
+
+
+def find_main_board_leader_from_snapshot(
+    snapshot: dict,
+) -> Optional[tuple[str, str, float]]:
+    """从周期快照中找到主板最高标（排除创业板/科创板/北交所）
+
+    Returns:
+        (code, name, gain_10d) or None
+    """
+    def _is_main_board(code: str) -> bool:
+        code = str(code)
+        if code.startswith(("300", "301")):
+            return False
+        if code.startswith("688"):
+            return False
+        if code.startswith(("8", "4")):
+            return False
+        return True
+
+    # 代表股如果是主板，直接返回
+    if snapshot.get("representative"):
+        rep = snapshot["representative"]
+        if _is_main_board(rep["code"]):
+            return rep["code"], rep["name"], rep["gain_10d"]
+
+    # 从候选池中找主板涨幅最高的
+    candidates = snapshot.get("candidates", [])
+    main_board = [c for c in candidates if _is_main_board(c.get("code", ""))]
+    if main_board:
+        top = max(main_board, key=lambda c: c.get("gain_10d", 0))
+        return top["code"], top["name"], top["gain_10d"]
+
+    return None
+
+
+def find_main_board_leader_from_ranking(
+    ranking_file: str,
+) -> Optional[tuple[str, str, float]]:
+    """从排行数据中找到主板最高标（快照无主板候选时的兜底）
+
+    Args:
+        ranking_file: latest_ranking.json 的路径
+
+    Returns:
+        (code, name, gain_10d) or None
+    """
+    import json
+    from pathlib import Path
+
+    path = Path(ranking_file)
+    if not path.exists():
+        return None
+
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        return None
+
+    for item in data.get("ranking", []):
+        code = str(item.get("code", ""))
+        if item.get("is_main_board", False):
+            return code, item.get("name", ""), item.get("gain_10d", 0)
 
     return None

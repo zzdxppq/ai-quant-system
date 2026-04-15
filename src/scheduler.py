@@ -11,7 +11,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from src.config import DATA_DIR
+from src.config import DATA_DIR, now_cn
 from src.engine.cycle import CycleEngine, calc_gain_10d
 from src.engine.screener import run_screener
 from src.engine.cross_validator import cross_validate
@@ -24,9 +24,47 @@ def _fetch_ranking() -> pd.DataFrame:
 
 
 def _fetch_screener_data():
-    """获取选股所需数据"""
+    """获取选股所需数据
+
+    注意：先拉 spot 再拉涨停历史，涨停历史内部也需要 spot 时复用缓存，
+    避免短时间内多次拉全市场行情触发限流。
+    """
     from src.data.fetcher import fetch_realtime_spot, fetch_limit_up_history
-    return fetch_realtime_spot(), fetch_limit_up_history(days=5)
+
+    # 1. 先拿全市场实时行情
+    spot_df = fetch_realtime_spot()
+
+    # 2. 拉涨停历史（内部会再拉 spot，但有缓存/去重）
+    limit_up_hist = fetch_limit_up_history(days=5)
+
+    # 3. 如果 spot 拿到的是 mock（<100只），再试一次新浪
+    if len(spot_df) < 100:
+        print(f"  spot 只有 {len(spot_df)} 只，疑似 mock，重试新浪...")
+        try:
+            from src.data.sina_spot_api import fetch_a_share_list_sina
+            df = fetch_a_share_list_sina()
+            if not df.empty and len(df) > 100:
+                spot_df = df
+                print(f"  新浪重试成功: {len(spot_df)} 只")
+        except Exception as e:
+            print(f"  新浪重试失败: {e}")
+
+    return spot_df, limit_up_hist
+
+
+def _run_market_insight(ranking_records: list[dict]) -> None:
+    """运行四维市场洞察分析"""
+    try:
+        from src.engine.market_insight import (
+            analyze_market_insight, save_insight, load_prev_ranking,
+        )
+        prev = load_prev_ranking()
+        insight = analyze_market_insight(ranking_records, prev)
+        save_insight(insight)
+        print(f"[市场洞察] 波形={insight.wave.wave_phase}({insight.wave.intensity:.0f}) · "
+              f"板块集中度{insight.sector_concentration}% · {insight.capital_summary}")
+    except Exception as e:
+        print(f"[市场洞察] 分析失败: {e}")
 
 
 def run_ranking_refresh() -> dict:
@@ -35,17 +73,21 @@ def run_ranking_refresh() -> dict:
     用于盘中 10:00 拉取最新排行数据，使实时刷新的基准更贴近当天盘面。
     """
     print("=" * 50)
-    print(f"[{datetime.now()}] 盘中排行刷新...")
+    print(f"[{now_cn()}] 盘中排行刷新...")
 
     ranking_df = _fetch_ranking()
+    ranking_records = ranking_df.to_dict("records")
     ranking_data = {
-        "date": datetime.now().strftime("%Y-%m-%d"),
-        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "ranking": ranking_df.to_dict("records"),
+        "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
+        "updated_at": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
+        "ranking": ranking_records,
     }
     (DATA_DIR / "latest_ranking.json").write_text(
         json.dumps(ranking_data, ensure_ascii=False, indent=2)
     )
+
+    # 市场洞察
+    _run_market_insight(ranking_records)
 
     print(f"排行刷新完成: {len(ranking_df)} 只")
     print("=" * 50)
@@ -61,20 +103,31 @@ def run_cycle_update() -> dict:
     4. 保存快照
     """
     print("=" * 50)
-    print(f"[{datetime.now()}] 开始周期更新...")
+    print(f"[{now_cn()}] 开始周期更新...")
 
     # 1-2. 获取排行数据
     ranking_df = _fetch_ranking()
 
+    # 轮转 prev_ranking（用于资金行为对比）
+    try:
+        from src.engine.market_insight import rotate_ranking_for_prev
+        rotate_ranking_for_prev()
+    except Exception:
+        pass
+
     # 保存排行（已是 top30，不再截断）
+    ranking_records = ranking_df.to_dict("records")
     ranking_data = {
-        "date": datetime.now().strftime("%Y-%m-%d"),
-        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "ranking": ranking_df.to_dict("records"),
+        "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
+        "updated_at": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
+        "ranking": ranking_records,
     }
     (DATA_DIR / "latest_ranking.json").write_text(
         json.dumps(ranking_data, ensure_ascii=False, indent=2)
     )
+
+    # 市场洞察
+    _run_market_insight(ranking_records)
 
     # 3. 更新周期状态
     engine = CycleEngine()
@@ -101,6 +154,15 @@ def run_cycle_update() -> dict:
     if snapshot.representative:
         rep = snapshot.representative
         print(f"代表股: {rep['name']}({rep['code']}) 10日涨幅:{rep['gain_10d']}%")
+
+    # 收盘后同步刷新涨停缓存（数据最完整，为明天9:27选股准备）
+    try:
+        from src.data.fetcher import fetch_limit_up_history
+        print("  刷新涨停缓存...")
+        fetch_limit_up_history(days=5)
+    except Exception as e:
+        print(f"  涨停缓存刷新失败（不影响周期）: {e}")
+
     print("=" * 50)
 
     return snapshot_dict
@@ -116,7 +178,7 @@ def run_screener_update() -> dict:
     5. 交叉验证（结合龙头反馈微调仓位建议）
     """
     print("=" * 50)
-    print(f"[{datetime.now()}] 开始选股...")
+    print(f"[{now_cn()}] 开始选股...")
 
     # 1-2. 获取选股数据
     spot_df, limit_up_hist = _fetch_screener_data()
@@ -133,46 +195,79 @@ def run_screener_update() -> dict:
         for c in snapshot_data.get("candidates", []):
             cycle_codes.append(c["code"])
 
-    # 4. 高标龙头竞价反馈
+    # 4. 高标龙头竞价反馈（市场高标 + 主板最高标）
     from src.engine.leader_feedback import (
-        evaluate_leader, find_leader_from_snapshot, LeaderFeedback, LeaderSignal
+        evaluate_leader, find_leader_from_snapshot,
+        find_main_board_leader_from_snapshot,
+        find_main_board_leader_from_ranking,
+        LeaderFeedback, LeaderSignal,
     )
-    leader_fb = None
+    leader_fb = None          # 市场高标（全市场第一）
+    main_board_fb = None      # 主板最高标
     if cycle_snapshot:
+        # — 市场高标龙头 —
         leader_info = find_leader_from_snapshot(cycle_snapshot)
         if leader_info and not spot_df.empty:
             code, name, gain_10d = leader_info
             leader_fb = evaluate_leader(code, name, gain_10d, spot_df)
-            print(f"高标龙头: {leader_fb.leader_name} 竞价{leader_fb.auction_change_pct:+.1f}% → {leader_fb.signal.value}")
+            print(f"市场高标: {leader_fb.leader_name} 竞价{leader_fb.auction_change_pct:+.1f}% → {leader_fb.signal.value}")
             print(f"  {leader_fb.reason}")
 
-            # 保存龙头反馈
-            leader_data = {
-                "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "leader_code": leader_fb.leader_code,
-                "leader_name": leader_fb.leader_name,
-                "leader_gain_10d": leader_fb.leader_gain_10d,
-                "auction_change_pct": leader_fb.auction_change_pct,
-                "signal": leader_fb.signal.value,
-                "can_trade": leader_fb.can_trade,
-                "aggression": leader_fb.aggression,
-                "reason": leader_fb.reason,
-            }
-            (DATA_DIR / "latest_leader.json").write_text(
-                json.dumps(leader_data, ensure_ascii=False, indent=2)
+        # — 主板最高标 —
+        mb_info = find_main_board_leader_from_snapshot(cycle_snapshot)
+        if mb_info is None:
+            mb_info = find_main_board_leader_from_ranking(
+                str(DATA_DIR / "latest_ranking.json")
             )
+        if mb_info and not spot_df.empty:
+            mb_code, mb_name, mb_gain = mb_info
+            # 如果主板最高标与市场高标相同，复用结果
+            if leader_fb and str(mb_code) == str(leader_fb.leader_code):
+                main_board_fb = leader_fb
+            else:
+                main_board_fb = evaluate_leader(mb_code, mb_name, mb_gain, spot_df)
+            print(f"主板高标: {main_board_fb.leader_name} 竞价{main_board_fb.auction_change_pct:+.1f}% → {main_board_fb.signal.value}")
+            print(f"  {main_board_fb.reason}")
 
-    # 4.5 梯队情绪池：用 top30 龙头池的竞价分布衡量今日接力意愿
+        # 保存龙头反馈（两个）
+        def _fb_to_dict(fb: LeaderFeedback) -> dict:
+            return {
+                "leader_code": fb.leader_code,
+                "leader_name": fb.leader_name,
+                "leader_gain_10d": fb.leader_gain_10d,
+                "auction_change_pct": fb.auction_change_pct,
+                "signal": fb.signal.value,
+                "can_trade": fb.can_trade,
+                "aggression": fb.aggression,
+                "reason": fb.reason,
+            }
+
+        leader_data = {
+            "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
+            "market_leader": _fb_to_dict(leader_fb) if leader_fb else None,
+            "main_board_leader": _fb_to_dict(main_board_fb) if main_board_fb else None,
+            # 兼容旧字段（dashboard / cross_validator 可能读取）
+            **(  _fb_to_dict(leader_fb) if leader_fb else {}),
+        }
+        (DATA_DIR / "latest_leader.json").write_text(
+            json.dumps(leader_data, ensure_ascii=False, indent=2)
+        )
+
+    # 4.5 全市场竞价风向标 + 梯队情绪池
     pool_sent = None
+    market_stats = None
     try:
         from src.engine.sentiment_pool import (
-            compute_pool_sentiment, load_pool_from_ranking, save_sentiment,
+            compute_pool_sentiment, compute_market_auction_stats,
+            load_pool_from_ranking, save_sentiment,
         )
+        market_stats = compute_market_auction_stats(spot_df)
+
         pool_codes = load_pool_from_ranking()
         if pool_codes:
             pool_sent = compute_pool_sentiment(pool_codes, spot_df)
             if pool_sent:
-                save_sentiment(pool_sent)
+                save_sentiment(pool_sent, market_stats)
                 print(f"梯队情绪: {pool_sent.verdict} · {pool_sent.reason}")
             else:
                 print("梯队情绪: 无有效样本")
@@ -209,7 +304,7 @@ def run_screener_update() -> dict:
 
         # 保存偏离度数据
         deviation_data = {
-            "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
             "results": [
                 {
                     "code": d.code, "name": d.name,
@@ -233,7 +328,7 @@ def run_screener_update() -> dict:
 
     # 6. 保存选股结果
     hits_data = {
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
         "hits": [asdict(h) for h in hits],
     }
     (DATA_DIR / "latest_screener.json").write_text(
@@ -253,7 +348,7 @@ def run_screener_update() -> dict:
         )
         signals = cross_validate(cs, hits, leader_fb, pool_sent)
         signals_data = {
-            "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
             "cycle_phase": cycle_snapshot.get("phase", "孕育期"),
             "leader_signal": leader_fb.signal.value if leader_fb else None,
             "leader_can_trade": leader_fb.can_trade if leader_fb else None,
@@ -261,7 +356,7 @@ def run_screener_update() -> dict:
         }
     else:
         signals_data = {
-            "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
             "cycle_phase": cycle_snapshot.get("phase", "孕育期") if cycle_snapshot else "孕育期",
             "signals": [],
         }
@@ -277,7 +372,14 @@ def run_screener_update() -> dict:
         flag = " 🎯" if h.matched_cycle else ""
         print(f"  {h.code} {h.name} {h.continuous_limit_up}板 竞价{h.auction_gain}%{flag}")
 
-    # 8. 邮件推送
+    # 8. 同步刷新周期/排行/市场洞察（让看板在9:27后也能看到最新数据）
+    try:
+        print("  同步刷新周期+排行+洞察...")
+        run_cycle_update()
+    except Exception as e:
+        print(f"  同步刷新异常（不影响选股）: {e}")
+
+    # 9. 邮件推送
     try:
         from src.notify.email_sender import send_screener_report
         leader_data = None
@@ -289,6 +391,10 @@ def run_screener_update() -> dict:
         dev_file = DATA_DIR / "latest_deviation.json"
         if dev_file.exists():
             dev_data = json.loads(dev_file.read_text()).get("results")
+
+        # 重新加载周期快照（刚刚 run_cycle_update 已更新）
+        if snapshot_file.exists():
+            cycle_snapshot = json.loads(snapshot_file.read_text())
 
         send_screener_report(
             cycle_phase=cycle_snapshot.get("phase", "孕育期") if cycle_snapshot else "孕育期",

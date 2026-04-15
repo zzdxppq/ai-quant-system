@@ -197,6 +197,81 @@
 
         .empty-state { text-align: center; padding: 40px; color: #4b5563; }
 
+        /* 市场洞察四维面板 */
+        .insight-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+        }
+        .insight-box {
+            background: #0d1220; border-radius: 10px; padding: 14px 16px;
+            border: 1px solid #1e2a45;
+        }
+        .insight-box-title {
+            font-size: 13px; font-weight: 600; margin-bottom: 10px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .insight-box-title .ib-icon { font-size: 15px; }
+        .wave-bar {
+            height: 28px; background: #1a2040; border-radius: 6px;
+            position: relative; overflow: hidden; margin-bottom: 8px;
+        }
+        .wave-fill {
+            height: 100%; border-radius: 6px; display: flex;
+            align-items: center; padding-left: 10px; font-size: 12px;
+            font-weight: 600; color: #fff; transition: width 0.5s ease;
+        }
+        .wave-fill.w-ebb { background: linear-gradient(90deg, #374151, #4b5563); }
+        .wave-fill.w-start { background: linear-gradient(90deg, #92400e, #fbbf24); }
+        .wave-fill.w-main { background: linear-gradient(90deg, #065f46, #10b981); }
+        .wave-fill.w-accel { background: linear-gradient(90deg, #047857, #34d399); }
+        .wave-fill.w-decay { background: linear-gradient(90deg, #7f1d1d, #ef4444); }
+        .insight-desc { font-size: 12px; color: #8892a8; line-height: 1.5; }
+        .insight-metric {
+            display: inline-flex; align-items: baseline; gap: 4px;
+            margin-right: 12px; font-size: 12px;
+        }
+        .insight-metric .im-val { font-size: 16px; font-weight: 700; }
+        .sector-bar-row {
+            display: flex; align-items: center; gap: 8px;
+            margin-bottom: 6px; font-size: 12px;
+        }
+        .sector-bar-label { width: 64px; text-align: right; color: #a0aec0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sector-bar-track { flex: 1; height: 18px; background: #1a2040; border-radius: 4px; overflow: hidden; }
+        .sector-bar-fill {
+            height: 100%; border-radius: 4px; display: flex;
+            align-items: center; padding-left: 6px; font-size: 11px;
+            font-weight: 600; color: #fff; min-width: 20px;
+        }
+        .sector-bar-fill.sb-1 { background: linear-gradient(90deg, #60a5fa, #3b82f6); }
+        .sector-bar-fill.sb-2 { background: linear-gradient(90deg, #a78bfa, #7c3aed); }
+        .sector-bar-fill.sb-3 { background: linear-gradient(90deg, #34d399, #059669); }
+        .sector-bar-fill.sb-4 { background: linear-gradient(90deg, #fbbf24, #d97706); }
+        .sector-bar-fill.sb-5 { background: linear-gradient(90deg, #f87171, #dc2626); }
+        .capital-tag {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 11px; font-weight: 600; margin: 2px;
+        }
+        .ct-new { background: #1e3a5f; color: #60a5fa; }
+        .ct-acc { background: #065f46; color: #34d399; }
+        .ct-sus { background: #1a1a2e; color: #a0aec0; }
+        .ct-dec { background: #78350f; color: #fbbf24; }
+        .ct-exh { background: #7f1d1d; color: #ef4444; }
+        .leader-chain {
+            font-size: 13px; font-weight: 600; padding: 8px 12px;
+            background: #111827; border-radius: 6px; border-left: 3px solid #a78bfa;
+            margin-bottom: 8px;
+        }
+        .leader-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 5px 0; font-size: 12px;
+        }
+        .leader-role-tag {
+            display: inline-block; padding: 1px 6px; border-radius: 4px;
+            font-size: 10px; font-weight: 700;
+        }
+        .lr-space { background: #7f1d1d; color: #fca5a5; }
+        .lr-chain { background: #92400e; color: #fbbf24; }
+        .lr-follow { background: #1a1a2e; color: #a0aec0; }
+
         /* 梯队情绪 · 内联在今日选股卡片标题右侧 */
         .sentiment-inline {
             margin-left: auto;
@@ -246,7 +321,10 @@
                 {{ snapshot.phase || '加载中...' }}
             </div>
             <div class="cycle-info">
-                <div class="meta">第 {{ snapshot.phase_day || 0 }} 天</div>
+                <div class="meta">
+                    第 {{ snapshot.phase_day || 0 }} 天
+                    <span v-if="snapshot.date" style="margin-left:12px;color:#6b7280;">更新：{{ snapshot.date }}</span>
+                </div>
                 <div class="rep" v-if="snapshot.representative">
                     <div class="label">周期代表股</div>
                     <div class="value">
@@ -271,22 +349,25 @@
                     峰值 {{ snapshot.prev_cycle.peak_gain }}%
                 </div>
 
-                <!-- 龙头反馈 -->
-                <div v-if="leader.signal" class="leader-card" :class="leaderClass">
-                    <div class="leader-icon">{{ leaderIcon }}</div>
-                    <div class="leader-info">
-                        <div class="title">
-                            高标龙头：{{ leader.leader_name }}
-                            竞价 <span :class="leader.auction_change_pct >= 0 ? 'gain-pos' : 'gain-neg'">
-                                {{ leader.auction_change_pct > 0 ? '+' : '' }}{{ leader.auction_change_pct }}%
-                            </span>
+                <!-- 龙头反馈：市场高标 + 主板高标 -->
+                <template v-for="(ld, idx) in leaderList" :key="idx">
+                    <div v-if="ld.signal" class="leader-card" :class="getLeaderClass(ld)">
+                        <div class="leader-icon">{{ getLeaderIcon(ld) }}</div>
+                        <div class="leader-info">
+                            <div class="title">
+                                {{ ld._tag }}：{{ ld.leader_name }}
+                                （{{ ld.leader_gain_10d }}%）
+                                竞价 <span :class="ld.auction_change_pct >= 0 ? 'gain-pos' : 'gain-neg'">
+                                    {{ ld.auction_change_pct > 0 ? '+' : '' }}{{ ld.auction_change_pct }}%
+                                </span>
+                            </div>
+                            <div class="desc">{{ ld.reason }}</div>
                         </div>
-                        <div class="desc">{{ leader.reason }}</div>
+                        <div class="leader-badge" :class="getLeaderBadgeClass(ld)">
+                            {{ ld.can_trade ? ld.aggression : '不操作' }}
+                        </div>
                     </div>
-                    <div class="leader-badge" :class="leaderBadgeClass">
-                        {{ leader.can_trade ? leader.aggression : '不操作' }}
-                    </div>
-                </div>
+                </template>
 
                 <!-- 进度条 -->
                 <div class="progress-bar" v-if="snapshot.representative">
@@ -307,17 +388,28 @@
         <div class="card full-width">
             <div class="card-title">
                 <span class="icon">🔍</span> 今日选股（{{ screenerDate }}）
-                <div v-if="sentiment.verdict" class="sentiment-inline" :class="sentimentClass">
-                    <span style="font-size:14px;">{{ sentimentIcon }}</span>
-                    <span class="sent-verdict">梯队情绪：{{ sentiment.verdict }}</span>
-                    <span class="sent-avg">
-                        加权竞价 {{ sentiment.weighted_auction_gain >= 0 ? '+' : '' }}{{ sentiment.weighted_auction_gain }}%
-                    </span>
-                    <span class="sent-breakdown">
-                        池{{ sentiment.pool_size }} ·
-                        一字{{ sentiment.limit_up_flat || 0 }} · 高开{{ sentiment.high_open }} ·
-                        平开{{ sentiment.flat_open }} · 低开{{ sentiment.low_open }} · 跌停{{ sentiment.limit_down || 0 }}
-                    </span>
+                <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+                    <div v-if="market" class="sentiment-inline" :class="marketClass">
+                        <span style="font-size:14px;">{{ marketIcon }}</span>
+                        <span class="sent-verdict">市场风向：{{ market.verdict }}</span>
+                        <span class="sent-breakdown">
+                            一字涨停{{ market.limit_up_flat }} ·
+                            跌>9%={{ market.drop_over_9pct }} ·
+                            跌停{{ market.limit_down }}
+                        </span>
+                    </div>
+                    <div v-if="sentiment.verdict" class="sentiment-inline" :class="sentimentClass">
+                        <span style="font-size:14px;">{{ sentimentIcon }}</span>
+                        <span class="sent-verdict">梯队情绪：{{ sentiment.verdict }}</span>
+                        <span class="sent-avg">
+                            加权竞价 {{ sentiment.weighted_auction_gain >= 0 ? '+' : '' }}{{ sentiment.weighted_auction_gain }}%
+                        </span>
+                        <span class="sent-breakdown">
+                            池{{ sentiment.pool_size }} ·
+                            一字{{ sentiment.limit_up_flat || 0 }} · 高开{{ sentiment.high_open }} ·
+                            平开{{ sentiment.flat_open }} · 低开{{ sentiment.low_open }} · 跌停{{ sentiment.limit_down || 0 }}
+                        </span>
+                    </div>
                 </div>
             </div>
             <table v-if="screenerHits.length">
@@ -365,6 +457,120 @@
                 </div>
             </div>
             <div v-else class="empty-state">等待选股引擎与周期引擎结果交叉验证</div>
+        </div>
+
+        <!-- 市场洞察（四维面板）-->
+        <div class="card full-width" v-if="insight.wave">
+            <div class="card-title">
+                <span class="icon">🧠</span> 市场洞察 · 四维读盘
+                <span style="margin-left:auto;font-size:12px;color:#6b7280;">{{ insight.date }}</span>
+            </div>
+            <div class="insight-grid">
+                <!-- 周期波形 -->
+                <div class="insight-box">
+                    <div class="insight-box-title">
+                        <span class="ib-icon">🌊</span> 周期波形
+                        <span style="margin-left:auto;font-size:18px;font-weight:700;"
+                              :style="{color: waveColor}">
+                            {{ insight.wave.wave_phase }}
+                        </span>
+                    </div>
+                    <div class="wave-bar">
+                        <div class="wave-fill" :class="waveClass"
+                             :style="{width: insight.wave.intensity + '%'}">
+                            {{ insight.wave.intensity.toFixed(0) }}
+                        </div>
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;margin-bottom:6px;">
+                        <span class="insight-metric">
+                            榜首 <span class="im-val gain-pos">{{ fmtPct(insight.wave.top1_gain) }}</span>
+                        </span>
+                        <span class="insight-metric">
+                            前5均 <span class="im-val gain-pos">{{ fmtPct(insight.wave.top5_avg) }}</span>
+                        </span>
+                        <span class="insight-metric">
+                            全榜均 <span class="im-val" :class="numClass(insight.wave.top30_avg)">{{ fmtPct(insight.wave.top30_avg) }}</span>
+                        </span>
+                        <span class="insight-metric">
+                            >45%数 <span class="im-val" style="color:#fbbf24;">{{ insight.wave.breadth }}</span>
+                        </span>
+                        <span class="insight-metric">
+                            衰减比 <span class="im-val" :style="{color: insight.wave.decay_ratio >= 0.5 ? '#34d399' : '#ef4444'}">{{ insight.wave.decay_ratio.toFixed(2) }}</span>
+                        </span>
+                    </div>
+                    <div class="insight-desc">{{ insight.wave.description }}</div>
+                </div>
+
+                <!-- 板块集中度 -->
+                <div class="insight-box">
+                    <div class="insight-box-title">
+                        <span class="ib-icon">🏭</span> 板块集中度
+                        <span style="margin-left:auto;font-size:16px;font-weight:700;color:#60a5fa;">
+                            {{ insight.sector_concentration }}%
+                        </span>
+                    </div>
+                    <div v-for="(sh, idx) in insight.sector_heats.slice(0, 5)" :key="sh.industry"
+                         class="sector-bar-row">
+                        <span class="sector-bar-label">{{ sh.industry }}</span>
+                        <div class="sector-bar-track">
+                            <div class="sector-bar-fill" :class="'sb-' + (idx + 1)"
+                                 :style="{width: Math.max(sh.weight * 3, 12) + '%'}">
+                                {{ sh.count }}只 {{ sh.weight }}%
+                            </div>
+                        </div>
+                        <span style="font-size:11px;color:#6b7280;width:50px;text-align:right;">
+                            均{{ sh.avg_gain_10d.toFixed(0) }}%
+                        </span>
+                    </div>
+                    <div class="insight-desc" style="margin-top:6px;">{{ insight.sector_verdict }}</div>
+                </div>
+
+                <!-- 资金行为 -->
+                <div class="insight-box">
+                    <div class="insight-box-title">
+                        <span class="ib-icon">💰</span> 资金行为画像
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <span class="capital-tag ct-new">新进 {{ insight.new_entry_count }}</span>
+                        <span class="capital-tag ct-acc">加速 {{ insight.accelerating_count }}</span>
+                        <span class="capital-tag ct-sus">持续 {{ insight.sustained_count }}</span>
+                        <span class="capital-tag ct-dec">减速 {{ insight.decelerating_count }}</span>
+                        <span class="capital-tag ct-exh">退潮 {{ insight.exhausting_count }}</span>
+                    </div>
+                    <div class="insight-desc" style="font-size:13px;font-weight:600;margin-bottom:4px;">
+                        {{ insight.capital_summary }}
+                    </div>
+                    <div style="max-height:120px;overflow-y:auto;">
+                        <div v-for="ci in capitalHighlights" :key="ci.code"
+                             style="font-size:11px;color:#8892a8;padding:2px 0;">
+                            <span :class="'capital-tag ct-' + ciTagClass(ci.tag)">{{ ciTagLabel(ci.tag) }}</span>
+                            {{ ci.name }} {{ ci.detail }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 情绪领袖 -->
+                <div class="insight-box">
+                    <div class="insight-box-title">
+                        <span class="ib-icon">👑</span> 情绪领袖
+                    </div>
+                    <div class="leader-chain" v-if="insight.emotion_chain">
+                        {{ insight.emotion_chain }}
+                    </div>
+                    <div v-for="el in insight.emotion_leaders" :key="el.code" class="leader-item">
+                        <span class="leader-role-tag"
+                              :class="el.role === 'space_opener' ? 'lr-space' : el.role === 'chain_starter' ? 'lr-chain' : 'lr-follow'">
+                            {{ el.role === 'space_opener' ? '空间板' : el.role === 'chain_starter' ? '连板龙' : '跟随' }}
+                        </span>
+                        <span style="font-weight:600;">{{ el.name }}</span>
+                        <span class="gain-pos">{{ fmtPct(el.gain_10d) }}</span>
+                        <span v-if="el.continuous_limit_up >= 2" style="color:#fbbf24;">
+                            {{ el.continuous_limit_up }}板
+                        </span>
+                        <span style="color:#6b7280;">{{ el.reason }}</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- 10日涨幅榜（最底部）-->
@@ -496,18 +702,21 @@ createApp({
         const rankingUpdatedAt = ref('')
         const rankingLive = ref(false)
         const sentiment = ref({})
+        const market = ref(null)
         const screenerHits = ref([])
         const screenerDate = ref('')
         const signals = ref([])
         const leader = ref({})
         const deviations = ref([])
         const btResult = ref(null)
+        const insight = ref({})
         const refreshing = ref(false)
         const screening = ref(false)
         const backtesting = ref(false)
 
         const today = new Date().toLocaleDateString('zh-CN', {
-            year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
+            year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
+            timeZone: 'Asia/Shanghai',
         })
 
         const phaseClass = computed(() => {
@@ -531,24 +740,42 @@ createApp({
             if (g >= 45) return 'mid'; return 'low'
         })
 
-        const leaderClass = computed(() => {
-            const map = {
-                '强正反馈': 'leader-strong-pos', '正反馈': 'leader-pos',
-                '中性': 'leader-neutral', '负反馈': 'leader-neg', '跌停': 'leader-limit-down',
+        // 龙头列表：市场高标 + 主板高标
+        const leaderList = computed(() => {
+            const res = []
+            const ml = leader.value.market_leader
+            const mb = leader.value.main_board_leader
+            if (ml && ml.signal) res.push({ ...ml, _tag: '市场高标' })
+            if (mb && mb.signal) {
+                // 如果与市场高标不同才展示
+                if (!ml || mb.leader_code !== ml.leader_code) {
+                    res.push({ ...mb, _tag: '主板高标' })
+                }
             }
-            return map[leader.value.signal] || 'leader-neutral'
+            // 兼容旧格式（无 market_leader 字段）
+            if (res.length === 0 && leader.value.signal) {
+                res.push({ ...leader.value, _tag: '高标龙头' })
+            }
+            return res
         })
 
-        const leaderIcon = computed(() => {
-            const map = { '强正反馈': '🚀', '正反馈': '☀️', '中性': '☁️', '负反馈': '🌧️', '跌停': '⛔' }
-            return map[leader.value.signal] || '❓'
-        })
-
-        const leaderBadgeClass = computed(() => {
-            if (!leader.value.can_trade) return 'badge-red'
+        const signalClassMap = {
+            '强正反馈': 'leader-strong-pos', '正反馈': 'leader-pos',
+            '中性': 'leader-neutral', '负反馈': 'leader-neg', '跌停': 'leader-limit-down',
+        }
+        const signalIconMap = { '强正反馈': '🚀', '正反馈': '☀️', '中性': '☁️', '负反馈': '🌧️', '跌停': '⛔' }
+        function getLeaderClass(ld) { return signalClassMap[ld.signal] || 'leader-neutral' }
+        function getLeaderIcon(ld) { return signalIconMap[ld.signal] || '❓' }
+        function getLeaderBadgeClass(ld) {
+            if (!ld.can_trade) return 'badge-red'
             const map = { '积极': 'badge-green', '正常': 'badge-blue', '谨慎': 'badge-yellow' }
-            return map[leader.value.aggression] || 'badge-blue'
-        })
+            return map[ld.aggression] || 'badge-blue'
+        }
+
+        // 保留旧 computed 供其他地方引用
+        const leaderClass = computed(() => getLeaderClass(leader.value))
+        const leaderIcon = computed(() => getLeaderIcon(leader.value))
+        const leaderBadgeClass = computed(() => getLeaderBadgeClass(leader.value))
 
         const sentimentClass = computed(() => {
             const map = { '积极': 'sent-active', '正常': 'sent-normal', '谨慎': 'sent-cautious', '不操作': 'sent-no' }
@@ -558,6 +785,38 @@ createApp({
             const map = { '积极': '🔥', '正常': '✅', '谨慎': '⚠️', '不操作': '🛑' }
             return map[sentiment.value.verdict] || '❓'
         })
+
+        const marketClass = computed(() => {
+            const map = { '强势': 'sent-active', '中性': 'sent-normal', '弱势': 'sent-no' }
+            return map[market.value?.verdict] || 'sent-normal'
+        })
+        const marketIcon = computed(() => {
+            const map = { '强势': '🚀', '中性': '⚖️', '弱势': '🌧️' }
+            return map[market.value?.verdict] || '❓'
+        })
+
+        // 市场洞察 computed
+        const waveClass = computed(() => {
+            const map = { '潮退': 'w-ebb', '启动浪': 'w-start', '主升浪': 'w-main', '加速浪': 'w-accel', '衰减浪': 'w-decay' }
+            return map[insight.value.wave?.wave_phase] || 'w-ebb'
+        })
+        const waveColor = computed(() => {
+            const map = { '潮退': '#6b7280', '启动浪': '#fbbf24', '主升浪': '#10b981', '加速浪': '#34d399', '衰减浪': '#ef4444' }
+            return map[insight.value.wave?.wave_phase] || '#6b7280'
+        })
+        const capitalHighlights = computed(() => {
+            if (!insight.value.capital_profile) return []
+            // Show non-sustained items first, then sustained (they are boring)
+            return insight.value.capital_profile
+                .filter(ci => ci.tag !== 'sustained')
+                .slice(0, 10)
+        })
+        function ciTagClass(tag) {
+            return { new_entry: 'new', accelerating: 'acc', sustained: 'sus', decelerating: 'dec', exhausting: 'exh' }[tag] || 'sus'
+        }
+        function ciTagLabel(tag) {
+            return { new_entry: '新进', accelerating: '加速', sustained: '持续', decelerating: '减速', exhausting: '退潮' }[tag] || tag
+        }
 
         function isRepresentative(code) { return snapshot.value.representative?.code === code }
         function isCandidate(code) { return snapshot.value.candidates?.some(c => c.code === code) }
@@ -587,7 +846,7 @@ createApp({
         }
 
         function isTradingTime() {
-            const now = new Date()
+            const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }))
             const d = now.getDay()
             if (d === 0 || d === 6) return false
             const m = now.getHours() * 60 + now.getMinutes()
@@ -607,7 +866,7 @@ createApp({
 
         async function loadData() {
             try {
-                const [snapRes, rankRes, scrRes, sigRes, leaderRes, devRes, sentRes] = await Promise.all([
+                const [snapRes, rankRes, scrRes, sigRes, leaderRes, devRes, sentRes, insightRes] = await Promise.all([
                     fetch('/api/snapshot').then(r => r.json()),
                     fetch('/api/gain-ranking').then(r => r.json()),
                     fetch('/api/screener').then(r => r.json()),
@@ -615,17 +874,20 @@ createApp({
                     fetch('/api/leader').then(r => r.json()),
                     fetch('/api/deviation').then(r => r.json()),
                     fetch('/api/sentiment').then(r => r.json()),
+                    fetch('/api/market-insight').then(r => r.json()),
                 ])
                 snapshot.value = snapRes
                 ranking.value = rankRes.ranking || []
                 rankingUpdatedAt.value = rankRes.updated_at || rankRes.date || ''
                 rankingLive.value = false
                 sentiment.value = sentRes || {}
+                market.value = sentRes?.market || null
                 screenerHits.value = scrRes.hits || []
                 screenerDate.value = scrRes.date || ''
                 signals.value = sigRes.signals || []
                 leader.value = leaderRes
                 deviations.value = devRes.results || []
+                insight.value = insightRes || {}
             } catch (e) { console.error('加载数据失败:', e) }
             if (isTradingTime()) loadRankingLive()
         }
@@ -656,18 +918,28 @@ createApp({
 
         onMounted(loadData)
         setInterval(loadData, 60000)
-        setInterval(() => { if (isTradingTime()) loadRankingLive() }, 10000)
+        let liveTimer = null
+        function startLivePolling() {
+            const interval = isTradingTime() ? 10000 : 60000
+            if (liveTimer) clearInterval(liveTimer)
+            liveTimer = setInterval(loadRankingLive, interval)
+        }
+        loadRankingLive()
+        startLivePolling()
+        setInterval(startLivePolling, 60000)
 
         return {
-            snapshot, ranking, rankingUpdatedAt, rankingLive, sentiment,
+            snapshot, ranking, rankingUpdatedAt, rankingLive, sentiment, market,
             screenerHits, screenerDate, signals,
-            leader, deviations, btResult,
+            leader, leaderList, deviations, btResult, insight,
             today, phaseClass, progressPct, progressClass,
             leaderClass, leaderIcon, leaderBadgeClass,
-            sentimentClass, sentimentIcon,
+            getLeaderClass, getLeaderIcon, getLeaderBadgeClass,
+            sentimentClass, sentimentIcon, marketClass, marketIcon,
+            waveClass, waveColor, capitalHighlights,
             refreshing, screening, backtesting,
             isRepresentative, isCandidate, isLimitUp, levelIcon, getDeviation,
-            fmtNum, fmtPct, numClass,
+            fmtNum, fmtPct, numClass, ciTagClass, ciTagLabel,
             refreshCycle, refreshScreener, runBacktest,
         }
     }

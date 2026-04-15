@@ -16,6 +16,8 @@ from typing import Optional
 
 import httpx
 
+from src.config import now_cn
+
 ZT_POOL_URL = "http://push2ex.eastmoney.com/getTopicZTPool"
 
 HEADERS = {
@@ -36,7 +38,7 @@ def fetch_zt_pool(date: Optional[str] = None) -> dict:
         失败返回空 dict
     """
     if date is None:
-        date = datetime.now().strftime("%Y%m%d")
+        date = now_cn().strftime("%Y%m%d")
 
     params = {
         "ut": "7eea3edcaed734bea9cbfc24409ed989",

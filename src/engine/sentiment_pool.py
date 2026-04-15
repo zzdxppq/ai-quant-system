@@ -22,7 +22,18 @@ from typing import Optional
 
 import pandas as pd
 
-from src.config import DATA_DIR
+from src.config import DATA_DIR, now_cn
+
+
+@dataclass
+class MarketAuctionStats:
+    """全市场竞价风向标（9:27 竞价结束后统计）"""
+    date: str
+    total: int                     # 全市场有效样本数
+    limit_up_flat: int             # 一字涨停（竞价即封板）
+    drop_over_9pct: int            # 跌幅 > 9%（濒临跌停）
+    limit_down: int                # 跌停
+    verdict: str                   # 强势 / 中性 / 弱势
 
 
 @dataclass
@@ -154,7 +165,7 @@ def compute_pool_sentiment(
     )
 
     return PoolSentiment(
-        date=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        date=now_cn().strftime("%Y-%m-%d %H:%M:%S"),
         pool_size=len(gains),
         avg_auction_gain=round(avg, 2),
         weighted_auction_gain=round(wavg, 2),
@@ -166,6 +177,71 @@ def compute_pool_sentiment(
         verdict=verdict,
         reason=reason,
     )
+
+
+def compute_market_auction_stats(
+    spot_df: pd.DataFrame | None = None,
+) -> Optional[MarketAuctionStats]:
+    """全市场竞价风向标：一字涨停数 / 跌幅>9% / 跌停数
+
+    优先使用传入的 spot_df，为空则自行拉取。
+    只统计非 ST、非停牌的 A 股（与 screener 口径一致）。
+    """
+    if spot_df is None or spot_df.empty:
+        try:
+            from src.data.fetcher import fetch_realtime_spot
+            spot_df = fetch_realtime_spot()
+        except Exception as e:
+            print(f"[市场风向] 拉取 spot 失败: {e}")
+            return None
+
+    if spot_df.empty:
+        return None
+
+    df = spot_df.copy()
+    df["code"] = df["code"].astype(str)
+
+    name_u = df["name"].astype(str).str.upper()
+    name_raw = df["name"].astype(str)
+    df = df[
+        ~name_u.str.contains("ST")
+        & ~name_raw.str.contains("退")
+    ].copy()
+
+    for col in ("open", "pre_close"):
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    df = df[(df["open"] > 0) & (df["pre_close"] > 0)].copy()
+
+    df["auction_pct"] = (df["open"] / df["pre_close"] - 1) * 100
+    is_20cm = df["code"].str.startswith(("300", "301", "688", "8", "4"))
+
+    lu_thr = pd.Series(9.7, index=df.index)
+    lu_thr[is_20cm] = 19.4
+    ld_thr = pd.Series(-9.7, index=df.index)
+    ld_thr[is_20cm] = -19.4
+
+    limit_up_flat = int((df["auction_pct"] >= lu_thr).sum())
+    limit_down = int((df["auction_pct"] <= ld_thr).sum())
+    drop_over_9 = int((df["auction_pct"] <= -9).sum())
+
+    if limit_up_flat >= 10 and limit_down <= 3:
+        verdict = "强势"
+    elif limit_down >= 10 or drop_over_9 >= 20:
+        verdict = "弱势"
+    else:
+        verdict = "中性"
+
+    stats = MarketAuctionStats(
+        date=now_cn().strftime("%Y-%m-%d %H:%M:%S"),
+        total=len(df),
+        limit_up_flat=limit_up_flat,
+        drop_over_9pct=drop_over_9,
+        limit_down=limit_down,
+        verdict=verdict,
+    )
+    print(f"[市场风向] {verdict} · 样本{len(df)} · "
+          f"一字{limit_up_flat} 跌>9%={drop_over_9} 跌停{limit_down}")
+    return stats
 
 
 def load_pool_from_ranking() -> list[str]:
@@ -180,6 +256,12 @@ def load_pool_from_ranking() -> list[str]:
         return []
 
 
-def save_sentiment(sentiment: PoolSentiment) -> None:
+def save_sentiment(
+    sentiment: PoolSentiment,
+    market_stats: MarketAuctionStats | None = None,
+) -> None:
+    data = asdict(sentiment)
+    if market_stats:
+        data["market"] = asdict(market_stats)
     path = DATA_DIR / "latest_sentiment.json"
-    path.write_text(json.dumps(asdict(sentiment), ensure_ascii=False, indent=2))
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2))

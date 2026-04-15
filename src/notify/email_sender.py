@@ -8,6 +8,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
+from src.config import now_cn
+
 
 # QQ邮箱 SMTP 配置
 SMTP_HOST = "smtp.qq.com"
@@ -35,7 +37,7 @@ def send_screener_report(
         print("[邮件] 未配置 SMTP_USER 或 SMTP_PASSWORD，跳过推送")
         return False
 
-    now = datetime.now()
+    now = now_cn()
     subject = f"【周期选股】{now.strftime('%m/%d')} {cycle_phase} | "
 
     if signals:
@@ -56,7 +58,7 @@ def _build_html(
     cycle_phase, cycle_day, representative, leader, hits, signals, deviations
 ) -> str:
     """构建邮件HTML"""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = now_cn().strftime("%Y-%m-%d %H:%M:%S")
 
     # 周期状态颜色
     phase_colors = {
@@ -65,24 +67,44 @@ def _build_html(
     }
     phase_color = phase_colors.get(cycle_phase, "#6b7280")
 
-    # 龙头反馈
+    # 龙头反馈（市场高标 + 主板最高标）
     leader_html = ""
-    if leader and leader.get("signal"):
-        leader_icons = {
-            "强正反馈": "🚀", "正反馈": "☀️", "中性": "☁️", "负反馈": "🌧️", "跌停": "⛔"
-        }
-        icon = leader_icons.get(leader["signal"], "❓")
-        color = "#10b981" if leader.get("can_trade") else "#ef4444"
-        leader_html = f"""
-        <div style="background:#f8f9fa;border-left:4px solid {color};padding:12px;margin:12px 0;border-radius:4px;">
-            <b>{icon} 高标龙头：{leader.get('leader_name', '')}</b>
-            竞价 <span style="color:{'#ef4444' if leader.get('auction_change_pct',0)>=0 else '#10b981'}">
-                {'+' if leader.get('auction_change_pct',0)>0 else ''}{leader.get('auction_change_pct', 0)}%
-            </span>
-            → <b style="color:{color}">{'可操作 - ' + leader.get('aggression','') if leader.get('can_trade') else '⛔ 当日不操作'}</b>
-            <div style="color:#666;font-size:12px;margin-top:4px;">{leader.get('reason', '')}</div>
+    leader_icons = {
+        "强正反馈": "🚀", "正反馈": "☀️", "中性": "☁️", "负反馈": "🌧️", "跌停": "⛔"
+    }
+
+    def _render_leader_block(tag: str, ld: dict) -> str:
+        if not ld or not ld.get("signal"):
+            return ""
+        icon = leader_icons.get(ld["signal"], "❓")
+        color = "#10b981" if ld.get("can_trade") else "#ef4444"
+        chg = ld.get("auction_change_pct", 0)
+        chg_color = "#ef4444" if chg >= 0 else "#10b981"
+        chg_sign = "+" if chg > 0 else ""
+        trade_text = (
+            f"可操作 - {ld.get('aggression', '')}"
+            if ld.get("can_trade")
+            else "⛔ 当日不操作"
+        )
+        return f"""
+        <div style="background:#f8f9fa;border-left:4px solid {color};padding:12px;margin:8px 0;border-radius:4px;">
+            <b>{icon} {tag}：{ld.get('leader_name', '')}</b>
+            （10日涨幅 {ld.get('leader_gain_10d', '')}%）
+            竞价 <span style="color:{chg_color}">{chg_sign}{chg}%</span>
+            → <b style="color:{color}">{trade_text}</b>
+            <div style="color:#666;font-size:12px;margin-top:4px;">{ld.get('reason', '')}</div>
         </div>
         """
+
+    if leader:
+        # 新格式：market_leader + main_board_leader
+        market_ld = leader.get("market_leader")
+        mb_ld = leader.get("main_board_leader")
+        if market_ld or mb_ld:
+            leader_html = _render_leader_block("市场高标", market_ld) + _render_leader_block("主板高标", mb_ld)
+        elif leader.get("signal"):
+            # 兼容旧格式（只有一个龙头）
+            leader_html = _render_leader_block("高标龙头", leader)
 
     # 代表股
     rep_html = ""
