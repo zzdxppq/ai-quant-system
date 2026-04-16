@@ -43,7 +43,18 @@ def setup_scheduler():
         day_of_week="mon-fri",
         hour=10,
         minute=0,
-        id="ranking_refresh",
+        id="ranking_refresh_am",
+        misfire_grace_time=600,
+    )
+
+    # 午间排行刷新（交易日 12:30 北京时间，早盘结束后）
+    scheduler.add_job(
+        run_ranking_refresh,
+        "cron",
+        day_of_week="mon-fri",
+        hour=12,
+        minute=30,
+        id="ranking_refresh_noon",
         misfire_grace_time=600,
     )
 
@@ -51,7 +62,7 @@ def setup_scheduler():
     print(f"定时任务已启动（UTC+8 北京时间）:")
     print(f"  - 周期更新: 周一至周五 15:30")
     print(f"  - 选股执行: 周一至周五 {SCREENER_CRON_HOUR}:{SCREENER_CRON_MINUTE:02d}")
-    print(f"  - 排行刷新: 周一至周五 10:00")
+    print(f"  - 排行刷新: 周一至周五 10:00 / 12:30")
 
     return scheduler
 
