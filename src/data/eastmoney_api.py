@@ -301,11 +301,16 @@ def calc_10d_gain_ranking(top_n: int = 100) -> pd.DataFrame:
     # 3. 用新浪K线批量计算10日涨幅（更稳定，不易被反爬）
     codes = candidates["code"].tolist()
     names = dict(zip(candidates["code"], candidates["name"]))
+    # 传入实时价格，避免K线当日数据延迟导致涨幅不准
+    realtime_prices = dict(zip(
+        candidates["code"].astype(str),
+        candidates["close"].astype(float),
+    ))
 
     print(f"  候选 {len(codes)} 只，拉取10日K线...")
 
     from src.data.sina_kline_api import calc_10d_gain
-    result_df = calc_10d_gain(codes, names)
+    result_df = calc_10d_gain(codes, names, realtime_prices=realtime_prices)
 
     if result_df.empty:
         # 新浪也失败了，尝试东方财富逐个拉（加间隔）

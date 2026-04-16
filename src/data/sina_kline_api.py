@@ -94,18 +94,26 @@ def fetch_kline_batch(
 NEW_STOCK_MIN_TRADING_DAYS = 60  # 新股过滤阈值：上市不足60个交易日直接剔除
 
 
-def calc_10d_gain(codes: list[str], names: dict[str, str] = None) -> pd.DataFrame:
+def calc_10d_gain(
+    codes: list[str],
+    names: dict[str, str] = None,
+    realtime_prices: dict[str, float] = None,
+) -> pd.DataFrame:
     """用新浪K线计算10日涨幅
 
     Args:
         codes: 股票代码列表
         names: {code: name} 映射
+        realtime_prices: {code: 最新价}，盘中/收盘时用实时价覆盖K线末根，
+                         避免K线当日数据延迟导致涨幅不准
 
     Returns:
         DataFrame: code, name, gain_10d, close, is_main_board
     """
     if names is None:
         names = {}
+    if realtime_prices is None:
+        realtime_prices = {}
 
     results = []
     for i, code in enumerate(codes):
@@ -115,8 +123,22 @@ def calc_10d_gain(codes: list[str], names: dict[str, str] = None) -> pd.DataFram
             # 新股：实际交易日 < 60，剔除
             continue
 
-        close_now = df.iloc[-1]["close"]
-        idx = max(0, len(df) - 11)
+        # 最新价：优先用实时行情（准确），K线末根兜底
+        close_now = realtime_prices.get(code, df.iloc[-1]["close"])
+
+        # 10个交易日前的收盘价
+        # K线可能还没包含今天 → 判断末根日期是否是今天
+        from src.config import now_cn
+        today_str = now_cn().strftime("%Y-%m-%d")
+        last_kline_date = str(df.iloc[-1]["date"])[:10]
+
+        if last_kline_date == today_str:
+            # K线包含今天，10日前 = iloc[-11]
+            idx = max(0, len(df) - 11)
+        else:
+            # K线不含今天（延迟），10日前 = iloc[-10]
+            idx = max(0, len(df) - 10)
+
         close_10d = df.iloc[idx]["close"]
 
         if close_10d <= 0:
