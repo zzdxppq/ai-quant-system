@@ -372,14 +372,7 @@ def run_screener_update() -> dict:
         flag = " 🎯" if h.matched_cycle else ""
         print(f"  {h.code} {h.name} {h.continuous_limit_up}板 竞价{h.auction_gain}%{flag}")
 
-    # 8. 同步刷新周期/排行/市场洞察（让看板在9:27后也能看到最新数据）
-    try:
-        print("  同步刷新周期+排行+洞察...")
-        run_cycle_update()
-    except Exception as e:
-        print(f"  同步刷新异常（不影响选股）: {e}")
-
-    # 9. 邮件推送
+    # 8. 邮件推送（紧接选股结果，不等看板数据刷新，确保9:30前送达）
     try:
         from src.notify.email_sender import send_screener_report
         leader_data = None
@@ -392,10 +385,6 @@ def run_screener_update() -> dict:
         if dev_file.exists():
             dev_data = json.loads(dev_file.read_text()).get("results")
 
-        # 重新加载周期快照（刚刚 run_cycle_update 已更新）
-        if snapshot_file.exists():
-            cycle_snapshot = json.loads(snapshot_file.read_text())
-
         send_screener_report(
             cycle_phase=cycle_snapshot.get("phase", "孕育期") if cycle_snapshot else "孕育期",
             cycle_day=cycle_snapshot.get("phase_day", 0) if cycle_snapshot else 0,
@@ -407,6 +396,17 @@ def run_screener_update() -> dict:
         )
     except Exception as e:
         print(f"[邮件] 推送异常: {e}")
+
+    # 9. 异步刷新看板数据（周期+排行+洞察），不阻塞选股返回
+    import threading
+    def _background_refresh():
+        try:
+            print("  [后台] 刷新周期+排行+洞察...")
+            run_cycle_update()
+            print("  [后台] 刷新完成")
+        except Exception as e:
+            print(f"  [后台] 刷新异常: {e}")
+    threading.Thread(target=_background_refresh, daemon=True).start()
 
     print("=" * 50)
 
