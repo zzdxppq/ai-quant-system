@@ -188,6 +188,15 @@ def run_cycle_update() -> dict:
     except Exception as e:
         print(f"  涨停缓存刷新失败（不影响周期）: {e}")
 
+    # 收盘后回填选股记录的当日收盘价
+    try:
+        from src.engine.screener_history import backfill_close
+        from src.data.fetcher import fetch_realtime_spot
+        spot = fetch_realtime_spot()
+        backfill_close(spot)
+    except Exception as e:
+        print(f"  选股记录回填失败: {e}")
+
     print("=" * 50)
 
     return snapshot_dict
@@ -401,6 +410,14 @@ def run_screener_update() -> dict:
     for h in hits:
         flag = " 🎯" if h.matched_cycle else ""
         print(f"  {h.code} {h.name} {h.continuous_limit_up}板 竞价{h.auction_gain}%{flag}")
+
+    # 选股记录：归档今日 + 回填昨日次日竞价
+    try:
+        from src.engine.screener_history import archive_today_hits, backfill_next_day_auction
+        archive_today_hits([asdict(h) for h in hits])
+        backfill_next_day_auction(spot_df)
+    except Exception as e:
+        print(f"[选股记录] 异常: {e}")
 
     # 8. 邮件推送（紧接选股结果，不等看板数据刷新，确保9:30前送达）
     try:

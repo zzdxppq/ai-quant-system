@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>选股记录 · AI量化周期看板</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: #0a0e1a; color: #e0e6ed; min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a1f35, #0d1220);
+            border-bottom: 1px solid #2a3050;
+            padding: 16px 24px; display: flex; justify-content: space-between; align-items: center;
+        }
+        .header h1 {
+            font-size: 20px; font-weight: 600;
+            background: linear-gradient(90deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .header .nav { display: flex; gap: 12px; }
+        .header .nav a {
+            color: #a0aec0; text-decoration: none; font-size: 13px;
+            padding: 6px 14px; border: 1px solid #3a4568; border-radius: 6px;
+            transition: all 0.2s;
+        }
+        .header .nav a:hover, .header .nav a.active {
+            border-color: #60a5fa; color: #60a5fa;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+        /* 胜率面板 */
+        .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+        .stat-card {
+            background: #111827; border: 1px solid #1e2a45; border-radius: 12px;
+            padding: 20px; text-align: center;
+        }
+        .stat-card .label { font-size: 13px; color: #8892a8; margin-bottom: 8px; }
+        .stat-card .rate { font-size: 32px; font-weight: 700; }
+        .stat-card .detail { font-size: 12px; color: #6b7280; margin-top: 4px; }
+        .rate-high { color: #10b981; }
+        .rate-mid { color: #fbbf24; }
+        .rate-low { color: #ef4444; }
+
+        /* 记录表 */
+        .card {
+            background: #111827; border: 1px solid #1e2a45; border-radius: 12px; padding: 20px;
+        }
+        .card-title {
+            font-size: 14px; color: #8892a8; margin-bottom: 16px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th {
+            text-align: left; padding: 8px 10px; font-size: 12px;
+            color: #6b7280; border-bottom: 1px solid #1e2a45; font-weight: 500;
+            position: sticky; top: 0; background: #111827; z-index: 2;
+        }
+        td { padding: 8px 10px; font-size: 13px; border-bottom: 1px solid #0d1220; }
+        tr:hover td { background: #0d1220; }
+        .gain-pos { color: #ef4444; }
+        .gain-neg { color: #10b981; }
+        .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+        .tag-win { background: #065f46; color: #34d399; }
+        .tag-lose { background: #7f1d1d; color: #fca5a5; }
+        .tag-pending { background: #1a1a2e; color: #6b7280; }
+        .empty-state { text-align: center; padding: 60px; color: #4b5563; }
+
+        /* 日期分组 */
+        .date-group {
+            background: #0d1220; padding: 6px 12px; font-size: 12px; color: #60a5fa;
+            font-weight: 600; border-left: 3px solid #3b82f6;
+        }
+
+        @media (max-width: 768px) {
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="header">
+        <h1>选股记录</h1>
+        <div class="nav">
+            <a href="/">看板</a>
+            <a href="/history" class="active">选股记录</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 胜率统计 -->
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="label">本周胜率</div>
+                <div class="rate" :class="rateClass(stats.weekly)">
+                    {{ stats.weekly.win_rate }}%
+                </div>
+                <div class="detail">{{ stats.weekly.wins }}/{{ stats.weekly.trades }} 笔</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">本月胜率</div>
+                <div class="rate" :class="rateClass(stats.monthly)">
+                    {{ stats.monthly.win_rate }}%
+                </div>
+                <div class="detail">{{ stats.monthly.wins }}/{{ stats.monthly.trades }} 笔</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">本年胜率</div>
+                <div class="rate" :class="rateClass(stats.yearly)">
+                    {{ stats.yearly.win_rate }}%
+                </div>
+                <div class="detail">{{ stats.yearly.wins }}/{{ stats.yearly.trades }} 笔</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">总胜率</div>
+                <div class="rate" :class="rateClass(stats.total)">
+                    {{ stats.total.win_rate }}%
+                </div>
+                <div class="detail">{{ stats.total.wins }}/{{ stats.total.trades }} 笔</div>
+            </div>
+        </div>
+
+        <!-- 记录表 -->
+        <div class="card">
+            <div class="card-title">历史选股记录（{{ records.length }} 条）</div>
+            <div style="max-height:600px;overflow-y:auto">
+                <table v-if="records.length">
+                    <thead>
+                        <tr>
+                            <th>日期</th>
+                            <th>代码</th>
+                            <th>名称</th>
+                            <th>连板</th>
+                            <th>开盘价</th>
+                            <th>竞价涨幅</th>
+                            <th>收盘价</th>
+                            <th>日内涨幅</th>
+                            <th>次日竞价</th>
+                            <th>胜负</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template v-for="(group, date) in groupedRecords" :key="date">
+                            <tr>
+                                <td colspan="10" class="date-group">{{ date }}（{{ group.length }} 只）</td>
+                            </tr>
+                            <tr v-for="r in group" :key="r.code + r.date">
+                                <td>{{ r.date }}</td>
+                                <td>{{ r.code }}</td>
+                                <td>{{ r.name }}</td>
+                                <td>{{ r.continuous_limit_up }}板</td>
+                                <td>{{ r.open_price || '-' }}</td>
+                                <td :class="numClass(r.auction_gain)">{{ fmtPct(r.auction_gain) }}</td>
+                                <td>{{ r.close_price || '-' }}</td>
+                                <td :class="numClass(r.close_gain)">{{ fmtPct(r.close_gain) }}</td>
+                                <td :class="numClass(r.next_day_auction_gain)">{{ fmtPct(r.next_day_auction_gain) }}</td>
+                                <td>
+                                    <span v-if="r.is_win === true" class="tag tag-win">盈</span>
+                                    <span v-else-if="r.is_win === false" class="tag tag-lose">亏</span>
+                                    <span v-else class="tag tag-pending">待定</span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <div v-else class="empty-state">暂无选股记录</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const { createApp, ref, computed, onMounted } = Vue
+
+createApp({
+    setup() {
+        const records = ref([])
+        const stats = ref({
+            total: { trades: 0, wins: 0, win_rate: 0 },
+            weekly: { trades: 0, wins: 0, win_rate: 0 },
+            monthly: { trades: 0, wins: 0, win_rate: 0 },
+            yearly: { trades: 0, wins: 0, win_rate: 0 },
+        })
+
+        const groupedRecords = computed(() => {
+            const groups = {}
+            for (const r of records.value) {
+                const d = r.date || 'unknown'
+                if (!groups[d]) groups[d] = []
+                groups[d].push(r)
+            }
+            return groups
+        })
+
+        function rateClass(s) {
+            if (!s || s.trades === 0) return ''
+            if (s.win_rate >= 60) return 'rate-high'
+            if (s.win_rate >= 40) return 'rate-mid'
+            return 'rate-low'
+        }
+
+        function numClass(v) {
+            if (v == null) return ''
+            return v >= 0 ? 'gain-pos' : 'gain-neg'
+        }
+
+        function fmtPct(v) {
+            if (v == null) return '-'
+            return (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
+        }
+
+        async function loadData() {
+            try {
+                const res = await fetch('/api/screener-history').then(r => r.json())
+                records.value = res.records || []
+                stats.value = res.stats || stats.value
+            } catch (e) {
+                console.error('加载选股记录失败:', e)
+            }
+        }
+
+        onMounted(loadData)
+
+        return { records, stats, groupedRecords, rateClass, numClass, fmtPct }
+    }
+}).mount('#app')
+</script>
+</body>
+</html>

@@ -27,6 +27,15 @@ async def index():
     html_path = static_dir / "index.html"
     if html_path.exists():
         return html_path.read_text(encoding="utf-8")
+    return "<h1>AI量化���期看板</h1>"
+
+
+@app.get("/history", response_class=HTMLResponse)
+async def history_page():
+    """选股记录页"""
+    html_path = static_dir / "history.html"
+    if html_path.exists():
+        return html_path.read_text(encoding="utf-8")
     return "<h1>AI量化周期看板</h1><p>前端文件未找到</p>"
 
 
@@ -204,13 +213,11 @@ async def get_market_insight():
     return JSONResponse({"date": "", "sector_heats": [], "wave": None})
 
 
-@app.post("/api/backtest")
-async def run_backtest():
-    """运行回测（模拟数据）"""
-    try:
-        from src.engine.backtest import run_backtest_mock
-        from dataclasses import asdict
-        result = run_backtest_mock()
-        return JSONResponse({"status": "ok", "result": asdict(result)})
-    except Exception as e:
-        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+@app.get("/api/screener-history")
+async def get_screener_history():
+    """获取选股记录+胜率统计"""
+    from src.engine.screener_history import get_history, calc_win_stats
+    return JSONResponse({
+        "records": get_history(limit=500),
+        "stats": calc_win_stats(),
+    })

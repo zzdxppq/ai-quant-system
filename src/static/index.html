@@ -308,9 +308,9 @@
             <button class="btn" :class="{loading: screening}" @click="refreshScreener">
                 {{ screening ? '选股中...' : '执行选股' }}
             </button>
-            <button class="btn btn-accent" :class="{loading: backtesting}" @click="runBacktest">
-                {{ backtesting ? '回测中...' : '运行回测' }}
-            </button>
+            <a href="/history" class="btn btn-accent" style="text-decoration:none;">
+                选股记录
+            </a>
         </div>
     </div>
 
