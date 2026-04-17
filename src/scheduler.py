@@ -52,6 +52,31 @@ def _fetch_screener_data():
     return spot_df, limit_up_hist
 
 
+def _find_leader_from_ranking(ranking_file: str, main_board_only: bool = False):
+    """从排行数据中找高标龙头
+
+    Args:
+        ranking_file: latest_ranking.json 路径
+        main_board_only: True=只找主板
+    Returns:
+        (code, name, gain_10d) or None
+    """
+    from pathlib import Path
+    path = Path(ranking_file)
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        return None
+    for item in data.get("ranking", []):
+        code = str(item.get("code", ""))
+        if main_board_only and not item.get("is_main_board", False):
+            continue
+        return code, item.get("name", ""), item.get("gain_10d", 0)
+    return None
+
+
 def _run_market_insight(ranking_records: list[dict]) -> None:
     """运行四维市场洞察分析"""
     try:
@@ -204,21 +229,26 @@ def run_screener_update() -> dict:
     )
     leader_fb = None          # 市场高标（全市场第一）
     main_board_fb = None      # 主板最高标
-    if cycle_snapshot:
-        # — 市场高标龙头 —
-        leader_info = find_leader_from_snapshot(cycle_snapshot)
-        if leader_info and not spot_df.empty:
+
+    # 高标龙头直接从排行数据取（而非周期快照），确保是最新10日涨幅榜第一
+    ranking_file = str(DATA_DIR / "latest_ranking.json")
+
+    if not spot_df.empty:
+        # — 市场高标龙头（排行榜第一） —
+        leader_info = _find_leader_from_ranking(ranking_file, main_board_only=False)
+        # 排行数据可能还没生成，fallback 到周期快照
+        if leader_info is None and cycle_snapshot:
+            leader_info = find_leader_from_snapshot(cycle_snapshot)
+        if leader_info:
             code, name, gain_10d = leader_info
             leader_fb = evaluate_leader(code, name, gain_10d, spot_df)
             print(f"市场高标: {leader_fb.leader_name} 竞价{leader_fb.auction_change_pct:+.1f}% → {leader_fb.signal.value}")
             print(f"  {leader_fb.reason}")
 
         # — 主板最高标 —
-        mb_info = find_main_board_leader_from_snapshot(cycle_snapshot)
-        if mb_info is None:
-            mb_info = find_main_board_leader_from_ranking(
-                str(DATA_DIR / "latest_ranking.json")
-            )
+        mb_info = _find_leader_from_ranking(ranking_file, main_board_only=True)
+        if mb_info is None and cycle_snapshot:
+            mb_info = find_main_board_leader_from_snapshot(cycle_snapshot)
         if mb_info and not spot_df.empty:
             mb_code, mb_name, mb_gain = mb_info
             # 如果主板最高标与市场高标相同，复用结果
