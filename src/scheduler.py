@@ -414,7 +414,7 @@ def run_screener_update() -> dict:
     # 选股记录：归档今日 + 回填昨日次日竞价
     try:
         from src.engine.screener_history import archive_today_hits, backfill_next_day_auction
-        archive_today_hits([asdict(h) for h in hits])
+        archive_today_hits([asdict(h) for h in hits], spot_df)
         backfill_next_day_auction(spot_df)
     except Exception as e:
         print(f"[选股记录] 异常: {e}")

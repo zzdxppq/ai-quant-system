@@ -48,11 +48,12 @@ def _save(records: list[dict]):
     HISTORY_FILE.write_text(json.dumps(records, ensure_ascii=False, indent=2))
 
 
-def archive_today_hits(hits: list[dict]):
+def archive_today_hits(hits: list[dict], spot_df=None):
     """9:27选股后归档当日结果
 
     Args:
         hits: ScreenerHit 的 asdict() 列表
+        spot_df: 实时行情（用于获取昨收价）
     """
     if not hits:
         return
@@ -60,23 +61,35 @@ def archive_today_hits(hits: list[dict]):
     records = _load()
     today = now_cn().strftime("%Y-%m-%d")
 
+    # 构建昨收价映射
+    pre_close_map = {}
+    if spot_df is not None and not spot_df.empty:
+        for _, row in spot_df.iterrows():
+            code = str(row.get("code", ""))
+            pc = float(row.get("pre_close", 0))
+            if code and pc > 0:
+                pre_close_map[code] = pc
+
     # 去重：同一天同一只股票不重复写入
     existing = {(r["date"], r["code"]) for r in records}
 
     new_count = 0
     for h in hits:
-        key = (today, h.get("code", ""))
+        code = h.get("code", "")
+        key = (today, code)
         if key in existing:
             continue
         records.append({
             "date": today,
-            "code": h.get("code", ""),
+            "code": code,
             "name": h.get("name", ""),
             "continuous_limit_up": h.get("continuous_limit_up", 0),
             "open_price": h.get("open_price", 0),
+            "pre_close": pre_close_map.get(code, 0),
             "auction_gain": h.get("auction_gain", 0),
             "close_price": None,
             "close_gain": None,
+            "day_change": None,
             "next_day_open": None,
             "next_day_auction_gain": None,
             "is_win": None,
@@ -111,9 +124,19 @@ def backfill_close(spot_df):
             close = price_map.get(code)
             if close and close > 0:
                 open_p = r.get("open_price", 0)
+                pre_close = r.get("pre_close", 0)
                 r["close_price"] = round(close, 2)
                 r["close_gain"] = round((close / open_p - 1) * 100, 2) if open_p > 0 else 0
-                r["is_win"] = r["close_gain"] > 0
+                # 胜负判定：当日收盘涨停为盈，非涨停为负
+                # 主板涨停=涨幅>=9.8%，创业板/科创板>=19.5%
+                code = str(r.get("code", ""))
+                if code.startswith(("300", "301", "688")):
+                    limit_threshold = 19.5
+                else:
+                    limit_threshold = 9.8
+                day_change = (close / pre_close - 1) * 100 if pre_close > 0 else r["close_gain"]
+                r["day_change"] = round(day_change, 2)
+                r["is_win"] = day_change >= limit_threshold
                 r["status"] = "closed"
                 updated += 1
 
