@@ -24,6 +24,7 @@ class ScreenerHit:
     code: str
     name: str
     continuous_limit_up: int    # 连板数
+    open_price: float           # 开盘价（竞价价格）
     auction_gain: float         # 竞价涨幅(%)
     auction_turnover: float     # 竞价换手率(%)
     auction_amount: float       # 竞价金额(万元)
@@ -136,6 +137,7 @@ def run_screener(
             code=code,
             name=name,
             continuous_limit_up=qualified_codes[code],
+            open_price=round(open_price, 2),
             auction_gain=round(auction_gain, 2),
             auction_turnover=round(auction_turnover_calc, 2),
             auction_amount=round(auction_amount, 2),
