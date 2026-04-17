@@ -126,17 +126,17 @@ def calc_10d_gain(
         # 最新价：优先用实时行情（准确），K线末根兜底
         close_now = realtime_prices.get(code, df.iloc[-1]["close"])
 
-        # 10个交易日前的收盘价
-        # K线可能还没包含今天 → 判断末根日期是否是今天
+        # 10日涨幅基准：对齐通达信 REF(C,10) = 从今天往前第10根K线收盘价
         from src.config import now_cn
         today_str = now_cn().strftime("%Y-%m-%d")
         last_kline_date = str(df.iloc[-1]["date"])[:10]
 
         if last_kline_date == today_str:
-            # K线包含今天，10日前 = iloc[-11]
+            # K线含今天 → REF(C,10) = iloc[-11]
             idx = max(0, len(df) - 11)
         else:
-            # K线不含今天（延迟），10日前 = iloc[-10]
+            # K线不含今天（延迟）→ 今天视为虚拟末根
+            # REF(C,10) 从今天数 = K线的 iloc[-10]
             idx = max(0, len(df) - 10)
 
         close_10d = df.iloc[idx]["close"]
