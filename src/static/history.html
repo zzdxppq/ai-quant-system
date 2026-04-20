@@ -65,8 +65,8 @@
         .gain-pos { color: #ef4444; }
         .gain-neg { color: #10b981; }
         .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
-        .tag-win { background: #065f46; color: #34d399; }
-        .tag-lose { background: #7f1d1d; color: #fca5a5; }
+        .tag-win { background: #3b0a0a; color: #ef4444; }
+        .tag-lose { background: #0a2a1a; color: #10b981; }
         .tag-pending { background: #1a1a2e; color: #6b7280; }
         .empty-state { text-align: center; padding: 60px; color: #4b5563; }
 
@@ -138,7 +138,7 @@
                             <th>开盘价</th>
                             <th>竞价涨幅</th>
                             <th>收盘价</th>
-                            <th>日内涨幅</th>
+                            <th>收盘涨幅</th>
                             <th>次日竞价</th>
                             <th>胜负</th>
                         </tr>
@@ -156,7 +156,7 @@
                                 <td>{{ r.open_price || '-' }}</td>
                                 <td :class="numClass(r.auction_gain)">{{ fmtPct(r.auction_gain) }}</td>
                                 <td>{{ r.close_price || '-' }}</td>
-                                <td :class="numClass(r.close_gain)">{{ fmtPct(r.close_gain) }}</td>
+                                <td :class="numClass(r.day_change)">{{ fmtPct(r.day_change) }}</td>
                                 <td :class="numClass(r.next_day_auction_gain)">{{ fmtPct(r.next_day_auction_gain) }}</td>
                                 <td>
                                     <span v-if="r.is_win === true" class="tag tag-win">盈</span>

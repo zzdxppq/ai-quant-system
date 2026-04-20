@@ -146,32 +146,65 @@ def backfill_close(spot_df):
 
 
 def backfill_next_day_auction(spot_df):
-    """次日9:27回填昨日记录的次日竞价涨幅
+    """回填 status=closed 记录的次日竞价涨幅
+
+    使用K线数据回填（不依赖实时行情，避免隔天数据错位）。
+    实时行情只用于回填"昨天"的记录（确保是紧接的下一个交易日）。
 
     Args:
         spot_df: 今日实时行情（竞价后）
     """
+    from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
+
     records = _load()
     today = now_cn().strftime("%Y-%m-%d")
     updated = 0
 
+    # 用实时行情构建今日开盘价映射
+    today_open_map = {}
     if spot_df is not None and not spot_df.empty:
-        price_map = {}
         for _, row in spot_df.iterrows():
             code = str(row.get("code", ""))
             open_p = float(row.get("open", 0))
             if code and open_p > 0:
-                price_map[code] = open_p
-    else:
-        price_map = {}
+                today_open_map[code] = open_p
 
     for r in records:
-        # 找 status=closed（昨天已回填收盘但还没填次日竞价）的记录
-        if r["status"] == "closed" and r["date"] != today:
+        if r["status"] != "closed":
+            continue
             code = r["code"]
-            next_open = price_map.get(code)
+            rec_date = r["date"]
             close_p = r.get("close_price", 0)
-            if next_open and next_open > 0 and close_p and close_p > 0:
+            if not close_p or close_p <= 0:
+                continue
+
+            # 方法1: 用K线找记录日期的下一个交易日开盘价（最准确）
+            next_open = None
+            try:
+                df = fetch_kline(code, SCALE_DAILY, datalen=10)
+                if not df.empty:
+                    dates = [str(row["date"])[:10] for _, row in df.iterrows()]
+                    if rec_date in dates:
+                        idx = dates.index(rec_date)
+                        if idx + 1 < len(df):
+                            next_open = float(df.iloc[idx + 1]["open"])
+            except Exception:
+                pass
+
+            # 方法2: 如果K线没有次日数据，且记录日期是"昨天"（最近交易日），用今日实时开盘价
+            if next_open is None and rec_date != today:
+                next_open = today_open_map.get(code)
+                # 安全检查：只有记录日期是最近3个交易日内才用实时数据回填
+                from datetime import datetime, timedelta
+                try:
+                    rec_dt = datetime.strptime(rec_date, "%Y-%m-%d")
+                    days_diff = (now_cn().replace(tzinfo=None) - rec_dt).days
+                    if days_diff > 5:  # 超过5天不用实时数据回填（防错位）
+                        next_open = None
+                except Exception:
+                    next_open = None
+
+            if next_open and next_open > 0:
                 r["next_day_open"] = round(next_open, 2)
                 r["next_day_auction_gain"] = round((next_open / close_p - 1) * 100, 2)
                 r["status"] = "settled"
