@@ -190,10 +190,12 @@ def run_cycle_update() -> dict:
 
     # 收盘后回填选股记录的当日收盘价
     try:
-        from src.engine.screener_history import backfill_close
+        from src.engine.screener_history import backfill_close, backfill_next_day_auction
         from src.data.fetcher import fetch_realtime_spot
         spot = fetch_realtime_spot()
         backfill_close(spot)
+        # 同时回填历史记录的次日数据（收盘后K线已更新，比9:27更完整）
+        backfill_next_day_auction(spot)
     except Exception as e:
         print(f"  选股记录回填失败: {e}")
 
