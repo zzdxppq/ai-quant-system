@@ -127,8 +127,7 @@ def backfill_close(spot_df):
                 pre_close = r.get("pre_close", 0)
                 r["close_price"] = round(close, 2)
                 r["close_gain"] = round((close / open_p - 1) * 100, 2) if open_p > 0 else 0
-                # 胜负判定：当日收盘涨停为盈，非涨停为负
-                # 主板涨停=涨幅>=9.8%，创业板/科创板>=19.5%
+                # 涨停判定
                 code = str(r.get("code", ""))
                 if code.startswith(("300", "301", "688")):
                     limit_threshold = 19.5
@@ -136,7 +135,14 @@ def backfill_close(spot_df):
                     limit_threshold = 9.8
                 day_change = (close / pre_close - 1) * 100 if pre_close > 0 else r["close_gain"]
                 r["day_change"] = round(day_change, 2)
-                r["is_win"] = day_change >= limit_threshold
+                r["is_limit_up"] = day_change >= limit_threshold
+                # 胜负判定规则：当日涨停 + 次日收红 = 盈，否则 = 亏
+                # 当日未涨停 → 直接判亏
+                # 当日涨停但次日数据还没有 → 暂不判定(is_win=None)，等settled时判
+                if not r["is_limit_up"]:
+                    r["is_win"] = False
+                else:
+                    r["is_win"] = None  # 待次日数据回填后判定
                 r["status"] = "closed"
                 updated += 1
 
@@ -210,6 +216,16 @@ def backfill_next_day_auction(spot_df):
             r["next_day_auction_gain"] = round((next_open / close_p - 1) * 100, 2)
             if next_close and next_close > 0:
                 r["next_day_close_gain"] = round((next_close / close_p - 1) * 100, 2)
+            # 最终胜负判定：当日涨停 + 次日收红 = 盈，否则 = 亏
+            is_limit_up = r.get("is_limit_up", False)
+            next_close_gain = r.get("next_day_close_gain")
+            if not is_limit_up:
+                r["is_win"] = False
+            elif next_close_gain is not None:
+                r["is_win"] = next_close_gain > 0
+            else:
+                # 次日收盘还没出来，用竞价判定
+                r["is_win"] = r["next_day_auction_gain"] > 0 if r.get("next_day_auction_gain") is not None else None
             r["status"] = "settled"
             updated += 1
 
