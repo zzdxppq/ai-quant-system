@@ -140,13 +140,14 @@
                             <th>收盘价</th>
                             <th>收盘涨幅</th>
                             <th>次日竞价</th>
+                            <th>次日收盘涨幅</th>
                             <th>胜负</th>
                         </tr>
                     </thead>
                     <tbody>
                         <template v-for="(group, date) in groupedRecords" :key="date">
                             <tr>
-                                <td colspan="10" class="date-group">{{ date }}（{{ group.length }} 只）</td>
+                                <td colspan="11" class="date-group">{{ date }}（{{ group.length }} 只）</td>
                             </tr>
                             <tr v-for="r in group" :key="r.code + r.date">
                                 <td>{{ r.date }}</td>
@@ -158,6 +159,7 @@
                                 <td>{{ r.close_price || '-' }}</td>
                                 <td :class="numClass(r.day_change)">{{ fmtPct(r.day_change) }}</td>
                                 <td :class="numClass(r.next_day_auction_gain)">{{ fmtPct(r.next_day_auction_gain) }}</td>
+                                <td :class="numClass(r.next_day_close_gain)">{{ fmtPct(r.next_day_close_gain) }}</td>
                                 <td>
                                     <span v-if="r.is_win === true" class="tag tag-win">盈</span>
                                     <span v-else-if="r.is_win === false" class="tag tag-lose">亏</span>

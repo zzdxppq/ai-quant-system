@@ -172,43 +172,46 @@ def backfill_next_day_auction(spot_df):
     for r in records:
         if r["status"] != "closed":
             continue
-            code = r["code"]
-            rec_date = r["date"]
-            close_p = r.get("close_price", 0)
-            if not close_p or close_p <= 0:
-                continue
 
-            # 方法1: 用K线找记录日期的下一个交易日开盘价（最准确）
-            next_open = None
+        code = r["code"]
+        rec_date = r["date"]
+        close_p = r.get("close_price", 0)
+        if not close_p or close_p <= 0:
+            continue
+
+        # 用K线找记录日期的下一个交易日数据
+        next_open = None
+        next_close = None
+        try:
+            df = fetch_kline(code, SCALE_DAILY, datalen=10)
+            if not df.empty:
+                dates = [str(row["date"])[:10] for _, row in df.iterrows()]
+                if rec_date in dates:
+                    idx = dates.index(rec_date)
+                    if idx + 1 < len(df):
+                        next_open = float(df.iloc[idx + 1]["open"])
+                        next_close = float(df.iloc[idx + 1]["close"])
+        except Exception:
+            pass
+
+        # K线没有次日数据时，用今日实时开盘价兜底（限最近5天内）
+        if next_open is None and rec_date != today:
+            next_open = today_open_map.get(code)
+            from datetime import datetime as _dt
             try:
-                df = fetch_kline(code, SCALE_DAILY, datalen=10)
-                if not df.empty:
-                    dates = [str(row["date"])[:10] for _, row in df.iterrows()]
-                    if rec_date in dates:
-                        idx = dates.index(rec_date)
-                        if idx + 1 < len(df):
-                            next_open = float(df.iloc[idx + 1]["open"])
-            except Exception:
-                pass
-
-            # 方法2: 如果K线没有次日数据，且记录日期是"昨天"（最近交易日），用今日实时开盘价
-            if next_open is None and rec_date != today:
-                next_open = today_open_map.get(code)
-                # 安全检查：只有记录日期是最近3个交易日内才用实时数据回填
-                from datetime import datetime, timedelta
-                try:
-                    rec_dt = datetime.strptime(rec_date, "%Y-%m-%d")
-                    days_diff = (now_cn().replace(tzinfo=None) - rec_dt).days
-                    if days_diff > 5:  # 超过5天不用实时数据回填（防错位）
-                        next_open = None
-                except Exception:
+                days_diff = (now_cn().replace(tzinfo=None) - _dt.strptime(rec_date, "%Y-%m-%d")).days
+                if days_diff > 5:
                     next_open = None
+            except Exception:
+                next_open = None
 
-            if next_open and next_open > 0:
-                r["next_day_open"] = round(next_open, 2)
-                r["next_day_auction_gain"] = round((next_open / close_p - 1) * 100, 2)
-                r["status"] = "settled"
-                updated += 1
+        if next_open and next_open > 0:
+            r["next_day_open"] = round(next_open, 2)
+            r["next_day_auction_gain"] = round((next_open / close_p - 1) * 100, 2)
+            if next_close and next_close > 0:
+                r["next_day_close_gain"] = round((next_close / close_p - 1) * 100, 2)
+            r["status"] = "settled"
+            updated += 1
 
     if updated:
         _save(records)
