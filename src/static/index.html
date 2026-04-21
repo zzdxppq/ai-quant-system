@@ -302,6 +302,9 @@
             <div class="date">{{ today }}</div>
         </div>
         <div class="actions">
+            <a href="/watchlist" class="btn btn-accent" style="text-decoration:none;">
+                自选股
+            </a>
             <button class="btn" :class="{loading: refreshing}" @click="refreshCycle">
                 {{ refreshing ? '更新中...' : '刷新周期' }}
             </button>

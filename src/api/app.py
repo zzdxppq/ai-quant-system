@@ -221,3 +221,85 @@ async def get_screener_history():
         "records": get_history(limit=500),
         "stats": calc_win_stats(),
     })
+
+
+# ========== 自选股 API ==========
+
+@app.get("/watchlist", response_class=HTMLResponse)
+async def watchlist_page():
+    """自选股页面"""
+    html_path = static_dir / "watchlist.html"
+    if html_path.exists():
+        return html_path.read_text(encoding="utf-8")
+    return "<h1>自选股</h1>"
+
+
+@app.get("/api/watchlist")
+async def api_get_watchlist():
+    """获取自选股列表+预测数据"""
+    from src.engine.watchlist import get_watchlist, get_all_predictions
+    items = get_watchlist()
+    predictions = get_all_predictions()
+    # 合并预测到列表
+    for item in items:
+        pred = predictions.get(item["code"])
+        if pred:
+            item["trend"] = pred.get("trend", "")
+            item["pred_gain"] = pred.get("pred_gain", 0)
+            item["confidence"] = pred.get("confidence", "")
+            item["predicted_at"] = pred.get("predicted_at", "")
+    return JSONResponse({"items": items, "predictions": predictions})
+
+
+@app.post("/api/watchlist/add")
+async def api_add_watchlist(request: dict):
+    """添加自选股"""
+    from src.engine.watchlist import add_to_watchlist
+    code = request.get("code", "")
+    name = request.get("name", "")
+    result = add_to_watchlist(code, name)
+    return JSONResponse(result)
+
+
+@app.post("/api/watchlist/remove")
+async def api_remove_watchlist(request: dict):
+    """删除自选股"""
+    from src.engine.watchlist import remove_from_watchlist
+    code = request.get("code", "")
+    result = remove_from_watchlist(code)
+    return JSONResponse(result)
+
+
+@app.get("/api/watchlist/search")
+async def api_search_stocks(q: str = ""):
+    """搜索股票"""
+    from src.engine.watchlist import search_stocks
+    results = search_stocks(q)
+    return JSONResponse({"results": results})
+
+
+@app.get("/api/watchlist/prediction/{code}")
+async def api_get_prediction(code: str):
+    """获取单只股票预测详情"""
+    from src.engine.watchlist import get_prediction
+    pred = get_prediction(code)
+    if pred:
+        return JSONResponse(pred)
+    return JSONResponse({"code": code, "trend": "", "predictions": []})
+
+
+@app.post("/api/watchlist/predict/{code}")
+async def api_trigger_prediction(code: str):
+    """手动触发单只股票预测"""
+    from src.engine.watchlist import _trigger_prediction_async
+    _trigger_prediction_async(code)
+    return JSONResponse({"ok": True, "msg": f"{code} 预测已触发"})
+
+
+@app.post("/api/watchlist/predict-all")
+async def api_predict_all():
+    """手动触发全部自选股预测"""
+    import threading
+    from src.engine.watchlist import run_all_predictions
+    threading.Thread(target=run_all_predictions, daemon=True).start()
+    return JSONResponse({"ok": True, "msg": "全部预测已触发"})

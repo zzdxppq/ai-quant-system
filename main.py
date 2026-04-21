@@ -58,11 +58,30 @@ def setup_scheduler():
         misfire_grace_time=600,
     )
 
+    # 收盘后自选股预测（交易日 15:45 北京时间，等K线更新完）
+    def _run_watchlist_predictions():
+        try:
+            from src.engine.watchlist import run_all_predictions
+            run_all_predictions()
+        except Exception as e:
+            print(f"[预测定时] 异常: {e}")
+
+    scheduler.add_job(
+        _run_watchlist_predictions,
+        "cron",
+        day_of_week="mon-fri",
+        hour=15,
+        minute=45,
+        id="watchlist_predict",
+        misfire_grace_time=3600,
+    )
+
     scheduler.start()
     print(f"定时任务已启动（UTC+8 北京时间）:")
     print(f"  - 周期更新: 周一至周五 15:30")
     print(f"  - 选股执行: 周一至周五 {SCREENER_CRON_HOUR}:{SCREENER_CRON_MINUTE:02d}")
     print(f"  - 排行刷新: 周一至周五 10:00 / 12:30")
+    print(f"  - 自选预测: 周一至周五 15:45")
 
     return scheduler
 
