@@ -101,10 +101,10 @@
                         <th>涨幅</th>
                         <th>市值(亿)</th>
                         <th>10日涨幅</th>
-                        <th>5日预测趋势</th>
-                        <th>预测涨幅</th>
-                        <th>置信度</th>
-                        <th>预测时间</th>
+                        <th>动量信号</th>
+                        <th>评分</th>
+                        <th>延续概率</th>
+                        <th>评分时间</th>
                         <th>操作</th>
                     </tr>
                 </thead>
@@ -124,10 +124,10 @@
                             <span v-if="item.trend" class="trend-tag" :class="trendClass(item.trend)">
                                 {{ item.trend }}
                             </span>
-                            <span v-else style="color:#4b5563;">预测中...</span>
+                            <span v-else style="color:#4b5563;">评分中...</span>
                         </td>
-                        <td :class="(item.pred_gain||0) >= 0 ? 'gain-pos' : 'gain-neg'">
-                            {{ item.pred_gain ? (item.pred_gain > 0 ? '+' : '') + item.pred_gain + '%' : '-' }}
+                        <td :style="{color: scoreColor(item.pred_gain), fontWeight: 700}">
+                            {{ item.pred_gain ? item.pred_gain + '分' : '-' }}
                         </td>
                         <td>{{ item.confidence || '-' }}</td>
                         <td style="color:#6b7280;font-size:12px;">{{ item.predicted_at || '-' }}</td>
@@ -147,52 +147,53 @@
     <div v-if="modalVisible" class="modal-overlay" @click.self="modalVisible=false">
         <div class="modal" style="position:relative;">
             <span class="modal-close" @click="modalVisible=false">&times;</span>
-            <h3>{{ modalData.name }}（{{ modalData.code }}）5日走势预测</h3>
+            <h3>{{ modalData.name }}（{{ modalData.code }}）动量延续评分</h3>
 
             <div class="pred-summary">
                 <div class="item">
-                    <div class="label">当前价</div>
-                    <div class="value">{{ modalData.current_close }}</div>
+                    <div class="label">综合评分</div>
+                    <div class="value" :style="{color: scoreColor(modalData.score)}">{{ modalData.score || '-' }}</div>
                 </div>
                 <div class="item">
-                    <div class="label">5日预测涨幅</div>
-                    <div class="value" :class="modalData.pred_gain >= 0 ? 'gain-pos' : 'gain-neg'">
-                        {{ modalData.pred_gain > 0 ? '+' : '' }}{{ modalData.pred_gain }}%
-                    </div>
-                </div>
-                <div class="item">
-                    <div class="label">趋势</div>
+                    <div class="label">延续信号</div>
                     <div class="value">
-                        <span class="trend-tag" :class="trendClass(modalData.trend)">{{ modalData.trend }}</span>
+                        <span class="trend-tag" :class="trendClass(modalData.verdict_cn || modalData.trend)">
+                            {{ modalData.verdict_cn || modalData.trend || '-' }}
+                        </span>
                     </div>
                 </div>
                 <div class="item">
-                    <div class="label">置信度</div>
-                    <div class="value">{{ modalData.confidence }}</div>
+                    <div class="label">延续概率</div>
+                    <div class="value">{{ modalData.probability ? (modalData.probability * 100).toFixed(1) + '%' : '-' }}</div>
+                </div>
+                <div class="item">
+                    <div class="label">评分时间</div>
+                    <div class="value" style="font-size:13px;">{{ modalData.predicted_at || modalData.scored_at || '-' }}</div>
                 </div>
             </div>
 
-            <table class="pred-table" v-if="modalData.predictions && modalData.predictions.length">
-                <thead>
-                    <tr><th>日期</th><th>预测开</th><th>预测高</th><th>预测低</th><th>预测收</th><th>vs今收</th></tr>
-                </thead>
-                <tbody>
-                    <tr v-for="p in modalData.predictions" :key="p.date">
-                        <td>{{ p.date }}</td>
-                        <td>{{ p.open }}</td>
-                        <td class="gain-pos">{{ p.high }}</td>
-                        <td class="gain-neg">{{ p.low }}</td>
-                        <td style="font-weight:600;">{{ p.close }}</td>
-                        <td :class="(p.close/modalData.current_close-1)*100 >= 0 ? 'gain-pos' : 'gain-neg'">
-                            {{ ((p.close/modalData.current_close-1)*100).toFixed(2) }}%
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-            <div v-else class="empty-state" style="padding:20px;">预测数据暂未生成</div>
+            <!-- 五维评分明细 -->
+            <div v-if="modalData.components" style="margin-top:16px;">
+                <div v-for="(val, key) in modalData.components" :key="key"
+                     style="display:flex;align-items:center;margin-bottom:8px;gap:10px;">
+                    <span style="width:80px;text-align:right;font-size:13px;color:#a0aec0;">{{ key }}</span>
+                    <div style="flex:1;height:24px;background:#1a2040;border-radius:6px;overflow:hidden;position:relative;">
+                        <div :style="{width: (val/25*100)+'%', height:'100%', borderRadius:'6px',
+                             background: val >= 20 ? 'linear-gradient(90deg,#065f46,#10b981)' :
+                                         val >= 15 ? 'linear-gradient(90deg,#92400e,#fbbf24)' :
+                                         val >= 10 ? 'linear-gradient(90deg,#374151,#6b7280)' :
+                                                     'linear-gradient(90deg,#7f1d1d,#ef4444)',
+                             display:'flex',alignItems:'center',paddingLeft:'8px',fontSize:'11px',fontWeight:600}">
+                            {{ val }}
+                        </div>
+                    </div>
+                    <span style="width:30px;font-size:12px;color:#6b7280;">/ {{ key === '封板强度' ? 20 : key === '市场环境' || key === '空间位置' ? 15 : 25 }}</span>
+                </div>
+            </div>
+            <div v-else class="empty-state" style="padding:20px;">评分数据暂未生成</div>
 
             <p style="color:#4b5563;font-size:11px;margin-top:12px;text-align:center;">
-                预测时间：{{ modalData.predicted_at || '-' }} · 模型：Kronos-small · 仅供参考，不构成投资建议
+                动量延续评分 · 基于连板特征+量能+市场环境 · 仅供参考
             </p>
         </div>
     </div>
@@ -211,11 +212,22 @@ createApp({
         let searchTimer = null
 
         function trendClass(trend) {
+            if (trend === '强延续') return 'trend-up'
+            if (trend === '中等') return 'trend-slight-up'
+            if (trend === '中性') return 'trend-neutral'
+            if (trend === '衰竭') return 'trend-down'
+            // 兼容旧值
             if (trend === '涨') return 'trend-up'
             if (trend === '跌') return 'trend-down'
-            if (trend === '偏涨') return 'trend-slight-up'
-            if (trend === '偏跌') return 'trend-slight-down'
             return 'trend-neutral'
+        }
+
+        function scoreColor(score) {
+            if (!score) return '#6b7280'
+            if (score >= 80) return '#ef4444'
+            if (score >= 60) return '#f59e0b'
+            if (score >= 40) return '#6b7280'
+            return '#10b981'
         }
 
         async function loadData() {
@@ -271,7 +283,7 @@ createApp({
         // 每5秒刷新实时行情（价格/涨幅）
         setInterval(loadData, 5000)
 
-        return { watchlist, searchQuery, searchResults, modalVisible, modalData, trendClass, onSearch, addStock, removeStock, showPrediction, rePredict, predictAll, loadData }
+        return { watchlist, searchQuery, searchResults, modalVisible, modalData, trendClass, scoreColor, onSearch, addStock, removeStock, showPrediction, rePredict, predictAll, loadData }
     }
 }).mount('#app')
 </script>

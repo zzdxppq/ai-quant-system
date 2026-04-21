@@ -188,44 +188,94 @@ def get_all_predictions() -> dict:
 
 
 def _trigger_prediction_async(code: str):
-    """异步触发单只股票的预测"""
+    """异步触发单只股票的动量评分"""
     def _run():
         try:
-            from src.engine.kronos_predictor import predict_stock
-            result = predict_stock(code)
+            result = _score_one(code)
             if result:
                 predictions = _load_predictions()
                 predictions[code] = result
                 _save_predictions(predictions)
-                print(f"[预测] {code} 完成: {result.get('trend', '?')}")
+                print(f"[动量评分] {code} 完成: {result.get('verdict_cn', '?')} ({result.get('score', 0)}分)")
         except Exception as e:
-            print(f"[预测] {code} 失败: {e}")
+            print(f"[动量评分] {code} 失败: {e}")
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
 
 
+def _score_one(code: str) -> Optional[dict]:
+    """对单只股票做动量评分"""
+    from src.engine.momentum_scorer import score_from_kline
+    import json
+
+    # 获取连板数
+    consecutive = 2  # 默认
+    try:
+        cache_file = DATA_DIR / "limit_up_cache.json"
+        if cache_file.exists():
+            cache = json.loads(cache_file.read_text())
+            # 从最近日期往前数连续出现的天数
+            sorted_dates = sorted(cache.keys(), reverse=True)
+            count = 0
+            for d in sorted_dates:
+                codes_in_day = [r.get("code", "") for r in cache[d]]
+                if code in codes_in_day:
+                    count += 1
+                else:
+                    break
+            if count > 0:
+                consecutive = count
+    except Exception:
+        pass
+
+    # 获取名称
+    name = ""
+    items = _load_watchlist()
+    for item in items:
+        if item["code"] == code:
+            name = item.get("name", "")
+            break
+
+    result = score_from_kline(code, name=name, consecutive=max(2, consecutive))
+    if result is None:
+        return None
+
+    return {
+        "code": result.code,
+        "name": result.name,
+        "score": result.score,
+        "verdict": result.verdict,
+        "verdict_cn": result.verdict_cn,
+        "probability": result.probability,
+        "components": result.components,
+        "predicted_at": result.scored_at,
+        # 兼容前端字段
+        "trend": result.verdict_cn,
+        "pred_gain": result.score,  # 用分数代替涨幅
+        "confidence": f"{result.probability*100:.0f}%",
+    }
+
+
 def run_all_predictions():
-    """跑全部自选股预测（收盘后调用）"""
+    """跑全部自选股动量评分（收盘后调用）"""
     items = _load_watchlist()
     if not items:
-        print("[预测] 自选股为空，跳过")
+        print("[动量评分] 自选股为空，跳过")
         return
 
-    print(f"[预测] 开始跑 {len(items)} 只自选股预测...")
+    print(f"[动量评分] 开始跑 {len(items)} 只自选股...")
     predictions = _load_predictions()
-
-    from src.engine.kronos_predictor import predict_stock
 
     for item in items:
         code = item["code"]
         try:
-            result = predict_stock(code)
+            result = _score_one(code)
             if result:
                 predictions[code] = result
-                print(f"  {code} {item.get('name','')}: {result.get('trend', '?')} ({result.get('pred_gain', 0):+.1f}%)")
+                print(f"  {code} {item.get('name','')}: {result['verdict_cn']} ({result['score']}分)")
         except Exception as e:
-            print(f"  {code} 预测失败: {e}")
+            print(f"  {code} 评分失败: {e}")
 
     _save_predictions(predictions)
-    print(f"[预测] 全部完成，共 {len(predictions)} 只")
+    print(f"[动量评分] 全部完成，共 {len(predictions)} 只")
