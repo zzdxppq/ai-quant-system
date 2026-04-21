@@ -236,10 +236,39 @@ async def watchlist_page():
 
 @app.get("/api/watchlist")
 async def api_get_watchlist():
-    """获取自选股列表+预测数据"""
+    """获取自选股列表+预测数据+实时行情"""
     from src.engine.watchlist import get_watchlist, get_all_predictions
     items = get_watchlist()
     predictions = get_all_predictions()
+
+    # 用腾讯接口补充实时行情
+    if items:
+        try:
+            from src.data.tencent_api import fetch_stock_details
+            codes = [item["code"] for item in items]
+            live_df = fetch_stock_details(codes)
+            if live_df is not None and not live_df.empty:
+                live_map = {str(row["code"]): row for _, row in live_df.iterrows()}
+                for item in items:
+                    row = live_map.get(item["code"])
+                    if row is not None:
+                        item["close"] = float(row.get("close", 0))
+                        item["change_pct"] = float(row.get("change_pct", 0))
+                        item["market_cap_yi"] = float(row.get("market_cap_yi", 0))
+        except Exception:
+            pass
+
+        # 补充10日涨幅（从排行数据）
+        try:
+            ranking_file = DATA_DIR / "latest_ranking.json"
+            if ranking_file.exists():
+                ranking_data = json.loads(ranking_file.read_text())
+                gain_map = {str(r["code"]): r.get("gain_10d", 0) for r in ranking_data.get("ranking", [])}
+                for item in items:
+                    item["gain_10d"] = gain_map.get(item["code"], None)
+        except Exception:
+            pass
+
     # 合并预测到列表
     for item in items:
         pred = predictions.get(item["code"])

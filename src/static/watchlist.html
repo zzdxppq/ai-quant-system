@@ -97,6 +97,10 @@
                     <tr>
                         <th>代码</th>
                         <th>名称</th>
+                        <th>最新价</th>
+                        <th>涨幅</th>
+                        <th>市值(亿)</th>
+                        <th>10日涨幅</th>
                         <th>5日预测趋势</th>
                         <th>预测涨幅</th>
                         <th>置信度</th>
@@ -108,13 +112,21 @@
                     <tr v-for="item in watchlist" :key="item.code">
                         <td>{{ item.code }}</td>
                         <td>{{ item.name }}</td>
+                        <td>{{ item.close || '-' }}</td>
+                        <td :class="(item.change_pct||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                            {{ item.change_pct ? (item.change_pct > 0 ? '+' : '') + item.change_pct.toFixed(2) + '%' : '-' }}
+                        </td>
+                        <td>{{ item.market_cap_yi ? item.market_cap_yi.toFixed(1) : '-' }}</td>
+                        <td :class="(item.gain_10d||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                            {{ item.gain_10d ? (item.gain_10d > 0 ? '+' : '') + item.gain_10d.toFixed(2) + '%' : '-' }}
+                        </td>
                         <td>
                             <span v-if="item.trend" class="trend-tag" :class="trendClass(item.trend)">
                                 {{ item.trend }}
                             </span>
                             <span v-else style="color:#4b5563;">预测中...</span>
                         </td>
-                        <td :class="item.pred_gain >= 0 ? 'gain-pos' : 'gain-neg'">
+                        <td :class="(item.pred_gain||0) >= 0 ? 'gain-pos' : 'gain-neg'">
                             {{ item.pred_gain ? (item.pred_gain > 0 ? '+' : '') + item.pred_gain + '%' : '-' }}
                         </td>
                         <td>{{ item.confidence || '-' }}</td>

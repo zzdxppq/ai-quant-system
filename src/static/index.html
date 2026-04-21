@@ -416,7 +416,7 @@
                 </div>
             </div>
             <table v-if="screenerHits.length">
-                <thead><tr><th>代码</th><th>名称</th><th>连板</th><th>价格</th><th>竞价涨幅</th><th>换手</th><th>市值</th><th>偏离</th></tr></thead>
+                <thead><tr><th>代码</th><th>名称</th><th>连板</th><th>价格</th><th>竞价涨幅</th><th>换手</th><th>市值</th><th>偏离</th><th>操作</th></tr></thead>
                 <tbody>
                     <tr v-for="hit in screenerHits" :key="hit.code">
                         <td>{{ hit.code }}</td>
@@ -435,6 +435,9 @@
                                 <span v-if="getDeviation(hit.code).is_excessive" class="tag tag-warn">偏离大</span>
                             </span>
                             <span v-else>-</span>
+                        </td>
+                        <td>
+                            <button class="btn" style="font-size:11px;padding:2px 8px;" @click="addToWatchlist(hit.code, hit.name)">+自选</button>
                         </td>
                     </tr>
                 </tbody>
@@ -602,6 +605,7 @@
                         <th>最后封板</th>
                         <th>偏离(%)</th>
                         <th>标记</th>
+                        <th>操作</th>
                     </tr></thead>
                     <tbody>
                         <tr v-for="(item, idx) in ranking" :key="item.code"
@@ -625,6 +629,9 @@
                                 <span v-else-if="isCandidate(item.code)" class="tag tag-candidate">候选</span>
                                 <span v-if="item.is_main_board === false" class="tag tag-gem">创/科</span>
                                 <span v-else class="tag tag-main">主板</span>
+                            </td>
+                            <td>
+                                <button class="btn" style="font-size:11px;padding:2px 8px;" @click="addToWatchlist(item.code, item.name)">+自选</button>
                             </td>
                         </tr>
                     </tbody>
@@ -932,6 +939,14 @@ createApp({
         startLivePolling()
         setInterval(startLivePolling, 60000)
 
+        async function addToWatchlist(code, name) {
+            const res = await fetch('/api/watchlist/add', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ code, name })
+            }).then(r => r.json())
+            alert(res.ok ? `${name || code} 已加入自选` : (res.msg || '添加失败'))
+        }
+
         return {
             snapshot, ranking, rankingUpdatedAt, rankingLive, sentiment, market,
             screenerHits, screenerDate, signals,
@@ -944,7 +959,7 @@ createApp({
             refreshing, screening, backtesting,
             isRepresentative, isCandidate, isLimitUp, levelIcon, getDeviation,
             fmtNum, fmtPct, numClass, ciTagClass, ciTagLabel,
-            refreshCycle, refreshScreener, runBacktest,
+            refreshCycle, refreshScreener, runBacktest, addToWatchlist,
         }
     }
 }).mount('#app')

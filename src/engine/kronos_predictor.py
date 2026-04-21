@@ -130,19 +130,36 @@ def predict_stock(code: str) -> Optional[dict]:
         print(f"[Kronos] {code} 预测异常: {e}")
         return None
 
-    # 5. 解析结果
+    # 5. 解析结果（加涨跌停约束）
     current_close = float(df_input.iloc[-1]["close"])
+    # A股涨跌停限制
+    code_str = str(code)
+    if code_str.startswith(("300", "301", "688")):
+        limit_pct = 0.20  # 创业板/科创板 20%
+    else:
+        limit_pct = 0.10  # 主板 10%
+
     predictions = []
+    prev_close = current_close  # 用前一天收盘做涨跌停基准
     for i, ts in enumerate(y_timestamps):
         row = pred_df.iloc[i] if i < len(pred_df) else None
         if row is not None:
+            # 涨跌停约束：每日变动不超过限制比例
+            upper = prev_close * (1 + limit_pct)
+            lower = prev_close * (1 - limit_pct)
+            pred_open = max(lower, min(upper, float(row.get("open", 0))))
+            pred_high = max(lower, min(upper, float(row.get("high", 0))))
+            pred_low = max(lower, min(upper, float(row.get("low", 0))))
+            pred_close = max(lower, min(upper, float(row.get("close", 0))))
+
             predictions.append({
                 "date": ts.strftime("%Y-%m-%d"),
-                "open": round(float(row.get("open", 0)), 2),
-                "high": round(float(row.get("high", 0)), 2),
-                "low": round(float(row.get("low", 0)), 2),
-                "close": round(float(row.get("close", 0)), 2),
+                "open": round(pred_open, 2),
+                "high": round(pred_high, 2),
+                "low": round(pred_low, 2),
+                "close": round(pred_close, 2),
             })
+            prev_close = pred_close  # 下一天基于今天收盘
 
     if not predictions:
         return None
