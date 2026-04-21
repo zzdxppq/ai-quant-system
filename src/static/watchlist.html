@@ -268,7 +268,8 @@ createApp({
         }
 
         onMounted(loadData)
-        setInterval(loadData, 30000)
+        // 每5秒刷新实时行情（价格/涨幅）
+        setInterval(loadData, 5000)
 
         return { watchlist, searchQuery, searchResults, modalVisible, modalData, trendClass, onSearch, addStock, removeStock, showPrediction, rePredict, predictAll, loadData }
     }
