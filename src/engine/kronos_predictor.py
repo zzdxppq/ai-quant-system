@@ -113,10 +113,13 @@ def predict_stock(code: str) -> Optional[dict]:
     # 4. 运行预测
     try:
         predictor = _get_predictor()
+        # Kronos 需要 pd.Series（有 .dt accessor），不能直接用 DatetimeIndex
+        x_ts_series = pd.Series(x_timestamps.values).reset_index(drop=True)
+        y_ts_series = pd.Series(y_timestamps.values)
         pred_df = predictor.predict(
             df=df_input.reset_index(drop=True),
-            x_timestamp=x_timestamps.reset_index(drop=True),
-            y_timestamp=y_timestamps,
+            x_timestamp=x_ts_series,
+            y_timestamp=y_ts_series,
             pred_len=PRED_LEN,
             T=TEMPERATURE,
             top_p=TOP_P,
