@@ -82,14 +82,16 @@ def remove_from_watchlist(code: str) -> dict:
 def search_stocks(keyword: str) -> list[dict]:
     """搜索股票（代码或名称模糊匹配）
 
-    从最新排行数据或新浪行情中搜索
+    搜索顺序：排行数据 → 腾讯/新浪全市场 → 涨停缓存
     """
     results = []
-    keyword = keyword.strip().upper()
-    if not keyword:
+    seen_codes = set()
+    keyword_upper = keyword.strip().upper()
+    keyword_raw = keyword.strip()
+    if not keyword_raw:
         return results
 
-    # 先从排行数据搜
+    # 1. 从排行数据搜
     ranking_file = DATA_DIR / "latest_ranking.json"
     if ranking_file.exists():
         try:
@@ -97,25 +99,64 @@ def search_stocks(keyword: str) -> list[dict]:
             for r in data.get("ranking", []):
                 code = str(r.get("code", ""))
                 name = str(r.get("name", ""))
-                if keyword in code or keyword in name.upper():
-                    results.append({"code": code, "name": name})
+                if keyword_upper in code or keyword_raw in name:
+                    if code not in seen_codes:
+                        results.append({"code": code, "name": name})
+                        seen_codes.add(code)
         except Exception:
             pass
 
     if len(results) >= 10:
         return results[:10]
 
-    # 不够则从新浪全市场搜
-    try:
-        from src.data.sina_api import fetch_realtime_batch
-        # 如果是纯数字代码，直接查
-        if keyword.isdigit() and len(keyword) == 6:
-            df = fetch_realtime_batch([keyword])
+    # 2. 纯数字6位代码 → 新浪直接查
+    if keyword_raw.isdigit() and len(keyword_raw) == 6:
+        try:
+            from src.data.sina_api import fetch_realtime_batch
+            df = fetch_realtime_batch([keyword_raw])
             if not df.empty:
                 row = df.iloc[0]
-                results.append({"code": str(row["code"]), "name": str(row["name"])})
-    except Exception:
-        pass
+                code = str(row["code"])
+                if code not in seen_codes:
+                    results.append({"code": code, "name": str(row["name"])})
+                    seen_codes.add(code)
+        except Exception:
+            pass
+    else:
+        # 3. 中文名称 → 腾讯/新浪全市场搜索
+        try:
+            from src.data.sina_spot_api import fetch_a_share_list_sina
+            # 用缓存的全市场数据搜索（避免每次搜索都拉全市场）
+            import os
+            cache_file = DATA_DIR / "_stock_list_cache.json"
+            stock_list = None
+
+            # 缓存有效期1天
+            if cache_file.exists():
+                import time
+                age = time.time() - cache_file.stat().st_mtime
+                if age < 86400:
+                    stock_list = json.loads(cache_file.read_text())
+
+            if stock_list is None:
+                df = fetch_a_share_list_sina()
+                if not df.empty:
+                    stock_list = [
+                        {"code": str(row["code"]), "name": str(row["name"])}
+                        for _, row in df[["code", "name"]].iterrows()
+                    ]
+                    cache_file.write_text(json.dumps(stock_list, ensure_ascii=False))
+
+            if stock_list:
+                for s in stock_list:
+                    if keyword_raw in s["name"] or keyword_upper in s["code"]:
+                        if s["code"] not in seen_codes:
+                            results.append(s)
+                            seen_codes.add(s["code"])
+                            if len(results) >= 10:
+                                break
+        except Exception:
+            pass
 
     return results[:10]
 
