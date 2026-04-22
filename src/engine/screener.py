@@ -129,17 +129,25 @@ def run_screener(
             if market_cap_yi > cfg["market_cap_max"] or market_cap_yi < cfg.get("market_cap_min", 0):
                 continue
 
-        # 量比 — 基于竞价成交量和5日均量自算（不依赖第三方接口）
-        # 量比 = 竞价成交量(股) / (5日日均成交量(股) / 240)
-        volume_ratio = float(row.get("volume_ratio", 0))  # 第三方值作为兜底
-        avg_vol_5d = _get_avg_volume_5d(code)
-        if avg_vol_5d and avg_vol_5d > 0:
-            auction_vol = float(row.get("volume", 0))
-            if auction_vol <= 0 and pre_close > 0:
-                auction_vol = float(row.get("amount", 0)) / pre_close
-            per_minute_avg = avg_vol_5d / 240
-            if per_minute_avg > 0 and auction_vol > 0:
-                volume_ratio = auction_vol / per_minute_avg
+        # 量比 — 自算竞价量比（对齐通达信 DYNAINFO(17)）
+        # 判断是否在竞价时段（9:25~9:30），只有此时段volume是纯竞价成交量
+        cur_time = now_cn()
+        is_auction = cur_time.hour == 9 and cur_time.minute < 30
+        volume_ratio = float(row.get("volume_ratio", 0))  # 第三方值兜底
+
+        if is_auction:
+            # 竞价时段：volume就是竞价成交量，直接自算
+            # 量比 = 竞价成交量(股) / (5日日均量/240)
+            avg_vol_5d = _get_avg_volume_5d(code)
+            if avg_vol_5d and avg_vol_5d > 0:
+                auction_vol = float(row.get("volume", 0))
+                if auction_vol <= 0 and pre_close > 0:
+                    auction_vol = float(row.get("amount", 0)) / pre_close
+                per_minute_avg = avg_vol_5d / 240
+                if per_minute_avg > 0 and auction_vol > 0:
+                    volume_ratio = auction_vol / per_minute_avg
+        # 非竞价时段：用第三方量比（腾讯/新浪），缺字段时放行
+
         if volume_ratio > 0 and volume_ratio < cfg["volume_ratio_min"]:
             continue
 
