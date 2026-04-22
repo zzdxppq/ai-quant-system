@@ -130,8 +130,9 @@ def fetch_stock_details(codes: Iterable[str], batch_size: int = 50) -> pd.DataFr
     return pd.DataFrame(rows)
 
 
-def enrich_screener_hits(hits: list, market_cap_max: float = 100.0,
-                         volume_ratio_min: float = 1.0) -> list:
+def enrich_screener_hits(hits: list, market_cap_min: float = 20.0,
+                         market_cap_max: float = 100.0,
+                         volume_ratio_min: float = 0.9) -> list:
     """对 screener hits 调腾讯接口补全字段并做严格二次过滤
 
     补全：market_cap(亿) / volume_ratio / auction_turnover(%)
@@ -178,9 +179,14 @@ def enrich_screener_hits(hits: list, market_cap_max: float = 100.0,
             h.auction_turnover = round(tr, 2)
 
         # 严格二次过滤（补齐字段后才能执行）
-        if mc > 0 and mc > market_cap_max:
-            print(f"  剔除 {h.code} {h.name}: 流通市值 {mc:.1f}亿 > {market_cap_max}亿")
-            continue
+        # PD4: 流通市值 20~100亿
+        if mc > 0:
+            if mc > market_cap_max:
+                print(f"  剔除 {h.code} {h.name}: 流通市值 {mc:.1f}亿 > {market_cap_max}亿")
+                continue
+            if mc < market_cap_min:
+                print(f"  剔除 {h.code} {h.name}: 流通市值 {mc:.1f}亿 < {market_cap_min}亿")
+                continue
         if vr > 0 and vr < volume_ratio_min:
             print(f"  剔除 {h.code} {h.name}: 量比 {vr:.2f} < {volume_ratio_min}")
             continue

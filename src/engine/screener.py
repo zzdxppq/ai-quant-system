@@ -123,9 +123,11 @@ def run_screener(
         auction_amount = float(row.get("amount", 0)) / 10000
 
         # 流通市值（亿）— 软过滤：缺字段（market_cap<=0）则放行
+        # PD4: 流通市值 > 20亿 AND 流通市值 < 100亿
         market_cap_yi = market_cap_yuan / 1e8 if market_cap_yuan > 1e6 else float(row.get("market_cap", 0))
-        if market_cap_yi > 0 and market_cap_yi > cfg["market_cap_max"]:
-            continue
+        if market_cap_yi > 0:
+            if market_cap_yi > cfg["market_cap_max"] or market_cap_yi < cfg.get("market_cap_min", 0):
+                continue
 
         # 量比 — 软过滤：缺字段则放行
         volume_ratio = float(row.get("volume_ratio", 0))

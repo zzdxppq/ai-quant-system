@@ -327,6 +327,7 @@ def run_screener_update() -> dict:
         from src.data.tencent_api import enrich_screener_hits
         hits = enrich_screener_hits(
             hits,
+            market_cap_min=SCREENER_CONFIG.get("market_cap_min", 20),
             market_cap_max=SCREENER_CONFIG["market_cap_max"],
             volume_ratio_min=SCREENER_CONFIG["volume_ratio_min"],
         )

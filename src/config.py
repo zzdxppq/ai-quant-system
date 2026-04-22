@@ -64,8 +64,9 @@ SCREENER_CONFIG = {
     "auction_gain_max": 7.5,            # 竞价涨幅上限% (PD3)
     "auction_turnover_min": 0.5,        # 竞价换手率下限% (PD2)
     "auction_volume_lots_min": 1000,    # 竞价成交量下限(手), PD1; 1 手=100 股
-    "market_cap_max": 100,              # 流通市值上限(亿) (PD4)
-    "volume_ratio_min": 1.0,            # 量比下限 (DYNAINFO(17))
+    "market_cap_min": 20,               # 流通市值下限(亿) (PD4: 流通市值>20)
+    "market_cap_max": 100,              # 流通市值上限(亿) (PD4: 流通市值<100)
+    "volume_ratio_min": 0.9,            # 量比下限 (DYNAINFO(17)>1, 留0.1容差补偿数据源差异)
     "exclude_st": True,
     "exclude_kcb": True,                # 排除科创板(688)
     "exclude_cyb": True,                # 排除创业板(300/301)
