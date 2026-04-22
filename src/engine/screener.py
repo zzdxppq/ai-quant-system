@@ -129,8 +129,17 @@ def run_screener(
             if market_cap_yi > cfg["market_cap_max"] or market_cap_yi < cfg.get("market_cap_min", 0):
                 continue
 
-        # 量比 — 软过滤：缺字段则放行
-        volume_ratio = float(row.get("volume_ratio", 0))
+        # 量比 — 基于竞价成交量和5日均量自算（不依赖第三方接口）
+        # 量比 = 竞价成交量(股) / (5日日均成交量(股) / 240)
+        volume_ratio = float(row.get("volume_ratio", 0))  # 第三方值作为兜底
+        avg_vol_5d = _get_avg_volume_5d(code)
+        if avg_vol_5d and avg_vol_5d > 0:
+            auction_vol = float(row.get("volume", 0))
+            if auction_vol <= 0 and pre_close > 0:
+                auction_vol = float(row.get("amount", 0)) / pre_close
+            per_minute_avg = avg_vol_5d / 240
+            if per_minute_avg > 0 and auction_vol > 0:
+                volume_ratio = auction_vol / per_minute_avg
         if volume_ratio > 0 and volume_ratio < cfg["volume_ratio_min"]:
             continue
 
@@ -224,6 +233,31 @@ def _find_code_column(df: pd.DataFrame) -> Optional[str]:
         if col in df.columns:
             return col
     return df.columns[0] if len(df.columns) > 0 else None
+
+
+def _get_avg_volume_5d(code: str) -> Optional[float]:
+    """获取5日平均成交量（股），用于自算量比
+
+    缓存到内存避免重复拉K线
+    """
+    if not hasattr(_get_avg_volume_5d, "_cache"):
+        _get_avg_volume_5d._cache = {}
+
+    if code in _get_avg_volume_5d._cache:
+        return _get_avg_volume_5d._cache[code]
+
+    try:
+        from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
+        df = fetch_kline(code, SCALE_DAILY, datalen=5)
+        if df is not None and not df.empty and len(df) >= 3:
+            avg_vol = df["volume"].astype(float).mean()
+            _get_avg_volume_5d._cache[code] = avg_vol
+            return avg_vol
+    except Exception:
+        pass
+
+    _get_avg_volume_5d._cache[code] = None
+    return None
 
 
 def _pass_exclusion(code: str, name: str, cfg: dict) -> bool:

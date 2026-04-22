@@ -187,8 +187,24 @@ def enrich_screener_hits(hits: list, market_cap_min: float = 20.0,
             if mc < market_cap_min:
                 print(f"  剔除 {h.code} {h.name}: 流通市值 {mc:.1f}亿 < {market_cap_min}亿")
                 continue
-        if vr > 0 and vr < volume_ratio_min:
-            print(f"  剔除 {h.code} {h.name}: 量比 {vr:.2f} < {volume_ratio_min}")
+        # 量比：优先用自算值（基于5日均量），腾讯值兜底
+        actual_vr = vr
+        try:
+            from src.engine.screener import _get_avg_volume_5d
+            avg_vol = _get_avg_volume_5d(str(h.code))
+            if avg_vol and avg_vol > 0:
+                # 用腾讯返回的当前成交量(股)自算量比
+                cur_vol = float(row.get("volume", 0))
+                if cur_vol > 0:
+                    per_min = avg_vol / 240
+                    actual_vr = cur_vol / per_min if per_min > 0 else vr
+        except Exception:
+            pass
+
+        if vr > 0:
+            h.volume_ratio = round(actual_vr, 2)
+        if actual_vr > 0 and actual_vr < volume_ratio_min:
+            print(f"  剔除 {h.code} {h.name}: 量比 {actual_vr:.2f} < {volume_ratio_min}")
             continue
 
         filtered.append(h)
