@@ -28,6 +28,8 @@ class ScreenerHit:
     auction_gain: float         # 竞价涨幅(%)
     auction_turnover: float     # 竞价换手率(%)
     auction_amount: float       # 竞价金额(万元)
+    auction_volume_lots: float  # 竞价成交量(手)
+    auction_volume_ratio: float # 竞价量比（自算）
     market_cap: float           # 流通市值(亿)
     volume_ratio: float         # 量比
     matched_cycle: bool = False # 是否匹配周期代表股
@@ -151,6 +153,19 @@ def run_screener(
         if volume_ratio > 0 and volume_ratio < cfg["volume_ratio_min"]:
             continue
 
+        # 计算竞价成交量(手)和竞价量比
+        auction_vol_shares = float(row.get("volume", 0))
+        if auction_vol_shares <= 0 and pre_close > 0:
+            auction_vol_shares = float(row.get("amount", 0)) / pre_close
+        auction_vol_lots = round(auction_vol_shares / 100, 2)
+
+        auction_vr = volume_ratio  # 已在上面计算过
+        if not is_auction:
+            # 非竞价时段，用通达信公式估算：JJL/5日均量(手)/240
+            avg_vol_5d_for_vr = _get_avg_volume_5d(code)
+            if avg_vol_5d_for_vr and avg_vol_5d_for_vr > 0:
+                auction_vr = auction_lots / (avg_vol_5d_for_vr / 100 / 240) if (avg_vol_5d_for_vr / 100 / 240) > 0 else volume_ratio
+
         # 通过所有筛选
         hit = ScreenerHit(
             code=code,
@@ -160,6 +175,8 @@ def run_screener(
             auction_gain=round(auction_gain, 2),
             auction_turnover=round(auction_turnover_calc, 2),
             auction_amount=round(auction_amount, 2),
+            auction_volume_lots=auction_vol_lots,
+            auction_volume_ratio=round(auction_vr, 2),
             market_cap=round(market_cap_yi, 2),
             volume_ratio=round(volume_ratio, 2),
             matched_cycle=code in cycle_codes,
