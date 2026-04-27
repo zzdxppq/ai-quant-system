@@ -112,11 +112,29 @@ def backfill_close(spot_df):
     today = now_cn().strftime("%Y-%m-%d")
     updated = 0
 
-    # 构建 code→close 映射
+    # 构建 code→close 映射（优先K线收盘价，更准确）
+    price_map = {}
+    pending_codes = [r["code"] for r in records if r["date"] == today and r["status"] == "pending"]
+    if pending_codes:
+        try:
+            from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
+            for code in pending_codes:
+                df = fetch_kline(code, SCALE_DAILY, datalen=3)
+                if df is not None and not df.empty:
+                    last_date = str(df.iloc[-1]["date"])[:10]
+                    if last_date == today:
+                        price_map[code] = float(df.iloc[-1]["close"])
+        except Exception:
+            pass
+
+    # K线没拿到的用spot兜底
     if spot_df is not None and not spot_df.empty:
-        price_map = dict(zip(spot_df["code"].astype(str), spot_df["close"].astype(float)))
-    else:
-        price_map = {}
+        for _, row in spot_df.iterrows():
+            code = str(row.get("code", ""))
+            if code not in price_map:
+                close_val = float(row.get("close", 0))
+                if close_val > 0:
+                    price_map[code] = close_val
 
     for r in records:
         if r["date"] == today and r["status"] == "pending":
