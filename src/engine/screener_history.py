@@ -176,7 +176,10 @@ def backfill_next_day_auction(spot_df):
                 today_open_map[code] = open_p
 
     for r in records:
-        if r["status"] != "closed":
+        # 处理 closed（需要次日竞价+收盘）和 settled 但缺次日收盘的记录
+        need_full = r["status"] == "closed"
+        need_close_only = r["status"] == "settled" and r.get("next_day_close_gain") is None
+        if not need_full and not need_close_only:
             continue
 
         code = r["code"]
@@ -211,7 +214,18 @@ def backfill_next_day_auction(spot_df):
             except Exception:
                 next_open = None
 
-        if next_open and next_open > 0:
+        if need_close_only:
+            # settled 但缺次日收盘：只补 next_day_close_gain
+            if next_close and next_close > 0:
+                r["next_day_close_gain"] = round((next_close / close_p - 1) * 100, 2)
+                # 重新判定胜负
+                is_limit_up = r.get("is_limit_up", False)
+                if not is_limit_up:
+                    r["is_win"] = False
+                else:
+                    r["is_win"] = r["next_day_close_gain"] > 0
+                updated += 1
+        elif next_open and next_open > 0:
             r["next_day_open"] = round(next_open, 2)
             r["next_day_auction_gain"] = round((next_open / close_p - 1) * 100, 2)
             if next_close and next_close > 0:
@@ -224,7 +238,6 @@ def backfill_next_day_auction(spot_df):
             elif next_close_gain is not None:
                 r["is_win"] = next_close_gain > 0
             else:
-                # 次日收盘还没出来，用竞价判定
                 r["is_win"] = r["next_day_auction_gain"] > 0 if r.get("next_day_auction_gain") is not None else None
             r["status"] = "settled"
             updated += 1
