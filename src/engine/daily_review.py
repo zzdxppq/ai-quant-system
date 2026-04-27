@@ -215,11 +215,21 @@ def _generate_watch_pool(
     """生成次日观察池（最多3只主板2连板以上）"""
     candidates = []
 
-    # 筛选：主板、2连板以上
+    # 筛选：主板、2连板以上、流通市值<100亿
     main_board_lianban = [
         s for s in lianban
         if s.get("is_main_board") and s.get("board_count", 0) >= 2
     ]
+    # 过滤市值>100亿的
+    filtered = []
+    for s in main_board_lianban:
+        code = s["code"]
+        r = ranking.get(code, {})
+        mc = r.get("market_cap_yi", 0)
+        if mc > 0 and mc >= 100:
+            continue  # 市值超100亿排除
+        filtered.append(s)
+    main_board_lianban = filtered
 
     for s in main_board_lianban[:5]:  # 取前5候选
         code = s["code"]

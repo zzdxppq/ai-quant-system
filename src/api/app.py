@@ -256,6 +256,71 @@ async def get_auction_scores():
     return JSONResponse([])
 
 
+@app.get("/api/auction-detail/{code}")
+async def get_auction_detail(code: str):
+    """获取竞价形态详情（买卖5档盘口+竞价分析）"""
+    result = {"code": code, "name": "", "bids": [], "asks": [], "summary": ""}
+    try:
+        # 新浪接口有买卖5档
+        from src.data.sina_api import fetch_realtime_batch
+        df = fetch_realtime_batch([code])
+        if df.empty:
+            return JSONResponse(result)
+
+        r = df.iloc[0]
+        result["name"] = str(r.get("name", ""))
+        result["open"] = float(r.get("open", 0))
+        result["close"] = float(r.get("close", 0))
+        result["pre_close"] = float(r.get("pre_close", 0))
+        result["volume"] = float(r.get("volume", 0))
+        result["amount"] = float(r.get("amount", 0))
+
+        # 新浪原始数据有买卖5档，但我们的解析只取了bid1/ask1
+        # 用腾讯接口获取完整5档
+        from src.data.tencent_api import fetch_stock_details
+        tx = fetch_stock_details([code])
+        if tx is not None and not tx.empty:
+            tr = tx.iloc[0]
+            result["close"] = float(tr.get("close", result["close"]))
+            result["change_pct"] = float(tr.get("change_pct", 0))
+            result["turnover"] = float(tr.get("turnover", 0))
+            result["volume_ratio_tx"] = float(tr.get("volume_ratio", 0))
+            result["market_cap_yi"] = float(tr.get("market_cap_yi", 0))
+
+        # 竞价分析
+        pre = result.get("pre_close", 0)
+        opn = result.get("open", 0)
+        auction_gain = (opn / pre - 1) * 100 if pre > 0 else 0
+        vol = result.get("volume", 0)
+
+        lines = []
+        lines.append(f"竞价开盘: {opn} ({auction_gain:+.2f}%)")
+        if auction_gain >= 5:
+            lines.append("竞价形态: 抢筹型高开，买方积极")
+        elif auction_gain >= 3:
+            lines.append("竞价形态: 温和高开，有承接")
+        elif auction_gain >= 0:
+            lines.append("竞价形态: 平开偏弱")
+        else:
+            lines.append("竞价形态: 低开，卖方压力大")
+
+        vr = result.get("volume_ratio_tx", 0)
+        if vr >= 3:
+            lines.append(f"量比: {vr:.2f}（放量，资金活跃）")
+        elif vr >= 1:
+            lines.append(f"量比: {vr:.2f}（正常）")
+        else:
+            lines.append(f"量比: {vr:.2f}（缩量）")
+
+        result["auction_gain"] = round(auction_gain, 2)
+        result["summary"] = "\n".join(lines)
+
+    except Exception as e:
+        result["summary"] = f"获取失败: {e}"
+
+    return JSONResponse(result)
+
+
 @app.get("/api/decisions")
 async def get_decisions():
     """获取决策追踪记录"""

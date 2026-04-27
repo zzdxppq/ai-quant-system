@@ -437,7 +437,7 @@
                 </div>
             </div>
             <table v-if="screenerHits.length">
-                <thead><tr><th>代码</th><th>名称</th><th>连板</th><th>价格</th><th>竞价涨幅</th><th>竞价量(手)</th><th>竞价量比</th><th>换手</th><th>市值</th><th>偏离</th><th>操作</th></tr></thead>
+                <thead><tr><th>代码</th><th>名称</th><th>连板</th><th>价格</th><th>竞价涨幅</th><th>竞价量(手)</th><th>竞价量比</th><th>换手</th><th>市值</th><th>10日涨幅</th><th>偏离</th><th>操作</th></tr></thead>
                 <tbody>
                     <tr v-for="hit in screenerHits" :key="hit.code">
                         <td>{{ hit.code }}</td>
@@ -452,6 +452,9 @@
                         <td>{{ hit.auction_volume_ratio || '-' }}</td>
                         <td>{{ hit.auction_turnover }}%</td>
                         <td>{{ hit.market_cap }}亿</td>
+                        <td :class="(hit.gain_10d||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                            {{ hit.gain_10d ? (hit.gain_10d > 0 ? '+' : '') + hit.gain_10d + '%' : '-' }}
+                        </td>
                         <td>
                             <span v-if="getDeviation(hit.code)" :class="getDeviation(hit.code).is_excessive ? 'gain-pos' : ''">
                                 {{ getDeviation(hit.code).deviation_pct }}%
@@ -459,7 +462,8 @@
                             </span>
                             <span v-else>-</span>
                         </td>
-                        <td>
+                        <td style="white-space:nowrap;">
+                            <button class="btn" style="font-size:11px;padding:2px 8px;margin-right:4px;" @click="showAuction(hit.code, hit.name)">竞价</button>
                             <button class="btn" style="font-size:11px;padding:2px 8px;" @click="addToWatchlist(hit.code, hit.name)">+自选</button>
                         </td>
                     </tr>
@@ -722,6 +726,27 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+    </div>
+
+    <!-- 竞价形态弹窗 -->
+    <div v-if="auctionModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;" @click.self="auctionModal=false">
+        <div style="background:#111827;border:1px solid #2a3050;border-radius:16px;padding:24px;min-width:400px;max-width:500px;position:relative;">
+            <span style="position:absolute;top:12px;right:16px;cursor:pointer;font-size:20px;color:#6b7280;" @click="auctionModal=false">&times;</span>
+            <h3 style="margin-bottom:16px;">{{ auctionData.name }}（{{ auctionData.code }}）竞价形态</h3>
+            <div style="background:#0d1220;border-radius:8px;padding:14px;margin-bottom:12px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">
+                    <div>开盘价: <b :class="(auctionData.auction_gain||0) >= 0 ? 'gain-pos' : 'gain-neg'">{{ auctionData.open }}</b></div>
+                    <div>昨收: {{ auctionData.pre_close }}</div>
+                    <div>竞价涨幅: <span :class="(auctionData.auction_gain||0) >= 0 ? 'gain-pos' : 'gain-neg'">{{ auctionData.auction_gain ? (auctionData.auction_gain > 0 ? '+' : '') + auctionData.auction_gain + '%' : '-' }}</span></div>
+                    <div>现价: {{ auctionData.close }}</div>
+                    <div>涨跌: <span :class="(auctionData.change_pct||0) >= 0 ? 'gain-pos' : 'gain-neg'">{{ auctionData.change_pct ? (auctionData.change_pct > 0 ? '+' : '') + auctionData.change_pct + '%' : '-' }}</span></div>
+                    <div>换手: {{ auctionData.turnover ? auctionData.turnover + '%' : '-' }}</div>
+                    <div>量比: {{ auctionData.volume_ratio_tx || '-' }}</div>
+                    <div>市值: {{ auctionData.market_cap_yi ? auctionData.market_cap_yi + '亿' : '-' }}</div>
+                </div>
+            </div>
+            <div style="background:#0d1220;border-radius:8px;padding:14px;white-space:pre-line;font-size:13px;line-height:1.8;">{{ auctionData.summary }}</div>
         </div>
     </div>
 </div>
@@ -997,6 +1022,20 @@ createApp({
         startLivePolling()
         setInterval(startLivePolling, 60000)
 
+        const auctionModal = ref(false)
+        const auctionData = ref({})
+
+        async function showAuction(code, name) {
+            auctionData.value = { code, name, summary: '加载中...' }
+            auctionModal.value = true
+            try {
+                const res = await fetch(`/api/auction-detail/${code}`).then(r => r.json())
+                auctionData.value = res
+            } catch (e) {
+                auctionData.value = { code, name, summary: '获取失败' }
+            }
+        }
+
         async function addToWatchlist(code, name) {
             const res = await fetch('/api/watchlist/add', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -1019,6 +1058,7 @@ createApp({
             isRepresentative, isCandidate, isLimitUp, levelIcon, getDeviation,
             fmtNum, fmtPct, numClass, ciTagClass, ciTagLabel,
             refreshCycle, refreshScreener, runBacktest, addToWatchlist,
+            auctionModal, auctionData, showAuction,
         }
     }
 }).mount('#app')

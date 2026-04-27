@@ -32,6 +32,7 @@ class ScreenerHit:
     auction_volume_ratio: float # 竞价量比（自算）
     market_cap: float           # 流通市值(亿)
     volume_ratio: float         # 量比
+    gain_10d: float = 0         # 10日涨幅(%)
     matched_cycle: bool = False # 是否匹配周期代表股
 
 
@@ -179,6 +180,7 @@ def run_screener(
             auction_volume_ratio=round(auction_vr, 2),
             market_cap=round(market_cap_yi, 2),
             volume_ratio=round(volume_ratio, 2),
+            gain_10d=round(float(row.get("gain_10d", 0)), 2) if row.get("gain_10d") else 0,
             matched_cycle=code in cycle_codes,
         )
         results.append(hit)
