@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>复盘 · AI量化周期看板</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #0a0e1a; color: #e0e6ed; min-height: 100vh; }
+        .header { background: linear-gradient(135deg, #1a1f35, #0d1220); border-bottom: 1px solid #2a3050; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 20px; font-weight: 600; background: linear-gradient(90deg, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header .nav { display: flex; gap: 12px; }
+        .header .nav a { color: #a0aec0; text-decoration: none; font-size: 13px; padding: 6px 14px; border: 1px solid #3a4568; border-radius: 6px; }
+        .header .nav a:hover, .header .nav a.active { border-color: #60a5fa; color: #60a5fa; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .card { background: #111827; border: 1px solid #1e2a45; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+        .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 8px 10px; font-size: 12px; color: #6b7280; border-bottom: 1px solid #1e2a45; }
+        td { padding: 8px 10px; font-size: 13px; border-bottom: 1px solid #0d1220; }
+        tr:hover td { background: #0d1220; }
+        .gain-pos { color: #ef4444; } .gain-neg { color: #10b981; }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+        .tag-strong { background: #065f46; color: #34d399; }
+        .tag-moderate { background: #78350f; color: #fbbf24; }
+        .tag-weak { background: #7f1d1d; color: #fca5a5; }
+        .tag-veto { background: #450a0a; color: #ef4444; border: 1px solid #ef4444; }
+        .summary-box { background: #0d1220; border-radius: 8px; padding: 14px; margin-bottom: 12px; line-height: 1.6; }
+        .watch-card { background: #0d1220; border-left: 3px solid #3b82f6; padding: 12px; border-radius: 6px; margin-bottom: 10px; }
+        .watch-card .wc-title { font-size: 14px; font-weight: 600; color: #60a5fa; }
+        .watch-card .wc-meta { font-size: 12px; color: #8892a8; margin-top: 4px; }
+        .watch-card .wc-reason { font-size: 12px; color: #a0aec0; margin-top: 6px; }
+        .score-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .score-bar .sb-label { width: 100px; text-align: right; font-size: 12px; color: #8892a8; }
+        .score-bar .sb-track { flex: 1; height: 20px; background: #1a2040; border-radius: 4px; overflow: hidden; }
+        .score-bar .sb-fill { height: 100%; border-radius: 4px; display: flex; align-items: center; padding-left: 6px; font-size: 11px; font-weight: 600; }
+        .decision-box { padding: 16px; border-radius: 10px; text-align: center; }
+        .decision-box .db-action { font-size: 24px; font-weight: 700; }
+        .decision-box .db-detail { font-size: 13px; margin-top: 6px; }
+        .db-go { background: #0f2a1a; border: 2px solid #10b981; }
+        .db-go .db-action { color: #10b981; }
+        .db-half { background: #2a2a1a; border: 2px solid #fbbf24; }
+        .db-half .db-action { color: #fbbf24; }
+        .db-no { background: #2a1a1a; border: 2px solid #ef4444; }
+        .db-no .db-action { color: #ef4444; }
+        .empty-state { text-align: center; padding: 40px; color: #4b5563; }
+        .btn { padding: 6px 14px; border: 1px solid #3a4568; border-radius: 6px; background: #1a2040; color: #a0aec0; cursor: pointer; font-size: 13px; }
+        .btn:hover { border-color: #60a5fa; color: #60a5fa; }
+        @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="header">
+        <h1>复盘 · 决策中心</h1>
+        <div class="nav">
+            <a href="/">看板</a>
+            <a href="/history">选股记录</a>
+            <a href="/watchlist">自选股</a>
+            <a href="/review" class="active">复盘</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 竞价决策卡 -->
+        <div class="card" v-if="scores.length">
+            <div class="card-title">🎯 今日竞价决策卡</div>
+            <div v-for="sc in scores" :key="sc.code" style="margin-bottom:20px;">
+                <div style="display:flex;gap:16px;align-items:flex-start;">
+                    <div style="flex:1;">
+                        <h3 style="margin-bottom:10px;">{{ sc.name }}（{{ sc.code }}）{{ sc.total_score }}分</h3>
+                        <div class="score-bar">
+                            <span class="sb-label">自身竞价(40)</span>
+                            <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d1_self/40*100)+'%', background: barColor(sc.d1_self, 40)}">{{ sc.d1_self }}</div></div>
+                        </div>
+                        <div class="score-bar">
+                            <span class="sb-label">情绪锚(25)</span>
+                            <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d2_leader/25*100)+'%', background: barColor(sc.d2_leader, 25)}">{{ sc.d2_leader }}</div></div>
+                        </div>
+                        <div class="score-bar">
+                            <span class="sb-label">涨幅榜方向(20)</span>
+                            <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d3_ranking/20*100)+'%', background: barColor(sc.d3_ranking, 20)}">{{ sc.d3_ranking }}</div></div>
+                        </div>
+                        <div class="score-bar">
+                            <span class="sb-label">板块效应(15)</span>
+                            <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d4_sector/15*100)+'%', background: barColor(sc.d4_sector, 15)}">{{ sc.d4_sector }}</div></div>
+                        </div>
+                        <div style="font-size:12px;color:#8892a8;margin-top:8px;">
+                            <div>D1: {{ sc.d1_detail }}</div>
+                            <div>D2: {{ sc.d2_detail }}</div>
+                            <div>D3: {{ sc.d3_detail }}</div>
+                            <div>D4: {{ sc.d4_detail }}</div>
+                        </div>
+                        <div v-if="sc.vetoes && sc.vetoes.length" style="margin-top:8px;">
+                            <span v-for="v in sc.vetoes" :key="v" class="tag tag-veto" style="margin-right:6px;">⚠️ {{ v }}</span>
+                        </div>
+                    </div>
+                    <div style="min-width:180px;">
+                        <div class="decision-box" :class="decisionClass(sc.action)">
+                            <div class="db-action">{{ sc.action }}</div>
+                            <div class="db-detail">{{ sc.position }}</div>
+                            <div class="db-detail" v-if="sc.stop_loss">止损: {{ sc.stop_loss }} ({{ sc.stop_loss_pct }}%)</div>
+                        </div>
+                        <div style="font-size:11px;color:#6b7280;margin-top:6px;text-align:center;">{{ sc.reason }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card" v-else>
+            <div class="card-title">🎯 今日竞价决策卡</div>
+            <div class="empty-state">今日无选股命中，无需决策</div>
+        </div>
+
+        <div class="grid-2">
+            <!-- 次日观察池 -->
+            <div class="card">
+                <div class="card-title">🐟 次日鱼塘（观察池）
+                    <button class="btn" style="margin-left:auto;font-size:11px;" @click="runReview">刷新复盘</button>
+                </div>
+                <div v-if="review.watch_pool && review.watch_pool.length">
+                    <div v-for="w in review.watch_pool" :key="w.code" class="watch-card">
+                        <div class="wc-title">{{ w.name }}（{{ w.code }}）{{ w.board_count }}连板</div>
+                        <div class="wc-meta">
+                            板块: {{ w.industry }} · 收盘: {{ w.close }} · 市值: {{ w.market_cap_yi }}亿 · 累计涨幅: {{ w.total_gain_pct }}%
+                        </div>
+                        <div class="wc-reason">📌 {{ w.reason }}</div>
+                        <div class="wc-reason">👀 观察点: {{ w.watch_points }}</div>
+                        <div class="wc-reason">💰 理想竞价区间: {{ w.auction_range }}</div>
+                    </div>
+                </div>
+                <div v-else class="empty-state">等待收盘后自动生成</div>
+            </div>
+
+            <!-- 市场情绪 -->
+            <div class="card">
+                <div class="card-title">📊 市场情绪小结</div>
+                <div class="summary-box" v-if="review.market_summary">
+                    {{ review.market_summary }}
+                </div>
+                <div v-if="review.main_theme" style="margin-bottom:8px;">
+                    主线板块: <b style="color:#60a5fa;">{{ review.main_theme }}</b>（{{ review.theme_strength }}）
+                </div>
+                <div>涨停: {{ review.limit_up_count || 0 }}只 · 主板: {{ review.main_board_limit_up || 0 }}只 · 最高连板: {{ review.highest_board || 0 }}板</div>
+
+                <!-- 连板梯队 -->
+                <div style="margin-top:12px;" v-if="review.lianban_ladder && review.lianban_ladder.length">
+                    <div class="card-title" style="font-size:13px;">连板梯队</div>
+                    <table>
+                        <thead><tr><th>代码</th><th>名称</th><th>连板</th><th>板块</th></tr></thead>
+                        <tbody>
+                            <tr v-for="s in review.lianban_ladder.slice(0,15)" :key="s.code">
+                                <td>{{ s.code }}</td>
+                                <td>{{ s.name }}</td>
+                                <td style="font-weight:700;" :class="s.board_count >= 3 ? 'gain-pos' : ''">{{ s.board_count }}板</td>
+                                <td>{{ s.is_main_board ? '主板' : '创/科' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 决策追踪 -->
+        <div class="card">
+            <div class="card-title">📋 决策追踪记录</div>
+            <table v-if="decisions.length">
+                <thead><tr>
+                    <th>日期</th><th>系统建议</th><th>实际操作</th><th>标的</th><th>买入价</th><th>收盘价</th><th>盈亏</th><th>偏差</th>
+                </tr></thead>
+                <tbody>
+                    <tr v-for="d in decisions" :key="d.date">
+                        <td>{{ d.date }}</td>
+                        <td><span class="tag" :class="actionTag(d.system_action)">{{ d.system_action || '-' }}</span></td>
+                        <td>{{ d.user_action || '-' }}</td>
+                        <td>{{ d.user_code || '-' }}</td>
+                        <td>{{ d.user_price || '-' }}</td>
+                        <td>{{ d.result_close || '-' }}</td>
+                        <td :class="(d.result_gain_pct||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                            {{ d.result_gain_pct ? (d.result_gain_pct > 0 ? '+' : '') + d.result_gain_pct + '%' : '-' }}
+                        </td>
+                        <td style="font-size:11px;color:#8892a8;">{{ d.deviation || '-' }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div v-else class="empty-state">暂无决策记录</div>
+        </div>
+    </div>
+</div>
+
+<script>
+const { createApp, ref, onMounted } = Vue
+createApp({
+    setup() {
+        const review = ref({})
+        const scores = ref([])
+        const decisions = ref([])
+
+        function barColor(val, max) {
+            const pct = val / max
+            if (pct >= 0.75) return 'linear-gradient(90deg,#065f46,#10b981)'
+            if (pct >= 0.5) return 'linear-gradient(90deg,#92400e,#fbbf24)'
+            if (pct >= 0.3) return 'linear-gradient(90deg,#374151,#6b7280)'
+            return 'linear-gradient(90deg,#7f1d1d,#ef4444)'
+        }
+        function decisionClass(action) {
+            if (action === '果断开仓') return 'db-go'
+            if (action === '小仓试错') return 'db-half'
+            return 'db-no'
+        }
+        function actionTag(action) {
+            if (action === '果断开仓') return 'tag-strong'
+            if (action === '小仓试错') return 'tag-moderate'
+            return 'tag-weak'
+        }
+
+        async function loadData() {
+            const [revRes, scRes, decRes] = await Promise.all([
+                fetch('/api/review').then(r => r.json()),
+                fetch('/api/auction-scores').then(r => r.json()),
+                fetch('/api/decisions').then(r => r.json()),
+            ])
+            review.value = revRes || {}
+            scores.value = scRes || []
+            decisions.value = decRes.records || []
+        }
+
+        async function runReview() {
+            await fetch('/api/review/run', { method: 'POST' })
+            setTimeout(loadData, 3000)
+        }
+
+        onMounted(loadData)
+        return { review, scores, decisions, barColor, decisionClass, actionTag, runReview }
+    }
+}).mount('#app')
+</script>
+</body>
+</html>

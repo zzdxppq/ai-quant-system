@@ -101,6 +101,15 @@ def run_ranking_refresh() -> dict:
     print(f"[{now_cn()}] 盘中排行刷新...")
 
     ranking_df = _fetch_ranking()
+    if ranking_df is None or ranking_df.empty:
+        print("[排行刷新] 拉取失败（空结果），保留上次成功的 latest_ranking.json + latest_insight.json")
+        print("=" * 50)
+        # 返回当前盘面的快照供调用方查看
+        try:
+            return json.loads((DATA_DIR / "latest_ranking.json").read_text())
+        except Exception:
+            return {"ranking": [], "date": now_cn().strftime("%Y-%m-%d %H:%M:%S")}
+
     ranking_records = ranking_df.to_dict("records")
     ranking_data = {
         "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
@@ -133,7 +142,31 @@ def run_cycle_update() -> dict:
     # 1-2. 获取排行数据
     ranking_df = _fetch_ranking()
 
-    # 轮转 prev_ranking（用于资金行为对比）
+    # 数据源全部不可用：保留上次成功的 latest_ranking.json + insight + snapshot
+    if ranking_df is None or ranking_df.empty:
+        print("[周期更新] 排行数据为空，保留旧快照不覆盖；后续仍执行涨停缓存刷新与选股记录回填")
+        # 仍然继续做后续不依赖 ranking 的工作
+        try:
+            from src.data.fetcher import fetch_limit_up_history
+            print("  刷新涨停缓存...")
+            fetch_limit_up_history(days=5)
+        except Exception as e:
+            print(f"  涨停缓存刷新失败: {e}")
+        try:
+            from src.engine.screener_history import backfill_close, backfill_next_day_auction
+            from src.data.fetcher import fetch_realtime_spot
+            spot = fetch_realtime_spot()
+            backfill_close(spot)
+            backfill_next_day_auction(spot)
+        except Exception as e:
+            print(f"  选股记录回填失败: {e}")
+        print("=" * 50)
+        try:
+            return json.loads((DATA_DIR / "latest_snapshot.json").read_text())
+        except Exception:
+            return {}
+
+    # 轮转 prev_ranking（仅在拿到新数据时才轮转，避免把旧 prev 弄丢）
     try:
         from src.engine.market_insight import rotate_ranking_for_prev
         rotate_ranking_for_prev()
@@ -231,15 +264,16 @@ def run_screener_update() -> dict:
         for c in snapshot_data.get("candidates", []):
             cycle_codes.append(c["code"])
 
-    # 4. 高标龙头竞价反馈（市场高标 + 主板最高标）
+    # 4. 高标龙头竞价反馈（市场高标 + 主板高标[昨日最高连板] + 昨日主板涨停股平均竞价）
     from src.engine.leader_feedback import (
         evaluate_leader, find_leader_from_snapshot,
-        find_main_board_leader_from_snapshot,
-        find_main_board_leader_from_ranking,
+        evaluate_lianban_leader, find_main_board_lianban_leaders,
+        compute_yesterday_main_board_auction,
         LeaderFeedback, LeaderSignal,
     )
-    leader_fb = None          # 市场高标（全市场第一）
-    main_board_fb = None      # 主板最高标
+    leader_fb = None          # 市场高标（全市场10日涨幅第一）
+    main_board_fbs: list[tuple[LeaderFeedback, int]] = []  # 主板高标 = 主板昨日最高连板（平局多只）
+    y_main_board_stats = None # 昨日主板涨停股今日竞价平均
 
     # 高标龙头直接从排行数据取（而非周期快照），确保是最新10日涨幅榜第一
     ranking_file = str(DATA_DIR / "latest_ranking.json")
@@ -256,21 +290,28 @@ def run_screener_update() -> dict:
             print(f"市场高标: {leader_fb.leader_name} 竞价{leader_fb.auction_change_pct:+.1f}% → {leader_fb.signal.value}")
             print(f"  {leader_fb.reason}")
 
-        # — 主板最高标 —
-        mb_info = _find_leader_from_ranking(ranking_file, main_board_only=True)
-        if mb_info is None and cycle_snapshot:
-            mb_info = find_main_board_leader_from_snapshot(cycle_snapshot)
-        if mb_info and not spot_df.empty:
-            mb_code, mb_name, mb_gain = mb_info
-            # 如果主板最高标与市场高标相同，复用结果
-            if leader_fb and str(mb_code) == str(leader_fb.leader_code):
-                main_board_fb = leader_fb
-            else:
-                main_board_fb = evaluate_leader(mb_code, mb_name, mb_gain, spot_df)
-            print(f"主板高标: {main_board_fb.leader_name} 竞价{main_board_fb.auction_change_pct:+.1f}% → {main_board_fb.signal.value}")
-            print(f"  {main_board_fb.reason}")
+        # — 主板高标 = 主板昨日最高连板（>=2连板，平局全部展示）—
+        lb_list = find_main_board_lianban_leaders(limit_up_hist, spot_df)
+        if lb_list:
+            for lb_code, lb_name, lb_count in lb_list:
+                fb = evaluate_lianban_leader(lb_code, lb_name, lb_count, spot_df)
+                main_board_fbs.append((fb, lb_count))
+                print(f"昨日主板连板高标: {fb.leader_name}({lb_count}连板) "
+                      f"竞价{fb.auction_change_pct:+.1f}% → {fb.signal.value}")
+                print(f"  {fb.reason}")
+        else:
+            print("昨日主板连板高标: 无 >=2 连板候选")
 
-        # 保存龙头反馈（两个）
+        # — 昨日主板涨停股 今日竞价平均表现（接力情绪锚定） —
+        y_main_board_stats = compute_yesterday_main_board_auction(limit_up_hist, spot_df)
+        if y_main_board_stats:
+            print(f"昨日主板涨停股({y_main_board_stats['sample_count']}只): "
+                  f"平均竞价{y_main_board_stats['avg_change_pct']:+.2f}% "
+                  f"(高开{y_main_board_stats['positive_count']}/低开{y_main_board_stats['negative_count']})")
+        else:
+            print("昨日主板涨停股: 无样本")
+
+        # 保存龙头反馈（市场高标/主板高标[连板]/昨日主板涨停均值）
         def _fb_to_dict(fb: LeaderFeedback) -> dict:
             return {
                 "leader_code": fb.leader_code,
@@ -283,10 +324,21 @@ def run_screener_update() -> dict:
                 "reason": fb.reason,
             }
 
+        def _main_board_fb_to_dict(fb: LeaderFeedback, board_count: int) -> dict:
+            d = _fb_to_dict(fb)
+            d["board_count"] = board_count
+            return d
+
+        main_board_dicts = [
+            _main_board_fb_to_dict(fb, count) for fb, count in main_board_fbs
+        ]
         leader_data = {
             "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
             "market_leader": _fb_to_dict(leader_fb) if leader_fb else None,
-            "main_board_leader": _fb_to_dict(main_board_fb) if main_board_fb else None,
+            "main_board_leaders": main_board_dicts,
+            # 兼容旧 schema：第一只放在 main_board_leader
+            "main_board_leader": main_board_dicts[0] if main_board_dicts else None,
+            "yesterday_main_board_avg_auction": y_main_board_stats,
             # 兼容旧字段（dashboard / cross_validator 可能读取）
             **(  _fb_to_dict(leader_fb) if leader_fb else {}),
         }
@@ -422,7 +474,32 @@ def run_screener_update() -> dict:
     except Exception as e:
         print(f"[选股记录] 异常: {e}")
 
-    # 8. 邮件推送（紧接选股结果，不等看板数据刷新，确保9:30前送达）
+    # 8a. 竞价决策卡打分
+    auction_scores = []
+    if hits:
+        try:
+            from src.engine.auction_scorer import score_all_hits
+            auction_scores = score_all_hits([asdict(h) for h in hits])
+            for sc in auction_scores:
+                veto = " ⚠️否决" if sc.get("has_veto") else ""
+                print(f"  [决策卡] {sc['code']} {sc['name']}: {sc['total_score']}分 → {sc['action']}{veto}")
+        except Exception as e:
+            print(f"[决策卡] 异常: {e}")
+
+    # 8b. 盘前决策记录
+    try:
+        from src.engine.decision_tracker import create_premarket_record
+        # 读取昨日复盘的观察池
+        review_file = DATA_DIR / "latest_review.json"
+        watch_pool = []
+        if review_file.exists():
+            review = json.loads(review_file.read_text())
+            watch_pool = review.get("watch_pool", [])
+        create_premarket_record(watch_pool, auction_scores, [asdict(h) for h in hits])
+    except Exception as e:
+        print(f"[决策追踪] 异常: {e}")
+
+    # 8c. 邮件推送（紧接选股结果，不等看板数据刷新，确保9:30前送达）
     try:
         from src.notify.email_sender import send_screener_report
         leader_data = None

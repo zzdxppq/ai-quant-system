@@ -311,6 +311,9 @@
             <button class="btn" :class="{loading: screening}" @click="refreshScreener">
                 {{ screening ? '选股中...' : '执行选股' }}
             </button>
+            <a href="/review" class="btn btn-accent" style="text-decoration:none;">
+                复盘
+            </a>
             <a href="/history" class="btn btn-accent" style="text-decoration:none;">
                 选股记录
             </a>
@@ -352,14 +355,15 @@
                     峰值 {{ snapshot.prev_cycle.peak_gain }}%
                 </div>
 
-                <!-- 龙头反馈：市场高标 + 主板高标 -->
+                <!-- 龙头反馈：市场高标(10日涨幅) + 主板高标(昨日最高连板) -->
                 <template v-for="(ld, idx) in leaderList" :key="idx">
                     <div v-if="ld.signal" class="leader-card" :class="getLeaderClass(ld)">
                         <div class="leader-icon">{{ getLeaderIcon(ld) }}</div>
                         <div class="leader-info">
                             <div class="title">
                                 {{ ld._tag }}：{{ ld.leader_name }}
-                                （{{ ld.leader_gain_10d }}%）
+                                <template v-if="ld._useBoardCount">（{{ ld.board_count || ld.leader_gain_10d }}连板）</template>
+                                <template v-else>（{{ ld.leader_gain_10d }}%）</template>
                                 竞价 <span :class="ld.auction_change_pct >= 0 ? 'gain-pos' : 'gain-neg'">
                                     {{ ld.auction_change_pct > 0 ? '+' : '' }}{{ ld.auction_change_pct }}%
                                 </span>
@@ -371,6 +375,23 @@
                         </div>
                     </div>
                 </template>
+
+                <!-- 昨日主板涨停股 今日平均竞价（接力情绪锚定） -->
+                <div v-if="ydayAvg && ydayAvg.sample_count" class="leader-card" :class="ydayAvgClass">
+                    <div class="leader-icon">📊</div>
+                    <div class="leader-info">
+                        <div class="title">
+                            昨日主板涨停股 今日平均竞价（样本 {{ ydayAvg.sample_count }} 只）
+                            <span :class="ydayAvg.avg_change_pct >= 0 ? 'gain-pos' : 'gain-neg'">
+                                {{ ydayAvg.avg_change_pct > 0 ? '+' : '' }}{{ ydayAvg.avg_change_pct }}%
+                            </span>
+                        </div>
+                        <div class="desc">
+                            高开 {{ ydayAvg.positive_count }} 只 · 低开 {{ ydayAvg.negative_count }} 只<template v-if="ydayAvg.limit_down_count > 0"> · 跌停 {{ ydayAvg.limit_down_count }} 只</template>
+                        </div>
+                    </div>
+                    <div class="leader-badge" :class="ydayAvgBadge">{{ ydayAvgVerdict }}</div>
+                </div>
 
                 <!-- 进度条 -->
                 <div class="progress-bar" v-if="snapshot.representative">
@@ -753,23 +774,58 @@ createApp({
             if (g >= 45) return 'mid'; return 'low'
         })
 
-        // 龙头列表：市场高标 + 主板高标
+        // 龙头列表：市场高标(10日涨幅) + 昨日主板连板高标(连板平局可多只)
         const leaderList = computed(() => {
             const res = []
             const ml = leader.value.market_leader
-            const mb = leader.value.main_board_leader
-            if (ml && ml.signal) res.push({ ...ml, _tag: '市场高标' })
-            if (mb && mb.signal) {
-                // 如果与市场高标不同才展示
-                if (!ml || mb.leader_code !== ml.leader_code) {
-                    res.push({ ...mb, _tag: '主板高标' })
+            if (ml && ml.signal) res.push({ ...ml, _tag: '市场高标', _useBoardCount: false })
+
+            // 平局多只优先取 main_board_leaders 列表；旧 schema 回退到 main_board_leader 单只
+            let mbList = leader.value.main_board_leaders
+            if (!mbList || !mbList.length) {
+                const single = leader.value.main_board_leader
+                mbList = single ? [single] : []
+            }
+            for (const mb of mbList) {
+                if (mb && mb.signal) {
+                    res.push({ ...mb, _tag: '昨日主板连板高标 今日竞价', _useBoardCount: true })
                 }
             }
+
             // 兼容旧格式（无 market_leader 字段）
             if (res.length === 0 && leader.value.signal) {
-                res.push({ ...leader.value, _tag: '高标龙头' })
+                res.push({ ...leader.value, _tag: '高标龙头', _useBoardCount: false })
             }
             return res
+        })
+
+        // 昨日主板涨停股 今日平均竞价
+        const ydayAvg = computed(() => leader.value.yesterday_main_board_avg_auction || null)
+        const ydayAvgVerdict = computed(() => {
+            const v = ydayAvg.value
+            if (!v) return ''
+            const a = v.avg_change_pct
+            if (a >= 1.5) return '🚀 接力情绪强'
+            if (a >= 0) return '☀️ 接力情绪偏暖'
+            if (a >= -2) return '☁️ 接力分歧'
+            return '🌧️ 接力情绪转弱'
+        })
+        const ydayAvgClass = computed(() => {
+            const v = ydayAvg.value
+            if (!v) return 'leader-neutral'
+            const a = v.avg_change_pct
+            if (a >= 0) return 'leader-pos'
+            if (a >= -2) return 'leader-neutral'
+            return 'leader-neg'
+        })
+        const ydayAvgBadge = computed(() => {
+            const v = ydayAvg.value
+            if (!v) return 'badge-blue'
+            const a = v.avg_change_pct
+            if (a >= 1.5) return 'badge-green'
+            if (a >= 0) return 'badge-blue'
+            if (a >= -2) return 'badge-yellow'
+            return 'badge-red'
         })
 
         const signalClassMap = {
@@ -952,7 +1008,8 @@ createApp({
         return {
             snapshot, ranking, rankingUpdatedAt, rankingLive, sentiment, market,
             screenerHits, screenerDate, signals,
-            leader, leaderList, deviations, btResult, insight,
+            leader, leaderList, ydayAvg, ydayAvgVerdict, ydayAvgClass, ydayAvgBadge,
+            deviations, btResult, insight,
             today, phaseClass, progressPct, progressClass,
             leaderClass, leaderIcon, leaderBadgeClass,
             getLeaderClass, getLeaderIcon, getLeaderBadgeClass,

@@ -227,6 +227,72 @@ async def get_deviation():
     return JSONResponse({"date": "", "results": []})
 
 
+# ========== 复盘 + 决策卡 + 决策追踪 ==========
+
+@app.get("/review", response_class=HTMLResponse)
+async def review_page():
+    """复盘页面"""
+    html_path = static_dir / "review.html"
+    if html_path.exists():
+        return html_path.read_text(encoding="utf-8")
+    return "<h1>复盘</h1>"
+
+
+@app.get("/api/review")
+async def get_review():
+    """获取最新复盘数据"""
+    f = DATA_DIR / "latest_review.json"
+    if f.exists():
+        return JSONResponse(json.loads(f.read_text()))
+    return JSONResponse({})
+
+
+@app.get("/api/auction-scores")
+async def get_auction_scores():
+    """获取竞价决策卡"""
+    f = DATA_DIR / "latest_auction_scores.json"
+    if f.exists():
+        return JSONResponse(json.loads(f.read_text()))
+    return JSONResponse([])
+
+
+@app.get("/api/decisions")
+async def get_decisions():
+    """获取决策追踪记录"""
+    from src.engine.decision_tracker import get_records, get_stats
+    return JSONResponse({"records": get_records(), "stats": get_stats()})
+
+
+@app.post("/api/decisions/user")
+async def update_user_decision(request: dict):
+    """用户填写实际操作"""
+    from src.engine.decision_tracker import update_user_decision
+    result = update_user_decision(
+        date=request.get("date", ""),
+        action=request.get("action", ""),
+        code=request.get("code", ""),
+        price=request.get("price", 0),
+        position=request.get("position", ""),
+        stop_loss=request.get("stop_loss", 0),
+        note=request.get("note", ""),
+    )
+    return JSONResponse(result)
+
+
+@app.post("/api/review/run")
+async def run_review_now():
+    """手动触发复盘"""
+    try:
+        from src.engine.daily_review import run_daily_review
+        result = run_daily_review()
+        if result:
+            from dataclasses import asdict
+            return JSONResponse({"status": "ok"})
+        return JSONResponse({"status": "error", "msg": "无涨停数据"})
+    except Exception as e:
+        return JSONResponse({"status": "error", "msg": str(e)})
+
+
 @app.get("/api/market-insight")
 async def get_market_insight():
     """获取四维市场洞察（板块集中度/资金行为/情绪领袖/周期波形）"""

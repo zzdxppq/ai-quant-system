@@ -1,4 +1,12 @@
 """AI量化周期看板 — 启动入口"""
+import os
+# 国内行情接口（新浪/东财/腾讯）不应走翻墙代理（mihomo/clash 等）。
+# 在 import 任何 httpx 模块前清除继承自 shell 的代理变量，避免 httpx.trust_env 读到失效代理。
+for _k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
+    os.environ.pop(_k, None)
+os.environ.setdefault("NO_PROXY", "*")
+os.environ.setdefault("no_proxy", "*")
+
 import sys
 import uvicorn
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -58,16 +66,32 @@ def setup_scheduler():
         misfire_grace_time=600,
     )
 
-    # 收盘后自选股预测（交易日 15:45 北京时间，等K线更新完）
-    def _run_watchlist_predictions():
+    # 收盘后综合任务（交易日 15:45 北京时间）
+    def _run_post_market():
+        # 1. 盘后复盘（次日鱼塘）
+        try:
+            from src.engine.daily_review import run_daily_review
+            run_daily_review()
+        except Exception as e:
+            print(f"[复盘] 异常: {e}")
+
+        # 2. 决策追踪回填
+        try:
+            from src.engine.decision_tracker import backfill_result
+            from src.config import now_cn
+            backfill_result(now_cn().strftime("%Y-%m-%d"))
+        except Exception as e:
+            print(f"[决策追踪] 回填异常: {e}")
+
+        # 3. 自选股评分
         try:
             from src.engine.watchlist import run_all_predictions
             run_all_predictions()
         except Exception as e:
-            print(f"[预测定时] 异常: {e}")
+            print(f"[自选评分] 异常: {e}")
 
     scheduler.add_job(
-        _run_watchlist_predictions,
+        _run_post_market,
         "cron",
         day_of_week="mon-fri",
         hour=15,
