@@ -117,14 +117,37 @@ async def get_ranking_live():
         close_10d_ago = close / (1 + gain / 100) if gain != -100 and close > 0 else 0
         base_map[str(r["code"])] = {**r, "_close_10d_ago": close_10d_ago}
 
+    # 实时数据：腾讯→新浪兜底
+    live_map = {}
     try:
         from src.data.tencent_api import fetch_stock_details
         live = fetch_stock_details(codes)
-    except Exception as e:
-        return JSONResponse({**data, "live": False, "error": str(e)})
+        if live is not None and not live.empty:
+            live_map = {str(row["code"]): row for _, row in live.iterrows()}
+    except Exception:
+        pass
 
-    if live is not None and not live.empty:
-        live_map = {str(row["code"]): row for _, row in live.iterrows()}
+    # 腾讯拿不到时用新浪兜底
+    if len(live_map) < len(codes) // 2:
+        try:
+            from src.data.sina_api import fetch_realtime_batch
+            sina_df = fetch_realtime_batch(codes)
+            if not sina_df.empty:
+                for _, row in sina_df.iterrows():
+                    code = str(row.get("code", ""))
+                    if code not in live_map:
+                        pre = float(row.get("pre_close", 0))
+                        close = float(row.get("close", 0))
+                        live_map[code] = {
+                            "code": code,
+                            "close": close,
+                            "change_pct": round((close / pre - 1) * 100, 2) if pre > 0 else 0,
+                            "market_cap_yi": 0,
+                        }
+        except Exception:
+            pass
+
+    if live_map:
         for code, base in base_map.items():
             lr = live_map.get(code)
             if lr is None:
