@@ -48,6 +48,41 @@ def _save(records: list[dict]):
     HISTORY_FILE.write_text(json.dumps(records, ensure_ascii=False, indent=2))
 
 
+def _load_daily_market_env() -> dict:
+    """从 latest_sentiment / latest_leader 读取当日市场环境 3 项指标
+
+    Returns:
+        {
+            "market_limit_down": 13,           # 全市场竞价跌停数
+            "weighted_auction_gain": -0.37,    # 梯队加权竞价(%)
+            "yesterday_lianban_today_avg": 1.41,  # 昨日(主板)连板股今日平均涨幅(%)
+        }
+    """
+    env = {
+        "market_limit_down": None,
+        "weighted_auction_gain": None,
+        "yesterday_lianban_today_avg": None,
+    }
+    try:
+        sf = DATA_DIR / "latest_sentiment.json"
+        if sf.exists():
+            sd = json.loads(sf.read_text())
+            env["weighted_auction_gain"] = sd.get("weighted_auction_gain")
+            mk = sd.get("market") or {}
+            env["market_limit_down"] = mk.get("limit_down")
+    except Exception:
+        pass
+    try:
+        lf = DATA_DIR / "latest_leader.json"
+        if lf.exists():
+            ld = json.loads(lf.read_text())
+            ya = ld.get("yesterday_main_board_avg_auction") or {}
+            env["yesterday_lianban_today_avg"] = ya.get("avg_change_pct")
+    except Exception:
+        pass
+    return env
+
+
 def archive_today_hits(hits: list[dict], spot_df=None):
     """9:27选股后归档当日结果
 
@@ -60,6 +95,7 @@ def archive_today_hits(hits: list[dict], spot_df=None):
 
     records = _load()
     today = now_cn().strftime("%Y-%m-%d")
+    market_env = _load_daily_market_env()
 
     # 构建昨收价映射
     pre_close_map = {}
@@ -94,12 +130,17 @@ def archive_today_hits(hits: list[dict], spot_df=None):
             "next_day_auction_gain": None,
             "is_win": None,
             "status": "pending",
+            # 当日市场环境（每条记录冗余存一份，前端按日期分组展示）
+            "market_limit_down": market_env["market_limit_down"],
+            "weighted_auction_gain": market_env["weighted_auction_gain"],
+            "yesterday_lianban_today_avg": market_env["yesterday_lianban_today_avg"],
         })
         existing.add(key)
         new_count += 1
 
     _save(records)
-    print(f"[选股记录] 归档 {new_count} 只 ({today})")
+    print(f"[选股记录] 归档 {new_count} 只 ({today}) · 市场跌停={market_env['market_limit_down']} "
+          f"加权竞价={market_env['weighted_auction_gain']} 昨日连板均价={market_env['yesterday_lianban_today_avg']}")
 
 
 def backfill_close(spot_df):

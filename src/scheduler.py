@@ -269,11 +269,15 @@ def run_screener_update() -> dict:
         evaluate_leader, find_leader_from_snapshot,
         evaluate_lianban_leader, find_main_board_lianban_leaders,
         compute_yesterday_main_board_auction,
+        compute_yesterday_zb_today_auction,
+        compute_yesterday_limit_down_today_auction,
         LeaderFeedback, LeaderSignal,
     )
     leader_fb = None          # 市场高标（全市场10日涨幅第一）
     main_board_fbs: list[tuple[LeaderFeedback, int]] = []  # 主板高标 = 主板昨日最高连板（平局多只）
     y_main_board_stats = None # 昨日主板涨停股今日竞价平均
+    y_zb_stats = None         # 昨日炸板股今日竞价均价
+    y_ld_stats = None         # 昨日跌停股今日竞价均价
 
     # 高标龙头直接从排行数据取（而非周期快照），确保是最新10日涨幅榜第一
     ranking_file = str(DATA_DIR / "latest_ranking.json")
@@ -311,6 +315,23 @@ def run_screener_update() -> dict:
         else:
             print("昨日主板涨停股: 无样本")
 
+        # — 昨日炸板股 今日竞价均价（接力反向锚定） —
+        y_zb_stats = compute_yesterday_zb_today_auction(spot_df)
+        if y_zb_stats:
+            print(f"昨日炸板股({y_zb_stats['sample_count']}/{y_zb_stats['pool_size']}只): "
+                  f"今日均价{y_zb_stats['avg_change_pct']:+.2f}% "
+                  f"(高开{y_zb_stats['positive_count']}/低开{y_zb_stats['negative_count']})")
+        else:
+            print("昨日炸板股: 无样本")
+
+        # — 昨日竞价跌停股 今日竞价均价（弱势股反弹/续跌信号） —
+        y_ld_stats = compute_yesterday_limit_down_today_auction(spot_df)
+        if y_ld_stats:
+            print(f"昨日跌停股({y_ld_stats['sample_count']}/{y_ld_stats['pool_size']}只): "
+                  f"今日均价{y_ld_stats['avg_change_pct']:+.2f}%")
+        else:
+            print("昨日跌停股: 无样本（首次跑无历史数据，明日起有）")
+
         # 保存龙头反馈（市场高标/主板高标[连板]/昨日主板涨停均值）
         def _fb_to_dict(fb: LeaderFeedback) -> dict:
             return {
@@ -339,6 +360,8 @@ def run_screener_update() -> dict:
             # 兼容旧 schema：第一只放在 main_board_leader
             "main_board_leader": main_board_dicts[0] if main_board_dicts else None,
             "yesterday_main_board_avg_auction": y_main_board_stats,
+            "yesterday_zb_today_auction": y_zb_stats,
+            "yesterday_limit_down_today_auction": y_ld_stats,
             # 兼容旧字段（dashboard / cross_validator 可能读取）
             **(  _fb_to_dict(leader_fb) if leader_fb else {}),
         }
@@ -440,7 +463,13 @@ def run_screener_update() -> dict:
             candidates=cycle_snapshot.get("candidates", []),
             prev_cycle=cycle_snapshot.get("prev_cycle"),
         )
-        signals = cross_validate(cs, hits, leader_fb, pool_sent)
+        # 主板连板高标只取 LeaderFeedback（list），不带 board_count
+        mb_fbs_only = [fb for fb, _ in main_board_fbs] if main_board_fbs else []
+        signals = cross_validate(
+            cs, hits, leader_fb, pool_sent,
+            market_stats=market_stats,
+            main_board_leaders=mb_fbs_only,
+        )
         signals_data = {
             "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
             "cycle_phase": cycle_snapshot.get("phase", "孕育期"),
@@ -512,6 +541,22 @@ def run_screener_update() -> dict:
         if dev_file.exists():
             dev_data = json.loads(dev_file.read_text()).get("results")
 
+        # 新版邮件需要的额外数据：sentiment（含 market 风向）、ranking（板块查表）
+        sentiment_email = None
+        sent_file = DATA_DIR / "latest_sentiment.json"
+        if sent_file.exists():
+            try:
+                sentiment_email = json.loads(sent_file.read_text())
+            except Exception:
+                pass
+        ranking_email = None
+        rank_file = DATA_DIR / "latest_ranking.json"
+        if rank_file.exists():
+            try:
+                ranking_email = json.loads(rank_file.read_text())
+            except Exception:
+                pass
+
         send_screener_report(
             cycle_phase=cycle_snapshot.get("phase", "孕育期") if cycle_snapshot else "孕育期",
             cycle_day=cycle_snapshot.get("phase_day", 0) if cycle_snapshot else 0,
@@ -520,6 +565,8 @@ def run_screener_update() -> dict:
             hits=[asdict(h) for h in hits],
             signals=signals_data.get("signals", []),
             deviations=dev_data,
+            sentiment_data=sentiment_email,
+            ranking_data=ranking_email,
         )
     except Exception as e:
         print(f"[邮件] 推送异常: {e}")

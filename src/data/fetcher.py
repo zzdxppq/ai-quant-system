@@ -98,9 +98,11 @@ def fetch_gain_10d_ranking(top_n: int = 30) -> pd.DataFrame:
     except Exception as e:
         print(f"东方财富候选池兜底失败: {e}")
 
-    from src.data.mock_data import generate_mock_ranking
-    print("[降级] 使用模拟排行数据")
-    return generate_mock_ranking("small_cycle_start")
+    # 所有真实数据源失败 → 返回空 df，由调用方决定是否保留旧快照。
+    # 故意不再静默降级到 mock：mock 会污染 latest_ranking.json + 市场洞察。
+    # 显式 MOCK=1 时才走 mock（前面已处理）。
+    print("[排行] 所有真实数据源失败，返回空结果（保留上次成功的快照）")
+    return pd.DataFrame()
 
 
 def fetch_limit_up_history(days: int = 5) -> dict[str, pd.DataFrame]:

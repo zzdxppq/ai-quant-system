@@ -39,6 +39,15 @@ async def history_page():
     return "<h1>AI量化周期看板</h1><p>前端文件未找到</p>"
 
 
+@app.get("/ranking", response_class=HTMLResponse)
+async def ranking_page():
+    """10日涨幅榜独立页"""
+    html_path = static_dir / "ranking.html"
+    if html_path.exists():
+        return html_path.read_text(encoding="utf-8")
+    return "<h1>AI量化周期看板</h1><p>前端文件未找到</p>"
+
+
 @app.get("/api/cycle")
 async def get_cycle_state():
     """获取当前周期状态"""
@@ -315,6 +324,20 @@ async def get_auction_detail(code: str):
         result["auction_gain"] = round(auction_gain, 2)
         result["summary"] = "\n".join(lines)
 
+        # 集合竞价明细 (ticks) — 用于绘制竞价形态图
+        try:
+            from src.data.auction_api import fetch_auction_ticks
+            ticks_data = fetch_auction_ticks(code)
+            result["ticks_source"] = ticks_data.get("source", "none")
+            result["ticks_auction"] = ticks_data.get("auction_window", [])
+            result["ticks_intraday"] = ticks_data.get("intraday_window", [])
+            result["ticks_open"] = ticks_data.get("open_tick")
+        except Exception as e:
+            print(f"[auction-detail] ticks 获取失败 {code}: {e}")
+            result["ticks_source"] = "none"
+            result["ticks_auction"] = []
+            result["ticks_intraday"] = []
+
     except Exception as e:
         result["summary"] = f"获取失败: {e}"
 
@@ -377,112 +400,4 @@ async def get_screener_history():
     })
 
 
-# ========== 自选股 API ==========
-
-@app.get("/watchlist", response_class=HTMLResponse)
-async def watchlist_page():
-    """自选股页面"""
-    html_path = static_dir / "watchlist.html"
-    if html_path.exists():
-        return html_path.read_text(encoding="utf-8")
-    return "<h1>自选股</h1>"
-
-
-@app.get("/api/watchlist")
-async def api_get_watchlist():
-    """获取自选股列表+预测数据+实时行情"""
-    from src.engine.watchlist import get_watchlist, get_all_predictions
-    items = get_watchlist()
-    predictions = get_all_predictions()
-
-    # 用腾讯接口补充实时行情
-    if items:
-        try:
-            from src.data.tencent_api import fetch_stock_details
-            codes = [item["code"] for item in items]
-            live_df = fetch_stock_details(codes)
-            if live_df is not None and not live_df.empty:
-                live_map = {str(row["code"]): row for _, row in live_df.iterrows()}
-                for item in items:
-                    row = live_map.get(item["code"])
-                    if row is not None:
-                        item["close"] = float(row.get("close", 0))
-                        item["change_pct"] = float(row.get("change_pct", 0))
-                        item["market_cap_yi"] = float(row.get("market_cap_yi", 0))
-        except Exception:
-            pass
-
-        # 补充10日涨幅（从排行数据）
-        try:
-            ranking_file = DATA_DIR / "latest_ranking.json"
-            if ranking_file.exists():
-                ranking_data = json.loads(ranking_file.read_text())
-                gain_map = {str(r["code"]): r.get("gain_10d", 0) for r in ranking_data.get("ranking", [])}
-                for item in items:
-                    item["gain_10d"] = gain_map.get(item["code"], None)
-        except Exception:
-            pass
-
-    # 合并预测到列表
-    for item in items:
-        pred = predictions.get(item["code"])
-        if pred:
-            item["trend"] = pred.get("trend", "")
-            item["pred_gain"] = pred.get("pred_gain", 0)
-            item["confidence"] = pred.get("confidence", "")
-            item["predicted_at"] = pred.get("predicted_at", "")
-    return JSONResponse({"items": items, "predictions": predictions})
-
-
-@app.post("/api/watchlist/add")
-async def api_add_watchlist(request: dict):
-    """添加自选股"""
-    from src.engine.watchlist import add_to_watchlist
-    code = request.get("code", "")
-    name = request.get("name", "")
-    result = add_to_watchlist(code, name)
-    return JSONResponse(result)
-
-
-@app.post("/api/watchlist/remove")
-async def api_remove_watchlist(request: dict):
-    """删除自选股"""
-    from src.engine.watchlist import remove_from_watchlist
-    code = request.get("code", "")
-    result = remove_from_watchlist(code)
-    return JSONResponse(result)
-
-
-@app.get("/api/watchlist/search")
-async def api_search_stocks(q: str = ""):
-    """搜索股票"""
-    from src.engine.watchlist import search_stocks
-    results = search_stocks(q)
-    return JSONResponse({"results": results})
-
-
-@app.get("/api/watchlist/prediction/{code}")
-async def api_get_prediction(code: str):
-    """获取单只股票预测详情"""
-    from src.engine.watchlist import get_prediction
-    pred = get_prediction(code)
-    if pred:
-        return JSONResponse(pred)
-    return JSONResponse({"code": code, "trend": "", "predictions": []})
-
-
-@app.post("/api/watchlist/predict/{code}")
-async def api_trigger_prediction(code: str):
-    """手动触发单只股票预测"""
-    from src.engine.watchlist import _trigger_prediction_async
-    _trigger_prediction_async(code)
-    return JSONResponse({"ok": True, "msg": f"{code} 预测已触发"})
-
-
-@app.post("/api/watchlist/predict-all")
-async def api_predict_all():
-    """手动触发全部自选股预测"""
-    import threading
-    from src.engine.watchlist import run_all_predictions
-    threading.Thread(target=run_all_predictions, daemon=True).start()
-    return JSONResponse({"ok": True, "msg": "全部预测已触发"})
+# ========== 自选股模块已移除 ==========

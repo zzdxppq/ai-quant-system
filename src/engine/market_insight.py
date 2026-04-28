@@ -14,6 +14,8 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 from collections import Counter, defaultdict
 
+import pandas as pd
+
 from src.config import DATA_DIR, now_cn
 
 
@@ -88,6 +90,8 @@ class MarketInsight:
     emotion_chain: str = ""                  # 情绪传导链
     # 周期波形
     wave: Optional[CycleWaveSignal] = None
+    # 市场广度（上证指数+涨跌家数）
+    breadth: Optional[dict] = None
 
 
 # ── 板块集中度 ────────────────────────────────────────────────────────
@@ -415,6 +419,9 @@ def analyze_market_insight(
     # 4. 周期波形
     wave = _analyze_cycle_wave(ranking)
 
+    # 5. 市场广度：上证指数 + 涨跌家数
+    breadth = _compute_market_breadth()
+
     return MarketInsight(
         date=today,
         sector_heats=heats,
@@ -430,7 +437,51 @@ def analyze_market_insight(
         emotion_leaders=leaders,
         emotion_chain=chain_desc,
         wave=wave,
+        breadth=breadth,
     )
+
+
+def _compute_market_breadth() -> Optional[dict]:
+    """计算市场广度：上证指数 + 涨跌家数"""
+    try:
+        from src.data.sina_api import fetch_realtime_batch
+        # 上证指数 sh000001
+        idx_df = fetch_realtime_batch(["sh000001"])
+        sh_close, sh_pct = None, None
+        if idx_df is not None and not idx_df.empty:
+            r = idx_df.iloc[0]
+            close = float(r.get("close", 0) or 0)
+            pre = float(r.get("pre_close", 0) or 0)
+            if close > 0 and pre > 0:
+                sh_close = round(close, 2)
+                sh_pct = round((close / pre - 1) * 100, 2)
+    except Exception as e:
+        print(f"[市场广度] 上证指数拉取失败: {e}")
+        sh_close, sh_pct = None, None
+
+    advance = decline = flat = 0
+    try:
+        from src.data.sina_spot_api import fetch_a_share_list_sina
+        spot = fetch_a_share_list_sina()
+        if spot is not None and not spot.empty:
+            spot["close"] = pd.to_numeric(spot["close"], errors="coerce").fillna(0)
+            spot["pre_close"] = pd.to_numeric(spot["pre_close"], errors="coerce").fillna(0)
+            spot = spot[(spot["close"] > 0) & (spot["pre_close"] > 0)]
+            advance = int((spot["close"] > spot["pre_close"]).sum())
+            decline = int((spot["close"] < spot["pre_close"]).sum())
+            flat = int((spot["close"] == spot["pre_close"]).sum())
+    except Exception as e:
+        print(f"[市场广度] 涨跌家数拉取失败: {e}")
+
+    if sh_close is None and advance == 0 and decline == 0:
+        return None
+    return {
+        "sh_close": sh_close,
+        "sh_pct": sh_pct,
+        "advance": advance,
+        "decline": decline,
+        "flat": flat,
+    }
 
 
 # ── 持久化 ────────────────────────────────────────────────────────────

@@ -259,22 +259,163 @@ ORCHESTRIX_SESSION="$OP_SESSION" ORCHESTRIX_LANG="$LANG" bash "$WORK_DIR/.orches
 
 **Important**: Pass `ORCHESTRIX_SESSION` and `ORCHESTRIX_LANG` inline (not `export`) to avoid polluting Yuri's own shell environment. `$LANG` is `zh` or `en` based on your `--lang` activation parameter. The script creates a new `op-{name}` session with 4 dev agent windows, all using the same language.
 
-### Phase B: Remote Development Monitoring
+### Agent Autonomy Model (Phase B — CRITICAL)
 
-After `start-orchestrix.sh` launches, HANDOFF automation runs autonomously. Yuri monitors:
+Phase B (Development) operates in two distinct modes. Violating this boundary
+causes handoff chain breakage, agent window resets, and lost progress.
+
+#### Mode 1: Kickoff (Yuri sends ONE command)
+
+Yuri's job is to **kick the SM once** to start the development loop. After that,
+Yuri transitions to Mode 2 immediately.
 
 ```bash
-# Watch HANDOFF log
-tail -f /tmp/${OP_SESSION}-handoff.log
-
-# Check specific agent output
-tmux capture-pane -t "$OP_SESSION:1" -p | tail -20  # SM
-tmux capture-pane -t "$OP_SESSION:2" -p | tail -20  # Dev
-
-# Check story completion
-ls "$WORK_DIR/docs/stories/"
-git -C "$WORK_DIR" log --oneline -5
+# Send exactly ONE command to SM window to start the loop
+tmux send-keys -t "$OP_SESSION:1" "*draft {first_story_id}"
+sleep 1
+tmux send-keys -t "$OP_SESSION:1" Enter
 ```
+
+This is the ONLY direct command Yuri sends to any agent window during Phase B.
+
+#### Mode 2: Monitor Only (Yuri observes, does NOT send commands)
+
+After kickoff, the **handoff-detector.sh** (Stop Hook) drives the entire agent loop:
+
+```
+SM *draft → HANDOFF → Architect *review → HANDOFF → Dev *develop
+  → HANDOFF → QA *test → HANDOFF → SM *create-next-story → loop
+```
+
+Each agent completes its task, emits a `🎯 HANDOFF TO {agent}: *{command}` message,
+then calls `/clear`. The Stop Hook:
+1. Parses the HANDOFF message from the tmux pane output
+2. Routes the command to the target agent's window
+3. `/clear`s the source window and reloads the agent (`/o {agent}`)
+
+**WHY Yuri must NOT send commands after kickoff:**
+- The handoff-detector `/clear`s agent windows after each task completion
+- If Yuri sends a command to a window that is about to be `/clear`ed, the command is lost
+- If Yuri `/clear`s a window manually, it triggers a Stop event that confuses the handoff-detector
+- Two orchestrators fighting over the same tmux windows creates race conditions
+
+#### When Yuri CAN re-intervene (Stuck Recovery)
+
+Yuri re-enters command-sending mode ONLY when stuck detection triggers (see Monitoring Loop below).
+After recovery, Yuri returns to Monitor Only mode immediately.
+
+### Phase B: Remote Development Monitoring (5-Minute Polling Loop)
+
+After kickoff, Yuri enters a **polling loop** that runs every 5 minutes until all stories are done.
+
+```
+WHILE stories_done < total_stories:
+  → 2.1 Scan story statuses
+  → 2.2 Report to user
+  → 2.3 Stuck detection & recovery
+  → 2.4 Save state
+  → Sleep 5 minutes
+```
+
+#### 2.1 Scan Story Statuses (Multi-Source)
+
+**Primary source** — story docs:
+```bash
+# Count stories by status
+DONE=$(grep -rl 'status: done' "$WORK_DIR/docs/stories/" 2>/dev/null | wc -l)
+TOTAL=$(ls "$WORK_DIR/docs/stories/"*.md 2>/dev/null | wc -l)
+```
+
+**Secondary source** — git log (cross-validation):
+```bash
+COMMITTED=$(git -C "$WORK_DIR" log --oneline --since="$ITERATION_START" | grep -cE "feat\(story-|feat\(solo-")
+```
+
+**Tertiary source** — handoff-detector log:
+```bash
+HANDOFF_LOG="/tmp/${OP_SESSION}-handoff.log"
+[ -f "$HANDOFF_LOG" ] && tail -20 "$HANDOFF_LOG"
+```
+
+If story doc count and git commit count diverge by > 1, trust git commits
+(story docs may not be updated if SM was bypassed during stuck recovery).
+
+#### 2.2 Report to User
+
+```
+📊 Progress: {done}/{total} stories
+✅ Done: {list of done story IDs}
+🔄 In Progress: {list}
+⏳ Remaining: {count}
+🔗 Handoff chain: {last 3 handoff events from log}
+```
+
+#### 2.3 Stuck Detection & Recovery
+
+**Step A: Process health check (every poll, not just when stuck):**
+```bash
+for W in 0 1 2 3; do
+  PANE_PID=$(tmux display-message -t "$OP_SESSION:$W" -p '#{pane_pid}' 2>/dev/null)
+  CLAUDE_ALIVE=$(pgrep -P "$PANE_PID" -f "claude" 2>/dev/null | head -1)
+  if [ -z "$CLAUDE_ALIVE" ]; then
+    # Claude process died in window $W — restart
+    AGENT=$(echo "architect sm dev qa" | cut -d' ' -f$((W+1)))
+    tmux send-keys -t "$OP_SESSION:$W" "claude"
+    sleep 1
+    tmux send-keys -t "$OP_SESSION:$W" Enter
+    sleep 12
+    tmux send-keys -t "$OP_SESSION:$W" "/o $AGENT"
+    sleep 1
+    tmux send-keys -t "$OP_SESSION:$W" Enter
+  fi
+done
+```
+
+**Step B: Handoff chain health (every poll):**
+```bash
+HANDOFF_LOG="/tmp/${OP_SESSION}-handoff.log"
+if [ -f "$HANDOFF_LOG" ]; then
+  LAST_HANDOFF_TIME=$(tail -1 "$HANDOFF_LOG" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+')
+  # If last handoff was > 10 min ago but stories are still in progress, chain may be broken
+fi
+```
+
+**Step C: Stuck escalation (3 consecutive polls with same done count = 15 min no progress):**
+
+IF no progress for 15 minutes:
+1. Capture all 4 tmux window contents:
+```bash
+for W in 0 1 2 3; do
+  tmux capture-pane -t "$OP_SESSION:$W" -p -S -50
+done
+```
+2. Check handoff log for routing errors.
+3. Analyze for error patterns (exceptions, stuck loops, missing handoffs).
+4. Attempt recovery:
+   - IF handoff was emitted but not routed → manually `tmux send-keys` the command to target window
+   - IF agent window shows error → `/clear` → `/o {agent}` → resend last command
+   - IF agent process dead → restart (Step A above)
+5. Increment `stuck_count`.
+
+**Stuck escalation thresholds:**
+
+| stuck_count | Action |
+|-------------|--------|
+| 1 | Auto-recovery: resend handoff / restart agent |
+| 2 | Capture full diagnostics, attempt deeper recovery |
+| 3 | Escalate to user with full diagnostics report |
+| > 3 | Pause monitoring loop, wait for user intervention |
+
+#### 2.4 Completion Detection
+
+When monitoring an agent in a tmux window:
+
+| Priority | Signal | Pattern | Reliability |
+|----------|--------|---------|-------------|
+| **P1** | Claude Code completion | `/[A-Z][a-z]*ed for [0-9]/` (e.g., "Baked for 31s") | Highest |
+| **P2** | TUI idle indicator | `○` in last lines of pane | High |
+| **P3** | Approval prompt | `◐` → auto-send `y` + Enter | High |
+| **P4** | Content hash stability (3×30s) | Fallback | Medium |
 
 ### Session Lifecycle
 
@@ -285,6 +426,31 @@ git -C "$WORK_DIR" log --oneline -5
 | Development complete | Report to user, ready for Phase C |
 | User says "stop" / "cancel" | `tmux kill-session -t "$OP_SESSION"` |
 | Reconnect / resume | Check `tmux has-session -t "$OP_SESSION"` to detect existing session |
+
+### `/clear` Usage Rules
+
+**`/clear` is ONLY for error recovery or cross-phase re-activation.** Never use it
+during normal within-phase workflow.
+
+| Scenario | Action |
+|----------|--------|
+| **Same phase, same window** (e.g., asking agent to modify its output) | Just send the new instruction + Enter. Do NOT `/clear`. |
+| **Same phase, agent drifted** (e.g., noise corrupted context) | `/clear` Enter → wait 1s → `/o {agent}` Enter → wait 15s → send command Enter |
+| **Cross-phase re-activation** (e.g., Phase B needs to modify a Phase A agent) | `/clear` Enter → wait 1s → `/o {agent}` Enter → wait 15s → send command Enter |
+| **Agent load failure** | `/clear` Enter → retry `/o {agent}` Enter |
+| **Stuck agent** (no change 5min) | `/clear` Enter → restart |
+
+### Iteration Scope
+
+When starting a new iteration on an existing project, Yuri must ensure the SM
+knows which epics/stories are in scope. Two approaches:
+
+1. **Via command context**: Include scope in the kickoff command:
+   `*draft 6.1` + context about epic order (6→7→8)
+2. **Via scope file**: Create `docs/prd/iteration-{N}-scope.yaml` listing epic order
+   and story IDs. SM reads this file to determine what to draft next.
+
+The scope file approach is more robust because SM loses context on `/clear`.
 
 ---
 

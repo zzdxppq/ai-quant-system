@@ -83,20 +83,13 @@ def setup_scheduler():
         except Exception as e:
             print(f"[决策追踪] 回填异常: {e}")
 
-        # 3. 自选股评分
-        try:
-            from src.engine.watchlist import run_all_predictions
-            run_all_predictions()
-        except Exception as e:
-            print(f"[自选评分] 异常: {e}")
-
     scheduler.add_job(
         _run_post_market,
         "cron",
         day_of_week="mon-fri",
         hour=15,
         minute=45,
-        id="watchlist_predict",
+        id="post_market",
         misfire_grace_time=3600,
     )
 
@@ -105,7 +98,7 @@ def setup_scheduler():
     print(f"  - 周期更新: 周一至周五 15:30")
     print(f"  - 选股执行: 周一至周五 {SCREENER_CRON_HOUR}:{SCREENER_CRON_MINUTE:02d}")
     print(f"  - 排行刷新: 周一至周五 10:00 / 12:30")
-    print(f"  - 自选预测: 周一至周五 15:45")
+    print(f"  - 盘后复盘+决策追踪: 周一至周五 15:45")
 
     return scheduler
 

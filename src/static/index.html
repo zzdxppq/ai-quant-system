@@ -119,6 +119,18 @@
         .badge-yellow { background: #78350f; color: #fbbf24; }
         .badge-red { background: #7f1d1d; color: #ef4444; }
 
+        /* 昨日主板连板高标 — 合并行的内联 pill */
+        .lb-pills {
+            display: flex; flex-wrap: wrap; gap: 6px;
+            margin-top: 6px;
+        }
+        .lb-pill {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 3px 10px; border-radius: 12px;
+            font-size: 12px; line-height: 1.4;
+            border: 1px solid transparent;
+        }
+
         /* 进度条 */
         .progress-bar {
             margin-top: 12px; background: #1a2040; border-radius: 8px;
@@ -197,80 +209,254 @@
 
         .empty-state { text-align: center; padding: 40px; color: #4b5563; }
 
-        /* 市场洞察四维面板 */
-        .insight-grid {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+        /* 选股表 · 竞价形态迷你图 */
+        .auction-mini { display: inline-block; vertical-align: middle; }
+
+        /* 决策大字栏 — 9:27 后 3 分钟内一眼决策的核心 */
+        .hero-banner {
+            padding: 18px 24px; border: 2px solid #2a3050;
+            transition: border-color 0.3s;
         }
-        .insight-box {
-            background: #0d1220; border-radius: 10px; padding: 14px 16px;
+        .hero-banner.advice-stop { border-color: #10b981; background: linear-gradient(135deg, #0a2a0a 0%, #0d1220 50%); }
+        .hero-banner.advice-warn { border-color: #fbbf24; background: linear-gradient(135deg, #2a2a0a 0%, #0d1220 50%); }
+        .hero-banner.advice-go   { border-color: #ef4444; background: linear-gradient(135deg, #2a0f0f 0%, #0d1220 50%); }
+        .hero-main { display: flex; align-items: stretch; gap: 18px; flex-wrap: wrap; }
+        .hero-action { flex-shrink: 0; min-width: 200px; align-self: center; }
+        .ha-text { font-size: 38px; font-weight: 800; line-height: 1.1; }
+        .ha-position { font-size: 14px; color: #a0aec0; margin-top: 4px; }
+        .ha-position b { font-weight: 700; color: #e0e6ed; }
+        .advice-stop .ha-text { color: #10b981; }
+        .advice-warn .ha-text { color: #fbbf24; }
+        .advice-go   .ha-text { color: #ef4444; }
+        .hero-divider { width: 1px; background: #2a3050; align-self: stretch; }
+        .hero-cycle { flex-shrink: 0; min-width: 110px; align-self: center; }
+        .hc-label { font-size: 11px; color: #6b7280; }
+        .hc-phase { font-size: 22px; font-weight: 700; line-height: 1.1; margin-top: 4px; }
+        .hc-day { font-size: 12px; color: #8892a8; margin-top: 4px; }
+        .hero-metrics {
+            flex: 1; display: grid;
+            grid-template-columns: repeat(3, 1.3fr) repeat(3, 1fr);
+            gap: 8px;
+            min-width: 540px;
+        }
+        .hm-cell {
+            background: #0d1220; border-radius: 8px; padding: 8px 12px;
             border: 1px solid #1e2a45;
         }
-        .insight-box-title {
-            font-size: 13px; font-weight: 600; margin-bottom: 10px;
-            display: flex; align-items: center; gap: 6px;
+        .hm-label { font-size: 11px; color: #6b7280; }
+        .hm-value { font-size: 22px; font-weight: 700; margin-top: 4px; line-height: 1.1; }
+
+        /* 重点项（前 3 个）：高亮 */
+        .hm-cell.hm-primary {
+            background: linear-gradient(135deg, #111827 0%, #0d1220 80%);
+            border: 1px solid #2a3050;
+            box-shadow: 0 1px 0 rgba(96,165,250,0.06) inset;
         }
-        .insight-box-title .ib-icon { font-size: 15px; }
-        .wave-bar {
-            height: 28px; background: #1a2040; border-radius: 6px;
-            position: relative; overflow: hidden; margin-bottom: 8px;
+        .hm-cell.hm-primary .hm-label {
+            font-size: 12px; color: #a0aec0; font-weight: 600;
+            letter-spacing: 0.5px;
         }
-        .wave-fill {
-            height: 100%; border-radius: 6px; display: flex;
-            align-items: center; padding-left: 10px; font-size: 12px;
-            font-weight: 600; color: #fff; transition: width 0.5s ease;
+        .hm-cell.hm-primary .hm-value { font-size: 26px; }
+
+        /* 参考项（后 3 个）：淡化 + 与重点项之间加分隔线 */
+        .hm-cell.hm-secondary {
+            background: #0a0e1a; border: 1px solid #161e30;
+            opacity: 0.85;
         }
-        .wave-fill.w-ebb { background: linear-gradient(90deg, #374151, #4b5563); }
-        .wave-fill.w-start { background: linear-gradient(90deg, #92400e, #fbbf24); }
-        .wave-fill.w-main { background: linear-gradient(90deg, #065f46, #10b981); }
-        .wave-fill.w-accel { background: linear-gradient(90deg, #047857, #34d399); }
-        .wave-fill.w-decay { background: linear-gradient(90deg, #7f1d1d, #ef4444); }
-        .insight-desc { font-size: 12px; color: #8892a8; line-height: 1.5; }
-        .insight-metric {
-            display: inline-flex; align-items: baseline; gap: 4px;
-            margin-right: 12px; font-size: 12px;
+        /* primary 后紧跟的第一个 secondary 加左侧分隔 */
+        .hm-cell.hm-primary + .hm-cell.hm-secondary {
+            border-left: 2px solid #2a3050;
+            margin-left: 4px;
+            position: relative;
         }
-        .insight-metric .im-val { font-size: 16px; font-weight: 700; }
-        .sector-bar-row {
-            display: flex; align-items: center; gap: 8px;
-            margin-bottom: 6px; font-size: 12px;
+        .hm-cell.hm-primary + .hm-cell.hm-secondary::before {
+            content: "参考";
+            position: absolute; top: 4px; right: 6px;
+            font-size: 9px; color: #4b5563;
+            padding: 1px 4px; border: 1px solid #2a3050;
+            border-radius: 3px;
         }
-        .sector-bar-label { width: 64px; text-align: right; color: #a0aec0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .sector-bar-track { flex: 1; height: 18px; background: #1a2040; border-radius: 4px; overflow: hidden; }
-        .sector-bar-fill {
-            height: 100%; border-radius: 4px; display: flex;
-            align-items: center; padding-left: 6px; font-size: 11px;
-            font-weight: 600; color: #fff; min-width: 20px;
+        .hm-cell.hm-secondary .hm-label {
+            font-size: 10px; color: #4b5563;
         }
-        .sector-bar-fill.sb-1 { background: linear-gradient(90deg, #60a5fa, #3b82f6); }
-        .sector-bar-fill.sb-2 { background: linear-gradient(90deg, #a78bfa, #7c3aed); }
-        .sector-bar-fill.sb-3 { background: linear-gradient(90deg, #34d399, #059669); }
-        .sector-bar-fill.sb-4 { background: linear-gradient(90deg, #fbbf24, #d97706); }
-        .sector-bar-fill.sb-5 { background: linear-gradient(90deg, #f87171, #dc2626); }
-        .capital-tag {
-            display: inline-block; padding: 2px 8px; border-radius: 4px;
-            font-size: 11px; font-weight: 600; margin: 2px;
+        .hm-cell.hm-secondary .hm-value {
+            font-size: 17px; font-weight: 600;
+            margin-top: 2px;
         }
-        .ct-new { background: #1e3a5f; color: #60a5fa; }
-        .ct-acc { background: #065f46; color: #34d399; }
-        .ct-sus { background: #1a1a2e; color: #a0aec0; }
-        .ct-dec { background: #78350f; color: #fbbf24; }
-        .ct-exh { background: #7f1d1d; color: #ef4444; }
-        .leader-chain {
-            font-size: 13px; font-weight: 600; padding: 8px 12px;
-            background: #111827; border-radius: 6px; border-left: 3px solid #a78bfa;
-            margin-bottom: 8px;
+        .hm-cell.hm-secondary .mb-sub { font-size: 9px; color: #4b5563; }
+        @media (max-width: 1024px) {
+            .hero-metrics { grid-template-columns: repeat(3, 1fr); }
         }
-        .leader-item {
-            display: flex; align-items: center; gap: 8px;
-            padding: 5px 0; font-size: 12px;
+        @media (max-width: 640px) {
+            .hero-metrics { grid-template-columns: 1fr 1fr; }
         }
-        .leader-role-tag {
-            display: inline-block; padding: 1px 6px; border-radius: 4px;
-            font-size: 10px; font-weight: 700;
+        .hm-bad  { color: #10b981; }
+        .hm-good { color: #ef4444; }
+        .hm-ok   { color: #60a5fa; }
+        .hero-refresh {
+            flex-shrink: 0; align-self: center;
+            font-size: 16px; padding: 6px 14px;
         }
-        .lr-space { background: #7f1d1d; color: #fca5a5; }
-        .lr-chain { background: #92400e; color: #fbbf24; }
-        .lr-follow { background: #1a1a2e; color: #a0aec0; }
+        .hero-reason {
+            margin-top: 14px; padding: 10px 14px;
+            background: rgba(0,0,0,0.3); border-radius: 6px;
+            font-size: 14px; color: #d1d5db; line-height: 1.5;
+        }
+
+        /* 折叠详情卡 */
+        details.details-card {
+            background: #111827; border: 1px solid #1e2a45; border-radius: 12px;
+            margin-bottom: 16px;
+        }
+        details.details-card > summary {
+            padding: 14px 20px; cursor: pointer;
+            font-size: 14px; color: #a0aec0;
+            user-select: none;
+        }
+        details.details-card > summary:hover { color: #60a5fa; }
+        details.details-card[open] > summary {
+            border-bottom: 1px solid #1e2a45; color: #60a5fa;
+        }
+        details.details-card .details-body { padding: 16px 20px; }
+
+        /* 选股表决策列 */
+        .decision-cell {
+            display: flex; flex-direction: column; gap: 2px;
+            padding: 4px 8px; border-radius: 6px;
+            border-left: 3px solid #4b5563;
+        }
+        .dc-action { font-size: 13px; font-weight: 700; }
+        .dc-detail { font-size: 11px; color: #8892a8; }
+        .decision-cell.dc-strong { background: #0f2a1a; border-left-color: #10b981; }
+        .decision-cell.dc-strong .dc-action { color: #34d399; }
+        .decision-cell.dc-normal { background: #1a2332; border-left-color: #60a5fa; }
+        .decision-cell.dc-normal .dc-action { color: #60a5fa; }
+        .decision-cell.dc-watch  { background: #2a2a1a; border-left-color: #fbbf24; }
+        .decision-cell.dc-watch .dc-action  { color: #fbbf24; }
+        .decision-cell.dc-avoid  { background: #2a1a1a; border-left-color: #ef4444; }
+        .decision-cell.dc-avoid .dc-action  { color: #ef4444; }
+
+        /* 市场风向条 — 首屏关键指标 */
+        .market-banner { padding: 14px 18px; }
+        .market-banner .mb-row {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 12px;
+            align-items: stretch;
+        }
+        .mb-cell {
+            background: #0d1220; border-radius: 8px; padding: 10px 12px;
+            text-align: center; border: 1px solid #1e2a45;
+            display: flex; flex-direction: column; justify-content: center;
+            min-height: 64px;
+        }
+        .mb-label { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
+        .mb-num { font-size: 28px; font-weight: 700; line-height: 1.1; }
+        .mb-num-mid { font-size: 18px; font-weight: 700; line-height: 1.1; }
+        .mb-sub { margin-top: 4px; font-size: 10px; color: #6b7280; line-height: 1.3; }
+        /* A股配色：涨/好/正向 用红，跌/坏/负向 用绿，中性蓝 */
+        .mb-num-good { color: #ef4444; }
+        .mb-num-ok   { color: #60a5fa; }
+        .mb-num-bad  { color: #10b981; }
+        .mb-verdict {
+            font-size: 16px; font-weight: 700;
+            padding: 4px 6px; border-radius: 6px;
+        }
+        .mb-advice-text { font-size: 18px; font-weight: 700; line-height: 1.2; }
+        /* A股配色：不操作/警戒 用绿，可参与/积极 用红 */
+        .mb-advice.advice-stop {
+            background: #0a2a0a; border: 2px solid #10b981;
+        }
+        .mb-advice.advice-stop .mb-advice-text { color: #10b981; }
+        .mb-advice.advice-warn {
+            background: #2a2a1a; border: 2px solid #fbbf24;
+        }
+        .mb-advice.advice-warn .mb-advice-text { color: #fbbf24; }
+        .mb-advice.advice-go {
+            background: #2a0f0f; border: 2px solid #ef4444;
+        }
+        .mb-advice.advice-go .mb-advice-text { color: #ef4444; }
+        .mb-reason {
+            margin-top: 10px; padding: 8px 12px;
+            font-size: 13px; color: #d1d5db;
+            background: #0d1220; border-left: 3px solid #10b981;
+            border-radius: 6px;
+        }
+        @media (max-width: 1024px) {
+            .market-banner .mb-row { grid-template-columns: repeat(3, 1fr); }
+        }
+
+        /* 今日竞价决策卡（从 review 页迁入） */
+        .score-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .score-bar .sb-label { width: 100px; text-align: right; font-size: 12px; color: #8892a8; }
+        .score-bar .sb-track { flex: 1; height: 20px; background: #1a2040; border-radius: 4px; overflow: hidden; }
+        .score-bar .sb-fill { height: 100%; border-radius: 4px; display: flex; align-items: center; padding-left: 6px; font-size: 11px; font-weight: 600; color: #fff; }
+        .decision-box { padding: 16px; border-radius: 10px; text-align: center; }
+        .decision-box .db-action { font-size: 24px; font-weight: 700; }
+        .decision-box .db-detail { font-size: 13px; margin-top: 6px; }
+        .db-go { background: #0f2a1a; border: 2px solid #10b981; }
+        .db-go .db-action { color: #10b981; }
+        .db-half { background: #2a2a1a; border: 2px solid #fbbf24; }
+        .db-half .db-action { color: #fbbf24; }
+        .db-no { background: #2a1a1a; border: 2px solid #ef4444; }
+        .db-no .db-action { color: #ef4444; }
+        .tag-veto { background: #450a0a; color: #ef4444; border: 1px solid #ef4444; }
+        .tag-strong { background: #065f46; color: #34d399; }
+        .tag-moderate { background: #78350f; color: #fbbf24; }
+        .tag-weak { background: #7f1d1d; color: #fca5a5; }
+
+        /* TOP30 结构占比条（板块/市值/价格区间） */
+        .top30-stats { margin-bottom: 12px; }
+        .t30-row {
+            display: flex; align-items: stretch; gap: 4px;
+            margin-bottom: 6px; height: 26px;
+        }
+        .t30-label {
+            width: 72px; font-size: 12px; color: #8892a8;
+            display: flex; align-items: center; flex-shrink: 0;
+        }
+        .t30-seg {
+            display: flex; align-items: center; padding: 0 8px;
+            font-size: 11px; font-weight: 600; color: #fff;
+            border-radius: 4px; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis;
+            min-width: 0;
+        }
+        .t30-main { background: linear-gradient(90deg, #1e3a5f, #3b82f6); }
+        .t30-gem { background: linear-gradient(90deg, #5b21b6, #8b5cf6); }
+        .t30-small { background: linear-gradient(90deg, #065f46, #10b981); }
+        .t30-large { background: linear-gradient(90deg, #92400e, #f59e0b); }
+        .t30-unknown { background: #374151; color: #9ca3af; }
+        .t30-p1 { background: linear-gradient(90deg, #374151, #6b7280); }
+        .t30-p2 { background: linear-gradient(90deg, #1e3a5f, #60a5fa); }
+        .t30-p3 { background: linear-gradient(90deg, #065f46, #34d399); }
+        .t30-p4 { background: linear-gradient(90deg, #92400e, #fbbf24); }
+        .t30-p5 { background: linear-gradient(90deg, #7f1d1d, #ef4444); }
+        .t30-summary {
+            font-size: 12px; color: #a0aec0; margin-top: 4px;
+            padding-left: 76px;
+        }
+        .t30-verdict {
+            margin-top: 10px; padding: 10px 14px;
+            background: #0d1220; border-left: 3px solid #a78bfa;
+            border-radius: 6px; font-size: 13px; line-height: 1.6; color: #d1d5db;
+        }
+        .t30-verdict b { color: #a78bfa; }
+
+        /* 连板接力赚钱效应（用户主打法）— 4 档着色 */
+        .t30-relay {
+            margin-top: 8px; padding: 10px 14px; border-radius: 6px;
+            font-size: 13px; line-height: 1.6;
+        }
+        .t30-relay-detail { margin-top: 4px; font-size: 12px; color: #a0aec0; }
+        .relay-strong { background: #0f2a1a; border-left: 3px solid #10b981; color: #d1d5db; }
+        .relay-strong b { color: #34d399; }
+        .relay-warm   { background: #1a2332; border-left: 3px solid #60a5fa; color: #d1d5db; }
+        .relay-warm b { color: #60a5fa; }
+        .relay-mid    { background: #2a2a1a; border-left: 3px solid #fbbf24; color: #d1d5db; }
+        .relay-mid b  { color: #fbbf24; }
+        .relay-bad    { background: #2a1a1a; border-left: 3px solid #ef4444; color: #d1d5db; }
+        .relay-bad b  { color: #ef4444; }
 
         /* 梯队情绪 · 内联在今日选股卡片标题右侧 */
         .sentiment-inline {
@@ -282,10 +468,11 @@
         .sentiment-inline .sent-verdict { font-size: 13px; font-weight: 700; }
         .sentiment-inline .sent-avg { font-weight: 600; }
         .sentiment-inline .sent-breakdown { opacity: 0.8; font-size: 11px; }
-        .sent-active { background: #0f2a1a; border: 1px solid #065f46; color: #34d399; }
+        /* A股配色：积极/强势 用红 ，不操作/弱势 用绿 */
+        .sent-active { background: #2a1a1a; border: 1px solid #7f1d1d; color: #ef4444; }
         .sent-normal { background: #1a2332; border: 1px solid #1e3a5f; color: #60a5fa; }
         .sent-cautious { background: #2a2a1a; border: 1px solid #92400e; color: #fbbf24; }
-        .sent-no { background: #2a1a1a; border: 1px solid #7f1d1d; color: #ef4444; }
+        .sent-no { background: #0f2a1a; border: 1px solid #065f46; color: #10b981; }
 
         @media (max-width: 768px) {
             .dashboard { grid-template-columns: 1fr; }
@@ -302,15 +489,9 @@
             <div class="date">{{ today }}</div>
         </div>
         <div class="actions">
-            <a href="/watchlist" class="btn btn-accent" style="text-decoration:none;">
-                自选股
+            <a href="/ranking" class="btn btn-accent" style="text-decoration:none;">
+                10日涨幅榜
             </a>
-            <button class="btn" :class="{loading: refreshing}" @click="refreshCycle">
-                {{ refreshing ? '更新中...' : '刷新周期' }}
-            </button>
-            <button class="btn" :class="{loading: screening}" @click="refreshScreener">
-                {{ screening ? '选股中...' : '执行选股' }}
-            </button>
             <a href="/review" class="btn btn-accent" style="text-decoration:none;">
                 复盘
             </a>
@@ -321,16 +502,210 @@
     </div>
 
     <div class="dashboard">
-        <!-- 周期状态 + 龙头反馈 -->
-        <div class="card full-width cycle-card">
-            <div class="phase-badge" :class="phaseClass">
-                {{ snapshot.phase || '加载中...' }}
-            </div>
-            <div class="cycle-info">
-                <div class="meta">
-                    第 {{ snapshot.phase_day || 0 }} 天
-                    <span v-if="snapshot.date" style="margin-left:12px;color:#6b7280;">更新：{{ snapshot.date }}</span>
+        <!-- 决策大字栏 — 9:27 后 3 分钟决策核心 -->
+        <div class="card full-width hero-banner" :class="dailyAdvice.cls">
+            <div class="hero-main">
+                <div class="hero-action">
+                    <div class="ha-text">{{ dailyAdvice.text }}</div>
+                    <div class="ha-position">建议仓位：<b>{{ dailyAdvice.suggestedPosition }}</b></div>
                 </div>
+                <div class="hero-divider"></div>
+                <div class="hero-metrics">
+                    <div class="hm-cell hm-primary">
+                        <div class="hm-label">竞价跌停 (&gt;5⚠)</div>
+                        <div class="hm-value" :class="(market?.limit_down||0) > 5 ? 'hm-bad' : 'hm-ok'">
+                            {{ market?.limit_down ?? '—' }}
+                        </div>
+                        <div class="mb-sub" v-if="market?.prev_day_limit_down != null">
+                            昨日竞价跌停: {{ market.prev_day_limit_down }}
+                        </div>
+                    </div>
+                    <div class="hm-cell hm-primary">
+                        <div class="hm-label">梯队加权竞价</div>
+                        <div class="hm-value" :class="(sentiment.weighted_auction_gain||0) >= 0 ? 'hm-good' : 'hm-bad'">
+                            {{ sentiment.weighted_auction_gain == null ? '—' : ((sentiment.weighted_auction_gain >= 0 ? '+' : '') + sentiment.weighted_auction_gain + '%') }}
+                        </div>
+                    </div>
+                    <div class="hm-cell hm-primary">
+                        <div class="hm-label">昨日连板高标竞价</div>
+                        <div class="hm-value" :class="lianbanLeaderState.cls"
+                             :title="lianbanLeaderState.detail">
+                            {{ lianbanLeaderState.icon }} {{ lianbanLeaderState.label }}
+                        </div>
+                    </div>
+                    <div class="hm-cell hm-secondary">
+                        <div class="hm-label">接力情绪</div>
+                        <div class="hm-value" :class="(ydayAvg?.avg_change_pct||0) >= 0 ? 'hm-good' : 'hm-bad'"
+                             :title="ydayAvg ? `昨日涨停 ${ydayAvg.sample_count} 只 · 高开 ${ydayAvg.positive_count} / 低开 ${ydayAvg.negative_count}${ydayAvg.limit_down_count ? ' / 跌停 ' + ydayAvg.limit_down_count : ''}` : ''">
+                            {{ ydayAvg?.avg_change_pct == null ? '—' : ((ydayAvg.avg_change_pct >= 0 ? '+' : '') + ydayAvg.avg_change_pct + '%') }}
+                        </div>
+                        <div class="mb-sub" v-if="ydayAvg && ydayAvg.median_change_pct != null">
+                            中位数 {{ ydayAvg.median_change_pct >= 0 ? '+' : '' }}{{ ydayAvg.median_change_pct }}%
+                            · 高开&gt;5%:{{ ydayAvg.high5_count }}
+                            · 平开±2%:{{ ydayAvg.flat2_count }}
+                            · 低开&lt;-5%:{{ ydayAvg.low5_count }}
+                        </div>
+                    </div>
+                    <div class="hm-cell hm-secondary">
+                        <div class="hm-label">昨日炸板今日竞价</div>
+                        <div class="hm-value" :class="(yZbAvg?.avg_change_pct||0) >= 0 ? 'hm-good' : 'hm-bad'"
+                             :title="yZbAvg ? `炸板池 ${yZbAvg.pool_size} 只 · 命中 ${yZbAvg.sample_count} 只 · 高开 ${yZbAvg.positive_count} / 低开 ${yZbAvg.negative_count}` : ''">
+                            {{ yZbAvg?.avg_change_pct == null ? '—' : ((yZbAvg.avg_change_pct >= 0 ? '+' : '') + yZbAvg.avg_change_pct + '%') }}
+                        </div>
+                        <div class="mb-sub" v-if="yZbAvg && yZbAvg.sample_count">
+                            样本 {{ yZbAvg.sample_count }} 只
+                        </div>
+                    </div>
+                    <div class="hm-cell hm-secondary">
+                        <div class="hm-label">昨日跌停平均反馈</div>
+                        <div class="hm-value" :class="(yLdAvg?.avg_change_pct||0) >= 0 ? 'hm-good' : 'hm-bad'"
+                             :title="yLdAvg ? `昨日跌停 ${yLdAvg.pool_size} 只 · 命中 ${yLdAvg.sample_count} · 高开 ${yLdAvg.positive_count} / 低开 ${yLdAvg.negative_count}` : '首次跑暂无历史数据'">
+                            {{ yLdAvg?.avg_change_pct == null ? '—' : ((yLdAvg.avg_change_pct >= 0 ? '+' : '') + yLdAvg.avg_change_pct + '%') }}
+                        </div>
+                        <div class="mb-sub" v-if="yLdAvg && yLdAvg.sample_count">
+                            样本 {{ yLdAvg.sample_count }} 只
+                        </div>
+                    </div>
+                </div>
+                <button class="btn hero-refresh" :class="{loading: refreshing}" @click="refreshCycle"
+                        :title="refreshing ? '更新中' : '刷新周期'">
+                    {{ refreshing ? '⏳' : '↻' }}
+                </button>
+            </div>
+            <div class="hero-reason" v-if="dailyAdvice.reason">
+                💡 {{ dailyAdvice.reason }}
+            </div>
+        </div>
+
+        <!-- 选股结果 -->
+        <div class="card full-width">
+            <div class="card-title">
+                <span class="icon">🔍</span> 今日选股（{{ screenerDate }}）
+                <button class="btn" :class="{loading: screening}" @click="refreshScreener"
+                        style="margin-left:auto;font-size:12px;">
+                    {{ screening ? '选股中...' : '执行选股' }}
+                </button>
+            </div>
+            <table v-if="screenerHits.length">
+                <thead><tr>
+                    <th>代码</th>
+                    <th>名称</th>
+                    <th>价格</th>
+                    <th>竞价涨幅</th>
+                    <th>市值</th>
+                    <th>板块</th>
+                    <th>连板</th>
+                    <th>竞价形态</th>
+                    <th>10日%</th>
+                    <th>决策</th>
+                </tr></thead>
+                <tbody>
+                    <tr v-for="hit in screenerHits" :key="hit.code">
+                        <td>{{ hit.code }}</td>
+                        <td>
+                            {{ hit.name }}
+                            <span v-if="hit.matched_cycle" class="tag tag-rep">🎯</span>
+                        </td>
+                        <td>{{ hit.open_price || '-' }}</td>
+                        <td class="gain-pos"><b>{{ hit.auction_gain }}%</b></td>
+                        <td>{{ hit.market_cap }}亿</td>
+                        <td style="font-size:12px;color:#a0aec0;">{{ industryOf(hit.code) }}</td>
+                        <td><b>{{ hit.continuous_limit_up }}板</b></td>
+                        <td>
+                            <!-- mini 竞价形态图：点击放大 -->
+                            <svg class="auction-mini" width="140" height="40" viewBox="0 0 140 40"
+                                 style="cursor:pointer;"
+                                 @click="showAuction(hit.code, hit.name)">
+                                <rect x="0" y="22" width="140" height="14" fill="#0a0e1a"/>
+                                <rect x="0" y="0" width="140" height="22" fill="#0a0e1a"/>
+                                <template v-if="miniTicksOf(hit.code).length">
+                                    <line x1="0" :y1="miniPreCloseY(hit)" x2="140" :y2="miniPreCloseY(hit)"
+                                          stroke="#4b5563" stroke-dasharray="2,2"/>
+                                    <polyline :points="miniPricePath(hit)"
+                                              fill="none" stroke="#60a5fa" stroke-width="1.2"/>
+                                    <rect v-for="(b, idx) in miniVolBars(hit)" :key="idx"
+                                          :x="b.x" :y="b.y" :width="b.w" :height="b.h" :fill="b.color"/>
+                                    <circle v-if="miniOpenPoint(hit)"
+                                            :cx="miniOpenPoint(hit).x" :cy="miniOpenPoint(hit).y"
+                                            r="2.5" fill="#fbbf24"/>
+                                </template>
+                                <template v-else>
+                                    <line x1="70" y1="0" x2="70" y2="22" stroke="#4b5563" stroke-dasharray="2,2"/>
+                                    <line :x1="auctionX(hit.auction_gain)*140/120" y1="2"
+                                          :x2="auctionX(hit.auction_gain)*140/120" y2="20"
+                                          :stroke="auctionColor(hit.auction_gain)" stroke-width="1.2"/>
+                                    <circle :cx="auctionX(hit.auction_gain)*140/120" cy="11" r="3"
+                                            :fill="auctionColor(hit.auction_gain)"/>
+                                </template>
+                                <title>点击查看竞价形态详情 · 竞价{{ hit.auction_gain }}% · 量比{{ hit.auction_volume_ratio || '-' }}</title>
+                            </svg>
+                        </td>
+                        <td :class="(hit.gain_10d||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                            <b>{{ hit.gain_10d ? (hit.gain_10d > 0 ? '+' : '') + hit.gain_10d + '%' : '-' }}</b>
+                        </td>
+                        <td>
+                            <div class="decision-cell" :class="decisionLevelClass(hit.code)"
+                                 :title="signalOf(hit.code).reason || ''">
+                                <div class="dc-action">
+                                    {{ decisionIcon(hit.code) }} {{ signalOf(hit.code).suggested_position || '—' }}
+                                </div>
+                                <div class="dc-detail" v-if="scoreOf(hit.code)">
+                                    四维评分 {{ scoreOf(hit.code).total_score }}
+                                    <template v-if="scoreOf(hit.code).action">
+                                        · {{ scoreOf(hit.code).action }}
+                                    </template>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <div v-else class="empty-state">暂无结果，点击"执行选股"或等待9:27自动执行</div>
+        </div>
+
+        <!-- 折叠：今日一字涨停个股（独立模块）-->
+        <details class="details-card full-width" v-if="market?.limit_up_flat_list?.length">
+            <summary>🚀 今日一字涨停（{{ market.limit_up_flat_list.length }} 只 · 点击展开）</summary>
+            <div class="details-body">
+                <table style="width:100%;">
+                    <thead>
+                        <tr>
+                            <th>代码</th>
+                            <th>名称</th>
+                            <th>未匹配额(万)</th>
+                            <th>最新价</th>
+                            <th>流通市值(亿)</th>
+                            <th>关联板块</th>
+                            <th>板别</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="s in market.limit_up_flat_list" :key="s.code">
+                            <td>{{ s.code }}</td>
+                            <td><b style="color:#ef4444;">{{ s.name }}</b></td>
+                            <td>
+                                <b v-if="s.unmatched_amount_wan != null" style="color:#ef4444;">
+                                    {{ s.unmatched_amount_wan.toLocaleString() }}
+                                </b>
+                                <span v-else style="color:#6b7280;">—</span>
+                            </td>
+                            <td>{{ s.close || '—' }}</td>
+                            <td>{{ s.market_cap_yi != null ? s.market_cap_yi : '—' }}</td>
+                            <td style="font-size:12px;color:#a0aec0;">{{ s.industry || '—' }}</td>
+                            <td>
+                                <span v-if="s.is_main_board" class="tag tag-main">主板</span>
+                                <span v-else class="tag tag-gem">创/科</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </details>
+
+        <!-- 折叠区：周期代表股 + 龙头反馈 + 昨日涨停股 -->
+        <details class="details-card full-width">
+            <summary>📊 周期代表股 · 龙头反馈 · 昨日涨停均价（点击展开）</summary>
+            <div class="details-body">
                 <div class="rep" v-if="snapshot.representative">
                     <div class="label">周期代表股</div>
                     <div class="value">
@@ -346,16 +721,13 @@
                         <span v-else class="tag tag-main">主板</span>
                     </div>
                 </div>
-                <div class="rep" v-else>
-                    <div class="label">周期代表股</div>
-                    <div class="value" style="color:#6b7280;">暂无</div>
-                </div>
                 <div class="prev-cycle" v-if="snapshot.prev_cycle">
                     上轮周期：{{ snapshot.prev_cycle.name }}({{ snapshot.prev_cycle.code }})
                     峰值 {{ snapshot.prev_cycle.peak_gain }}%
                 </div>
 
-                <!-- 龙头反馈：市场高标(10日涨幅) + 主板高标(昨日最高连板) -->
+
+                <!-- 市场高标 -->
                 <template v-for="(ld, idx) in leaderList" :key="idx">
                     <div v-if="ld.signal" class="leader-card" :class="getLeaderClass(ld)">
                         <div class="leader-icon">{{ getLeaderIcon(ld) }}</div>
@@ -376,7 +748,30 @@
                     </div>
                 </template>
 
-                <!-- 昨日主板涨停股 今日平均竞价（接力情绪锚定） -->
+                <!-- 昨日主板连板高标 多只合并 -->
+                <div v-if="mainBoardLeadersGroup" class="leader-card" :class="mainBoardLeadersGroup.cardClass">
+                    <div class="leader-icon">{{ mainBoardLeadersGroup.icon }}</div>
+                    <div class="leader-info">
+                        <div class="title">
+                            昨日主板连板高标 今日竞价
+                            <span style="color:#6b7280;font-weight:400;">· {{ mainBoardLeadersGroup.count }} 只</span>
+                        </div>
+                        <div class="lb-pills">
+                            <span v-for="ld in mainBoardLeadersGroup.list" :key="ld.leader_code"
+                                  class="lb-pill" :class="getLeaderClass(ld)" :title="ld.reason">
+                                {{ getLeaderIcon(ld) }} {{ ld.leader_name }}（{{ ld.board_count || ld.leader_gain_10d }}连板）
+                                <span :class="ld.auction_change_pct >= 0 ? 'gain-pos' : 'gain-neg'" style="font-weight:700;">
+                                    {{ ld.auction_change_pct > 0 ? '+' : '' }}{{ ld.auction_change_pct }}%
+                                </span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="leader-badge" :class="mainBoardLeadersGroup.badgeClass">
+                        {{ mainBoardLeadersGroup.aggregateText }}
+                    </div>
+                </div>
+
+                <!-- 昨日主板涨停股今日平均竞价 -->
                 <div v-if="ydayAvg && ydayAvg.sample_count" class="leader-card" :class="ydayAvgClass">
                     <div class="leader-icon">📊</div>
                     <div class="leader-info">
@@ -395,8 +790,7 @@
 
                 <!-- 进度条 -->
                 <div class="progress-bar" v-if="snapshot.representative">
-                    <div class="progress-fill" :class="progressClass"
-                         :style="{width: progressPct + '%'}">
+                    <div class="progress-fill" :class="progressClass" :style="{width: progressPct + '%'}">
                         {{ snapshot.representative.gain_10d }}% → 120%
                     </div>
                     <div class="progress-markers">
@@ -406,336 +800,88 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </details>
 
-        <!-- 选股结果（含梯队情绪右侧横幅）-->
-        <div class="card full-width">
-            <div class="card-title">
-                <span class="icon">🔍</span> 今日选股（{{ screenerDate }}）
-                <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
-                    <div v-if="market" class="sentiment-inline" :class="marketClass">
-                        <span style="font-size:14px;">{{ marketIcon }}</span>
-                        <span class="sent-verdict">市场风向：{{ market.verdict }}</span>
-                        <span class="sent-breakdown">
-                            一字涨停{{ market.limit_up_flat }} ·
-                            跌>9%={{ market.drop_over_9pct }} ·
-                            跌停{{ market.limit_down }}
-                        </span>
-                    </div>
-                    <div v-if="sentiment.verdict" class="sentiment-inline" :class="sentimentClass">
-                        <span style="font-size:14px;">{{ sentimentIcon }}</span>
-                        <span class="sent-verdict">梯队情绪：{{ sentiment.verdict }}</span>
-                        <span class="sent-avg">
-                            加权竞价 {{ sentiment.weighted_auction_gain >= 0 ? '+' : '' }}{{ sentiment.weighted_auction_gain }}%
-                        </span>
-                        <span class="sent-breakdown">
-                            池{{ sentiment.pool_size }} ·
-                            一字{{ sentiment.limit_up_flat || 0 }} · 高开{{ sentiment.high_open }} ·
-                            平开{{ sentiment.flat_open }} · 低开{{ sentiment.low_open }} · 跌停{{ sentiment.limit_down || 0 }}
-                        </span>
-                    </div>
-                </div>
-            </div>
-            <table v-if="screenerHits.length">
-                <thead><tr><th>代码</th><th>名称</th><th>连板</th><th>价格</th><th>竞价涨幅</th><th>竞价量(手)</th><th>竞价量比</th><th>换手</th><th>市值</th><th>10日涨幅</th><th>偏离</th><th>操作</th></tr></thead>
-                <tbody>
-                    <tr v-for="hit in screenerHits" :key="hit.code">
-                        <td>{{ hit.code }}</td>
-                        <td>
-                            {{ hit.name }}
-                            <span v-if="hit.matched_cycle" class="tag tag-rep">🎯</span>
-                        </td>
-                        <td>{{ hit.continuous_limit_up }}板</td>
-                        <td>{{ hit.open_price || '-' }}</td>
-                        <td class="gain-pos">{{ hit.auction_gain }}%</td>
-                        <td>{{ hit.auction_volume_lots ? hit.auction_volume_lots.toLocaleString() : '-' }}</td>
-                        <td>{{ hit.auction_volume_ratio || '-' }}</td>
-                        <td>{{ hit.auction_turnover }}%</td>
-                        <td>{{ hit.market_cap }}亿</td>
-                        <td :class="(hit.gain_10d||0) >= 0 ? 'gain-pos' : 'gain-neg'">
-                            {{ hit.gain_10d ? (hit.gain_10d > 0 ? '+' : '') + hit.gain_10d + '%' : '-' }}
-                        </td>
-                        <td>
-                            <span v-if="getDeviation(hit.code)" :class="getDeviation(hit.code).is_excessive ? 'gain-pos' : ''">
-                                {{ getDeviation(hit.code).deviation_pct }}%
-                                <span v-if="getDeviation(hit.code).is_excessive" class="tag tag-warn">偏离大</span>
-                            </span>
-                            <span v-else>-</span>
-                        </td>
-                        <td style="white-space:nowrap;">
-                            <button class="btn" style="font-size:11px;padding:2px 8px;margin-right:4px;" @click="showAuction(hit.code, hit.name)">竞价</button>
-                            <button class="btn" style="font-size:11px;padding:2px 8px;" @click="addToWatchlist(hit.code, hit.name)">+自选</button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-            <div v-else class="empty-state">暂无结果，点击"执行选股"或等待9:27自动执行</div>
-        </div>
-
-        <!-- 交叉验证信号 -->
-        <div class="card full-width">
-            <div class="card-title"><span class="icon">🎯</span> 交叉验证信号</div>
-            <div v-if="signals.length">
-                <div v-for="sig in signals" :key="sig.code"
-                     class="signal-item" :class="'signal-' + sig.level">
-                    <div class="signal-level">{{ levelIcon(sig.level) }}</div>
-                    <div class="signal-info">
-                        <div class="stock">
-                            {{ sig.name }} ({{ sig.code }})
-                            <span v-if="sig.is_cycle_rep" class="tag tag-rep">周期代表股</span>
-                            <span v-else-if="sig.is_cycle_candidate" class="tag tag-candidate">周期候选</span>
-                        </div>
-                        <div class="reason">{{ sig.reason }}</div>
-                    </div>
-                    <div class="signal-position">{{ sig.suggested_position }}</div>
-                </div>
-            </div>
-            <div v-else class="empty-state">等待选股引擎与周期引擎结果交叉验证</div>
-        </div>
-
-        <!-- 市场洞察（四维面板）-->
-        <div class="card full-width" v-if="insight.wave">
-            <div class="card-title">
-                <span class="icon">🧠</span> 市场洞察 · 四维读盘
-                <span style="margin-left:auto;font-size:12px;color:#6b7280;">{{ insight.date }}</span>
-            </div>
-            <div class="insight-grid">
-                <!-- 周期波形 -->
-                <div class="insight-box">
-                    <div class="insight-box-title">
-                        <span class="ib-icon">🌊</span> 周期波形
-                        <span style="margin-left:auto;font-size:18px;font-weight:700;"
-                              :style="{color: waveColor}">
-                            {{ insight.wave.wave_phase }}
-                        </span>
-                    </div>
-                    <div class="wave-bar">
-                        <div class="wave-fill" :class="waveClass"
-                             :style="{width: insight.wave.intensity + '%'}">
-                            {{ insight.wave.intensity.toFixed(0) }}
-                        </div>
-                    </div>
-                    <div style="display:flex;flex-wrap:wrap;margin-bottom:6px;">
-                        <span class="insight-metric">
-                            榜首 <span class="im-val gain-pos">{{ fmtPct(insight.wave.top1_gain) }}</span>
-                        </span>
-                        <span class="insight-metric">
-                            前5均 <span class="im-val gain-pos">{{ fmtPct(insight.wave.top5_avg) }}</span>
-                        </span>
-                        <span class="insight-metric">
-                            全榜均 <span class="im-val" :class="numClass(insight.wave.top30_avg)">{{ fmtPct(insight.wave.top30_avg) }}</span>
-                        </span>
-                        <span class="insight-metric">
-                            >45%数 <span class="im-val" style="color:#fbbf24;">{{ insight.wave.breadth }}</span>
-                        </span>
-                        <span class="insight-metric">
-                            衰减比 <span class="im-val" :style="{color: insight.wave.decay_ratio >= 0.5 ? '#34d399' : '#ef4444'}">{{ insight.wave.decay_ratio.toFixed(2) }}</span>
-                        </span>
-                    </div>
-                    <div class="insight-desc">{{ insight.wave.description }}</div>
-                </div>
-
-                <!-- 板块集中度 -->
-                <div class="insight-box">
-                    <div class="insight-box-title">
-                        <span class="ib-icon">🏭</span> 板块集中度
-                        <span style="margin-left:auto;font-size:16px;font-weight:700;color:#60a5fa;">
-                            {{ insight.sector_concentration }}%
-                        </span>
-                    </div>
-                    <div v-for="(sh, idx) in insight.sector_heats.slice(0, 5)" :key="sh.industry"
-                         class="sector-bar-row">
-                        <span class="sector-bar-label">{{ sh.industry }}</span>
-                        <div class="sector-bar-track">
-                            <div class="sector-bar-fill" :class="'sb-' + (idx + 1)"
-                                 :style="{width: Math.max(sh.weight * 3, 12) + '%'}">
-                                {{ sh.count }}只 {{ sh.weight }}%
+        <!-- 折叠：四维评分决策卡 -->
+        <details class="details-card full-width" v-if="auctionScores.length">
+            <summary>🎯 四维评分决策卡（点击展开 · {{ auctionScores.length }} 只）</summary>
+            <div class="details-body">
+                <div v-for="sc in auctionScores" :key="sc.code" style="margin-bottom:20px;">
+                    <div style="display:flex;gap:16px;align-items:flex-start;">
+                        <div style="flex:1;">
+                            <h3 style="margin-bottom:10px;">{{ sc.name }}（{{ sc.code }}）{{ sc.total_score }}分</h3>
+                            <div class="score-bar"><span class="sb-label">自身竞价(40)</span>
+                                <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d1_self/40*100)+'%', background: barColor(sc.d1_self, 40)}">{{ sc.d1_self }}</div></div></div>
+                            <div class="score-bar"><span class="sb-label">情绪锚(25)</span>
+                                <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d2_leader/25*100)+'%', background: barColor(sc.d2_leader, 25)}">{{ sc.d2_leader }}</div></div></div>
+                            <div class="score-bar"><span class="sb-label">涨幅榜方向(20)</span>
+                                <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d3_ranking/20*100)+'%', background: barColor(sc.d3_ranking, 20)}">{{ sc.d3_ranking }}</div></div></div>
+                            <div class="score-bar"><span class="sb-label">板块效应(15)</span>
+                                <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d4_sector/15*100)+'%', background: barColor(sc.d4_sector, 15)}">{{ sc.d4_sector }}</div></div></div>
+                            <div style="font-size:12px;color:#8892a8;margin-top:8px;">
+                                <div>D1: {{ sc.d1_detail }}</div>
+                                <div>D2: {{ sc.d2_detail }}</div>
+                                <div>D3: {{ sc.d3_detail }}</div>
+                                <div>D4: {{ sc.d4_detail }}</div>
+                            </div>
+                            <div v-if="sc.vetoes && sc.vetoes.length" style="margin-top:8px;">
+                                <span v-for="v in sc.vetoes" :key="v" class="tag tag-veto" style="margin-right:6px;">⚠️ {{ v }}</span>
                             </div>
                         </div>
-                        <span style="font-size:11px;color:#6b7280;width:50px;text-align:right;">
-                            均{{ sh.avg_gain_10d.toFixed(0) }}%
-                        </span>
-                    </div>
-                    <div class="insight-desc" style="margin-top:6px;">{{ insight.sector_verdict }}</div>
-                </div>
-
-                <!-- 资金行为 -->
-                <div class="insight-box">
-                    <div class="insight-box-title">
-                        <span class="ib-icon">💰</span> 资金行为画像
-                    </div>
-                    <div style="margin-bottom:8px;">
-                        <span class="capital-tag ct-new">新进 {{ insight.new_entry_count }}</span>
-                        <span class="capital-tag ct-acc">加速 {{ insight.accelerating_count }}</span>
-                        <span class="capital-tag ct-sus">持续 {{ insight.sustained_count }}</span>
-                        <span class="capital-tag ct-dec">减速 {{ insight.decelerating_count }}</span>
-                        <span class="capital-tag ct-exh">退潮 {{ insight.exhausting_count }}</span>
-                    </div>
-                    <div class="insight-desc" style="font-size:13px;font-weight:600;margin-bottom:4px;">
-                        {{ insight.capital_summary }}
-                    </div>
-                    <div style="max-height:120px;overflow-y:auto;">
-                        <div v-for="ci in capitalHighlights" :key="ci.code"
-                             style="font-size:11px;color:#8892a8;padding:2px 0;">
-                            <span :class="'capital-tag ct-' + ciTagClass(ci.tag)">{{ ciTagLabel(ci.tag) }}</span>
-                            {{ ci.name }} {{ ci.detail }}
+                        <div style="min-width:180px;">
+                            <div class="decision-box" :class="decisionClass(sc.action)">
+                                <div class="db-action">{{ sc.action }}</div>
+                                <div class="db-detail">{{ sc.position }}</div>
+                                <div class="db-detail" v-if="sc.stop_loss">止损: {{ sc.stop_loss }} ({{ sc.stop_loss_pct }}%)</div>
+                            </div>
+                            <div style="font-size:11px;color:#6b7280;margin-top:6px;text-align:center;">{{ sc.reason }}</div>
                         </div>
                     </div>
                 </div>
+            </div>
+        </details>
 
-                <!-- 情绪领袖 -->
-                <div class="insight-box">
-                    <div class="insight-box-title">
-                        <span class="ib-icon">👑</span> 情绪领袖
-                    </div>
-                    <div class="leader-chain" v-if="insight.emotion_chain">
-                        {{ insight.emotion_chain }}
-                    </div>
-                    <div v-for="el in insight.emotion_leaders" :key="el.code" class="leader-item">
-                        <span class="leader-role-tag"
-                              :class="el.role === 'space_opener' ? 'lr-space' : el.role === 'chain_starter' ? 'lr-chain' : 'lr-follow'">
-                            {{ el.role === 'space_opener' ? '空间板' : el.role === 'chain_starter' ? '连板龙' : '跟随' }}
-                        </span>
-                        <span style="font-weight:600;">{{ el.name }}</span>
-                        <span class="gain-pos">{{ fmtPct(el.gain_10d) }}</span>
-                        <span v-if="el.continuous_limit_up >= 2" style="color:#fbbf24;">
-                            {{ el.continuous_limit_up }}板
-                        </span>
-                        <span style="color:#6b7280;">{{ el.reason }}</span>
-                    </div>
+        <!-- 折叠：回测统计 -->
+        <details class="details-card full-width" v-if="btResult">
+            <summary>📈 回测统计（{{ btResult.period }} · 胜率 {{ btResult.win_rate }}% · {{ btResult.total_trades }} 笔）</summary>
+            <div class="details-body">
+                <div class="stats-grid">
+                    <div class="stat-box"><div class="label">总交易数</div><div class="value blue">{{ btResult.total_trades }}</div></div>
+                    <div class="stat-box"><div class="label">胜率</div><div class="value" :class="btResult.win_rate >= 50 ? 'green' : 'red'">{{ btResult.win_rate }}%</div></div>
+                    <div class="stat-box"><div class="label">盈亏比</div><div class="value" :class="btResult.profit_loss_ratio >= 1.5 ? 'green' : 'yellow'">{{ btResult.profit_loss_ratio }}</div></div>
+                    <div class="stat-box"><div class="label">总收益率</div><div class="value" :class="btResult.total_pnl_pct >= 0 ? 'green' : 'red'">{{ btResult.total_pnl_pct }}%</div></div>
+                    <div class="stat-box"><div class="label">平均盈利</div><div class="value green">+{{ btResult.avg_win_pct }}%</div></div>
+                    <div class="stat-box"><div class="label">平均亏损</div><div class="value red">{{ btResult.avg_lose_pct }}%</div></div>
+                    <div class="stat-box"><div class="label">最大回撤</div><div class="value red">{{ btResult.max_drawdown_pct }}%</div></div>
+                    <div class="stat-box"><div class="label">最大连胜/连亏</div><div class="value blue">{{ btResult.max_consecutive_win }}/{{ btResult.max_consecutive_lose }}</div></div>
+                </div>
+                <div style="margin-top:16px" v-if="Object.keys(btResult.cycle_stats || {}).length">
+                    <div class="card-title" style="margin-bottom:8px">按周期阶段统计</div>
+                    <table>
+                        <thead><tr><th>周期阶段</th><th>交易数</th><th>胜率</th><th>平均盈亏</th></tr></thead>
+                        <tbody>
+                            <tr v-for="(stats, phase) in btResult.cycle_stats" :key="phase">
+                                <td>{{ phase }}</td>
+                                <td>{{ stats.total }}</td>
+                                <td :class="stats.win_rate >= 50 ? 'gain-neg' : 'gain-pos'">{{ stats.win_rate }}%</td>
+                                <td :class="stats.avg_pnl >= 0 ? 'gain-pos' : 'gain-neg'">{{ stats.avg_pnl }}%</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
-        </div>
-
-        <!-- 10日涨幅榜（最底部）-->
-        <div class="card full-width">
-            <div class="card-title">
-                <span class="icon">📊</span> 10日涨幅榜 TOP30
-                <span v-if="rankingLive" style="margin-left:8px;font-size:11px;color:#34d399;">● 实时</span>
-                <span v-if="rankingUpdatedAt" style="margin-left:auto;font-size:12px;color:#6b7280;">
-                    {{ rankingUpdatedAt }}
-                </span>
-            </div>
-            <div style="max-height:560px;overflow-y:auto;overflow-x:auto">
-                <table v-if="ranking.length" class="sticky-thead">
-                    <thead><tr>
-                        <th>#</th>
-                        <th>代码</th>
-                        <th>名称</th>
-                        <th>板块</th>
-                        <th>最新价</th>
-                        <th>市值(亿)</th>
-                        <th>涨幅</th>
-                        <th>竞价涨幅</th>
-                        <th>10日涨幅</th>
-                        <th>连板</th>
-                        <th>最后封板</th>
-                        <th>偏离(%)</th>
-                        <th>标记</th>
-                        <th>操作</th>
-                    </tr></thead>
-                    <tbody>
-                        <tr v-for="(item, idx) in ranking" :key="item.code"
-                            :class="isLimitUp(item) ? 'limit-up-row' : ''">
-                            <td>{{ item.rank || (idx + 1) }}</td>
-                            <td>{{ item.code }}</td>
-                            <td>{{ item.name }}</td>
-                            <td>{{ item.industry || '-' }}</td>
-                            <td>{{ fmtNum(item.close, 2) }}</td>
-                            <td>{{ fmtNum(item.market_cap_yi, 1) }}</td>
-                            <td :class="numClass(item.change_pct)">{{ fmtPct(item.change_pct) }}</td>
-                            <td :class="numClass(item.auction_gain)">{{ fmtPct(item.auction_gain) }}</td>
-                            <td :class="numClass(item.gain_10d)">{{ fmtPct(item.gain_10d) }}</td>
-                            <td>{{ item.continuous_limit_up ? item.continuous_limit_up + '板' : '-' }}</td>
-                            <td>{{ item.last_limit_up_time || '-' }}</td>
-                            <td :class="item.deviation_pct > 100 ? 'gain-pos' : ''">
-                                {{ fmtNum(item.deviation_pct, 1) }}
-                            </td>
-                            <td>
-                                <span v-if="isRepresentative(item.code)" class="tag tag-rep">代表股</span>
-                                <span v-else-if="isCandidate(item.code)" class="tag tag-candidate">候选</span>
-                                <span v-if="item.is_main_board === false" class="tag tag-gem">创/科</span>
-                                <span v-else class="tag tag-main">主板</span>
-                            </td>
-                            <td>
-                                <button class="btn" style="font-size:11px;padding:2px 8px;" @click="addToWatchlist(item.code, item.name)">+自选</button>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-                <div v-else class="empty-state">暂无数据，点击"刷新周期"获取</div>
-            </div>
-        </div>
-
-        <!-- 回测统计 -->
-        <div class="card full-width" v-if="btResult">
-            <div class="card-title"><span class="icon">📈</span> 回测统计（{{ btResult.period }}）</div>
-            <div class="stats-grid">
-                <div class="stat-box">
-                    <div class="label">总交易数</div>
-                    <div class="value blue">{{ btResult.total_trades }}</div>
-                </div>
-                <div class="stat-box">
-                    <div class="label">胜率</div>
-                    <div class="value" :class="btResult.win_rate >= 50 ? 'green' : 'red'">
-                        {{ btResult.win_rate }}%
-                    </div>
-                </div>
-                <div class="stat-box">
-                    <div class="label">盈亏比</div>
-                    <div class="value" :class="btResult.profit_loss_ratio >= 1.5 ? 'green' : 'yellow'">
-                        {{ btResult.profit_loss_ratio }}
-                    </div>
-                </div>
-                <div class="stat-box">
-                    <div class="label">总收益率</div>
-                    <div class="value" :class="btResult.total_pnl_pct >= 0 ? 'green' : 'red'">
-                        {{ btResult.total_pnl_pct }}%
-                    </div>
-                </div>
-                <div class="stat-box">
-                    <div class="label">平均盈利</div>
-                    <div class="value green">+{{ btResult.avg_win_pct }}%</div>
-                </div>
-                <div class="stat-box">
-                    <div class="label">平均亏损</div>
-                    <div class="value red">{{ btResult.avg_lose_pct }}%</div>
-                </div>
-                <div class="stat-box">
-                    <div class="label">最大回撤</div>
-                    <div class="value red">{{ btResult.max_drawdown_pct }}%</div>
-                </div>
-                <div class="stat-box">
-                    <div class="label">最大连胜/连亏</div>
-                    <div class="value blue">{{ btResult.max_consecutive_win }}/{{ btResult.max_consecutive_lose }}</div>
-                </div>
-            </div>
-
-            <!-- 按周期阶段统计 -->
-            <div style="margin-top:16px" v-if="Object.keys(btResult.cycle_stats || {}).length">
-                <div class="card-title" style="margin-bottom:8px">按周期阶段统计</div>
-                <table>
-                    <thead><tr><th>周期阶段</th><th>交易数</th><th>胜率</th><th>平均盈亏</th></tr></thead>
-                    <tbody>
-                        <tr v-for="(stats, phase) in btResult.cycle_stats" :key="phase">
-                            <td>{{ phase }}</td>
-                            <td>{{ stats.total }}</td>
-                            <td :class="stats.win_rate >= 50 ? 'gain-neg' : 'gain-pos'">{{ stats.win_rate }}%</td>
-                            <td :class="stats.avg_pnl >= 0 ? 'gain-pos' : 'gain-neg'">{{ stats.avg_pnl }}%</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        </details>
     </div>
 
     <!-- 竞价形态弹窗 -->
     <div v-if="auctionModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;" @click.self="auctionModal=false">
-        <div style="background:#111827;border:1px solid #2a3050;border-radius:16px;padding:24px;min-width:400px;max-width:500px;position:relative;">
+        <div style="background:#111827;border:1px solid #2a3050;border-radius:16px;padding:24px;width:760px;max-width:95vw;max-height:92vh;overflow-y:auto;position:relative;">
             <span style="position:absolute;top:12px;right:16px;cursor:pointer;font-size:20px;color:#6b7280;" @click="auctionModal=false">&times;</span>
-            <h3 style="margin-bottom:16px;">{{ auctionData.name }}（{{ auctionData.code }}）竞价形态</h3>
+            <h3 style="margin-bottom:12px;">{{ auctionData.name }}（{{ auctionData.code }}）竞价形态</h3>
+
+            <!-- 关键数据栅格 -->
             <div style="background:#0d1220;border-radius:8px;padding:14px;margin-bottom:12px;">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:13px;">
                     <div>开盘价: <b :class="(auctionData.auction_gain||0) >= 0 ? 'gain-pos' : 'gain-neg'">{{ auctionData.open }}</b></div>
                     <div>昨收: {{ auctionData.pre_close }}</div>
                     <div>竞价涨幅: <span :class="(auctionData.auction_gain||0) >= 0 ? 'gain-pos' : 'gain-neg'">{{ auctionData.auction_gain ? (auctionData.auction_gain > 0 ? '+' : '') + auctionData.auction_gain + '%' : '-' }}</span></div>
@@ -746,6 +892,74 @@
                     <div>市值: {{ auctionData.market_cap_yi ? auctionData.market_cap_yi + '亿' : '-' }}</div>
                 </div>
             </div>
+
+            <!-- 竞价形态大图 — 上方价格分时线，下方红绿量柱 -->
+            <div style="background:#0d1220;border-radius:8px;padding:14px;margin-bottom:12px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12px;color:#a0aec0;flex-wrap:wrap;">
+                    <span><b style="color:#e0e6ed;font-size:13px;">竞价形态图</b></span>
+                    <span v-if="auctionChart">数据源：{{ auctionChart.sourceLabel }}</span>
+                    <span v-if="auctionChart && auctionChart.hasAuctionWindow"
+                          style="background:#0a2a0a;color:#10b981;padding:2px 6px;border-radius:3px;">
+                        ✓ 9:15-9:25 撮合过程
+                    </span>
+                    <span v-else-if="auctionChart"
+                          style="background:#2a2a0a;color:#fbbf24;padding:2px 6px;border-radius:3px;"
+                          title="push2.eastmoney.com 暂被反爬阻断，浏览器直连也未通过；需配置代理才能拿 9:15-9:25 撮合过程数据">
+                        ⚠ 缺 9:15-9:25 撮合过程
+                    </span>
+                    <span v-if="auctionChart" style="margin-left:auto;">
+                        <span style="display:inline-block;width:10px;height:10px;background:#ef4444;border-radius:2px;vertical-align:middle;"></span> 买盘
+                        <span style="display:inline-block;width:10px;height:10px;background:#10b981;border-radius:2px;margin-left:8px;vertical-align:middle;"></span> 卖盘
+                        <span style="display:inline-block;width:10px;height:10px;background:#fbbf24;border-radius:2px;margin-left:8px;vertical-align:middle;"></span> 集合竞价开盘
+                    </span>
+                </div>
+                <svg v-if="auctionChart" :viewBox="`0 0 ${auctionChart.W} ${auctionChart.H}`"
+                     style="width:100%;height:auto;font-family:monospace;">
+                    <!-- 价格区背景 -->
+                    <rect :x="auctionChart.padL" :y="auctionChart.padT"
+                          :width="auctionChart.plotW" :height="auctionChart.priceH"
+                          fill="#0a0e1a" stroke="#1e2a45"/>
+                    <!-- 0% (昨收) 水平虚线 -->
+                    <line :x1="auctionChart.padL" :y1="auctionChart.preCloseY"
+                          :x2="auctionChart.padL + auctionChart.plotW" :y2="auctionChart.preCloseY"
+                          stroke="#4b5563" stroke-dasharray="3,3"/>
+                    <text :x="auctionChart.padL + auctionChart.plotW + 4" :y="auctionChart.preCloseY + 4"
+                          font-size="10" fill="#6b7280">昨收 {{ auctionData.pre_close }}</text>
+                    <!-- 价格折线 -->
+                    <polyline v-if="auctionChart.pricePath"
+                              :points="auctionChart.pricePath"
+                              fill="none" stroke="#60a5fa" stroke-width="1.5"/>
+                    <!-- 集合竞价开盘点（金色圆圈高亮） -->
+                    <circle v-if="auctionChart.openPoint"
+                            :cx="auctionChart.openPoint.x" :cy="auctionChart.openPoint.y"
+                            r="5" fill="#fbbf24" stroke="#0a0e1a" stroke-width="2"/>
+                    <text v-if="auctionChart.openPoint"
+                          :x="auctionChart.openPoint.x + 8" :y="auctionChart.openPoint.y + 4"
+                          font-size="11" fill="#fbbf24" font-weight="700">
+                        开盘 {{ auctionData.open }} ({{ auctionData.auction_gain >= 0 ? '+' : '' }}{{ auctionData.auction_gain }}%)
+                    </text>
+
+                    <!-- 量柱区背景 -->
+                    <rect :x="auctionChart.padL" :y="auctionChart.volTop"
+                          :width="auctionChart.plotW" :height="auctionChart.volH"
+                          fill="#0a0e1a" stroke="#1e2a45"/>
+                    <!-- 量柱 -->
+                    <rect v-for="(b, idx) in auctionChart.volBars" :key="idx"
+                          :x="b.x" :y="b.y" :width="b.w" :height="b.h"
+                          :fill="b.color">
+                        <title>{{ b.tip }}</title>
+                    </rect>
+
+                    <!-- X 轴时间标注（首/中/末） -->
+                    <text v-for="lbl in auctionChart.xLabels" :key="lbl.t"
+                          :x="lbl.x" :y="auctionChart.H - 4"
+                          font-size="10" fill="#6b7280" text-anchor="middle">{{ lbl.t }}</text>
+                </svg>
+                <div v-else style="text-align:center;padding:30px;color:#6b7280;font-size:12px;">
+                    暂无竞价 tick 数据
+                </div>
+            </div>
+
             <div style="background:#0d1220;border-radius:8px;padding:14px;white-space:pre-line;font-size:13px;line-height:1.8;">{{ auctionData.summary }}</div>
         </div>
     </div>
@@ -768,7 +982,8 @@ createApp({
         const leader = ref({})
         const deviations = ref([])
         const btResult = ref(null)
-        const insight = ref({})
+        // 今日竞价决策卡（从复盘页迁入）
+        const auctionScores = ref([])
         const refreshing = ref(false)
         const screening = ref(false)
         const backtesting = ref(false)
@@ -787,6 +1002,15 @@ createApp({
             return map[snapshot.value.phase] || 'phase-breeding'
         })
 
+        const phaseColor = computed(() => {
+            const map = {
+                '孕育期': '#6b7280', '小周期启动': '#fbbf24',
+                '混沌期': '#ef4444', '小周期完成': '#34d399',
+                '完整周期': '#10b981', '余温期': '#f59e0b', '退潮期': '#8b5cf6',
+            }
+            return map[snapshot.value.phase] || '#6b7280'
+        })
+
         const progressPct = computed(() => {
             if (!snapshot.value.representative) return 0
             return Math.min(100, (snapshot.value.representative.gain_10d / 120) * 100)
@@ -799,33 +1023,62 @@ createApp({
             if (g >= 45) return 'mid'; return 'low'
         })
 
-        // 龙头列表：市场高标(10日涨幅) + 昨日主板连板高标(连板平局可多只)
+        // 龙头列表：仅市场高标（10日涨幅）。主板连板高标走 mainBoardLeadersGroup 合并展示。
         const leaderList = computed(() => {
             const res = []
             const ml = leader.value.market_leader
             if (ml && ml.signal) res.push({ ...ml, _tag: '市场高标', _useBoardCount: false })
 
-            // 平局多只优先取 main_board_leaders 列表；旧 schema 回退到 main_board_leader 单只
-            let mbList = leader.value.main_board_leaders
-            if (!mbList || !mbList.length) {
-                const single = leader.value.main_board_leader
-                mbList = single ? [single] : []
-            }
-            for (const mb of mbList) {
-                if (mb && mb.signal) {
-                    res.push({ ...mb, _tag: '昨日主板连板高标 今日竞价', _useBoardCount: true })
-                }
-            }
-
             // 兼容旧格式（无 market_leader 字段）
-            if (res.length === 0 && leader.value.signal) {
+            if (res.length === 0 && !leader.value.main_board_leaders && leader.value.signal) {
                 res.push({ ...leader.value, _tag: '高标龙头', _useBoardCount: false })
             }
             return res
         })
 
+        // 昨日主板连板高标 今日竞价 — 多只合并到一条信息栏
+        // - 卡片整体颜色取最差信号（保守显示）
+        // - 角标取最差 aggression（不操作 > 谨慎 > 正常 > 积极）
+        // - 每只龙头作为一个 pill 内联展示
+        const mainBoardLeadersGroup = computed(() => {
+            let mbList = leader.value.main_board_leaders
+            if (!mbList || !mbList.length) {
+                const single = leader.value.main_board_leader
+                mbList = single ? [single] : []
+            }
+            mbList = (mbList || []).filter(x => x && x.signal)
+            if (!mbList.length) return null
+
+            // 信号严重度：跌停 > 负反馈 > 中性 > 正反馈 > 强正反馈
+            const sigOrder = { '跌停': 4, '负反馈': 3, '中性': 2, '正反馈': 1, '强正反馈': 0 }
+            const worstSignalLd = mbList.reduce((a, b) =>
+                (sigOrder[b.signal] ?? 0) > (sigOrder[a.signal] ?? 0) ? b : a
+            )
+
+            // aggression 严重度：不操作 > 谨慎 > 正常 > 积极
+            const aggOrder = { '不操作': 3, '观望': 3, '谨慎': 2, '正常': 1, '积极': 0 }
+            const worstAggLd = mbList.reduce((a, b) =>
+                (aggOrder[b.aggression] ?? 0) > (aggOrder[a.aggression] ?? 0) ? b : a
+            )
+
+            return {
+                list: mbList,
+                count: mbList.length,
+                cardClass: signalClassMap[worstSignalLd.signal] || 'leader-neutral',
+                icon: signalIconMap[worstSignalLd.signal] || '❓',
+                badgeClass: getLeaderBadgeClass(worstAggLd),
+                aggregateText: worstAggLd.can_trade
+                    ? worstAggLd.aggression
+                    : '不操作',
+            }
+        })
+
         // 昨日主板涨停股 今日平均竞价
         const ydayAvg = computed(() => leader.value.yesterday_main_board_avg_auction || null)
+        // 昨日炸板股 今日竞价均价（接力反向锚定）
+        const yZbAvg = computed(() => leader.value.yesterday_zb_today_auction || null)
+        // 昨日竞价跌停股 今日竞价均价（弱势反弹/续跌信号）
+        const yLdAvg = computed(() => leader.value.yesterday_limit_down_today_auction || null)
         const ydayAvgVerdict = computed(() => {
             const v = ydayAvg.value
             if (!v) return ''
@@ -851,6 +1104,339 @@ createApp({
             if (a >= 0) return 'badge-blue'
             if (a >= -2) return 'badge-yellow'
             return 'badge-red'
+        })
+
+        // TOP30 结构占比（板块 / 市值 / 价格区间）
+        const top30Stats = computed(() => {
+            const items = ranking.value || []
+            if (!items.length) return null
+            const total = items.length
+            const round1 = (n) => Math.round(n * 1000 / total) / 10
+
+            // 板块结构: 主板 vs 创业/科创/北交所
+            const main = items.filter(x => x.is_main_board !== false).length
+            const gem = total - main
+
+            // 市值分布: <100亿 vs ≥100亿（mc<=0 视为未知）
+            let small = 0, large = 0, unknown = 0
+            for (const x of items) {
+                const mc = Number(x.market_cap_yi || 0)
+                if (mc <= 0) unknown++
+                else if (mc < 100) small++
+                else large++
+            }
+
+            // 价格区间桶（A股常见档位）
+            const buckets = [
+                { label: '<5元',     cls: 't30-p1', count: 0 },
+                { label: '5-10元',   cls: 't30-p2', count: 0 },
+                { label: '10-20元',  cls: 't30-p3', count: 0 },
+                { label: '20-50元',  cls: 't30-p4', count: 0 },
+                { label: '≥50元',    cls: 't30-p5', count: 0 },
+            ]
+            for (const x of items) {
+                const p = Number(x.close || 0)
+                if (p <= 0) continue
+                if (p < 5) buckets[0].count++
+                else if (p < 10) buckets[1].count++
+                else if (p < 20) buckets[2].count++
+                else if (p < 50) buckets[3].count++
+                else buckets[4].count++
+            }
+            const priceBuckets = buckets
+                .map(b => ({ ...b, pct: round1(b.count) }))
+                .filter(b => b.count > 0)
+            const priceMain = priceBuckets.length
+                ? priceBuckets.reduce((a, b) => (b.count > a.count ? b : a))
+                : null
+
+            return {
+                total,
+                board: {
+                    main, gem,
+                    mainPct: round1(main),
+                    gemPct: round1(gem),
+                },
+                cap: {
+                    small, large, unknown,
+                    smallPct: round1(small),
+                    largePct: round1(large),
+                    unknownPct: round1(unknown),
+                },
+                priceBuckets,
+                priceMain,
+            }
+        })
+
+        // 选股表 · 竞价形态迷你图 helpers
+        // 横轴：-10% (x=0) — 0% (x=60) — +10% (x=120)，主板/创科都按 ±10% 视觉化
+        function auctionX(gain) {
+            const g = Number(gain || 0)
+            const clamped = Math.max(-10, Math.min(10, g))
+            return 60 + clamped * 6
+        }
+        function auctionColor(gain) {
+            const g = Number(gain || 0)
+            if (g >= 7) return '#34d399'      // 安全区上沿
+            if (g >= 4) return '#10b981'      // 通达信目标区(4-7.5%)
+            if (g >= 0) return '#fbbf24'      // 偏弱
+            return '#ef4444'                  // 低开
+        }
+        function vrWidth(vr) {
+            const v = Number(vr || 0)
+            return Math.max(0, Math.min(120, v * 24))   // 量比 5 → 满格
+        }
+
+        // 昨日连板高标 今日竞价 整体定性（强 / 一般 / 弱 / 无）
+        const lianbanLeaderState = computed(() => {
+            const list = leader.value?.main_board_leaders || []
+            if (!list.length) return { label: '无', cls: 'hm-ok', icon: '—', detail: '今日无主板连板高标候选' }
+
+            const limitDown = list.filter(x => x.signal === '跌停')
+            const negative = list.filter(x => x.signal === '负反馈')
+            const strong = list.filter(x => x.signal === '强正反馈')
+            const positive = list.filter(x => x.signal === '正反馈')
+            const detailNames = list.map(x =>
+                `${x.leader_name}(${x.board_count || x.leader_gain_10d}板) ${x.auction_change_pct >= 0 ? '+' : ''}${x.auction_change_pct}%`
+            ).join(' · ')
+
+            if (limitDown.length) return { label: '弱(跌停)', cls: 'hm-bad', icon: '🛑', detail: detailNames }
+            if (negative.length) return { label: '弱', cls: 'hm-bad', icon: '🌧️', detail: detailNames }
+            if (strong.length === list.length) return { label: '强', cls: 'hm-good', icon: '🚀', detail: detailNames }
+            if (strong.length || positive.length) return { label: '一般', cls: 'hm-ok', icon: '☁️', detail: detailNames }
+            return { label: '一般', cls: 'hm-ok', icon: '☁️', detail: detailNames }
+        })
+
+        // 当日操作建议 — 三维联动：竞价跌停数 / 梯队加权竞价 / 昨日连板高标竞价
+        // 任二命中 → 不操作；单条命中 → 谨慎参与；都不命中 → 可参与
+        const dailyAdvice = computed(() => {
+            const limitDown = Number(market.value?.limit_down ?? null)
+            const wAvg  = Number(sentiment.value?.weighted_auction_gain ?? null)
+            const hasLD = market.value && Number.isFinite(limitDown)
+            const hasWAvg = sentiment.value?.verdict && Number.isFinite(wAvg)
+
+            // 第三维：昨日连板高标 任一 跌停 或 水下开（auction_change_pct < 0）
+            const mbList = leader.value?.main_board_leaders || []
+            const lbBadList = mbList.filter(x =>
+                x.signal === '跌停' || (Number(x.auction_change_pct) < 0)
+            )
+            const hasLB = mbList.length > 0
+            const lbBad = hasLB && lbBadList.length > 0
+
+            if (!hasLD && !hasWAvg && !hasLB) {
+                return { cls: 'advice-go', text: '— 数据加载中 —', reason: '', suggestedPosition: '—' }
+            }
+
+            const ldBad = hasLD && limitDown > 5
+            const wAvgBad = hasWAvg && wAvg < 0
+
+            // 收集警戒明细
+            const warnings = []
+            if (ldBad) warnings.push(`市场竞价跌停 ${limitDown} 只（>5 警戒线）`)
+            if (wAvgBad) warnings.push(`梯队加权竞价 ${wAvg >= 0 ? '+' : ''}${wAvg}% 偏弱（<0）`)
+            if (lbBad) {
+                const desc = lbBadList.map(x =>
+                    `${x.leader_name}(${x.signal === '跌停' ? '跌停' : `水下${x.auction_change_pct >= 0 ? '+' : ''}${x.auction_change_pct}%`})`
+                ).join('、')
+                warnings.push(`昨日连板高标 ${desc}`)
+            }
+
+            const badCount = warnings.length
+
+            if (badCount >= 2) {
+                return {
+                    cls: 'advice-stop',
+                    text: '🛑 今日不操作',
+                    suggestedPosition: '0 层（空仓避险）',
+                    reason: warnings.join('；') + '。三维警戒中已 ' + badCount + ' 项触发，避免开仓。'
+                }
+            }
+            if (badCount === 1) {
+                return {
+                    cls: 'advice-warn',
+                    text: '⚠️ 谨慎参与',
+                    suggestedPosition: '1-2 层（小仓试错）',
+                    reason: warnings[0] + '。仅一项警戒，可小仓试错或观望。'
+                }
+            }
+            return {
+                cls: 'advice-go',
+                text: '✅ 可参与',
+                suggestedPosition: '3-6 层（标准仓位）',
+                reason: ''
+            }
+        })
+
+        // 连板接力赚钱效应（用户主打法：主板连板接力打板）
+        // 五维评分：昨日主板涨停均价 + 主板高标信号 + TOP30 连板梯队 + 全市场跌停数 + 加权竞价
+        const relayVerdict = computed(() => {
+            const yAvg = leader.value.yesterday_main_board_avg_auction
+            const mbLeaders = leader.value.main_board_leaders || []
+            const items = ranking.value || []
+            const limitDown = Number(market.value?.limit_down ?? 0)
+            const wAvg = Number(sentiment.value?.weighted_auction_gain ?? NaN)
+
+            // 全部依赖数据缺失 → 不展示
+            if (!yAvg && !mbLeaders.length && !items.length && !market.value && !sentiment.value?.verdict) {
+                return null
+            }
+
+            let score = 0
+            const reasons = []
+
+            // 1) 昨日主板涨停股今日均价（接力面温度计 — 最重要权重）
+            if (yAvg && yAvg.sample_count) {
+                const a = yAvg.avg_change_pct
+                const sgn = a >= 0 ? '+' : ''
+                if (a >= 1.5) {
+                    score += 30
+                    reasons.push(`昨日主板涨停${yAvg.sample_count}只今日均价${sgn}${a}%(强接力)`)
+                } else if (a >= 0) {
+                    score += 15
+                    reasons.push(`昨日主板涨停${yAvg.sample_count}只今日均价${sgn}${a}%(偏暖)`)
+                } else if (a >= -2) {
+                    score -= 10
+                    reasons.push(`昨日主板涨停${yAvg.sample_count}只今日均价${a}%(分歧)`)
+                } else {
+                    score -= 30
+                    reasons.push(`昨日主板涨停${yAvg.sample_count}只今日均价${a}%(崩盘)`)
+                }
+            }
+
+            // 2) 主板昨日最高连板今日表现（标杆是否崩塌）
+            if (mbLeaders.length) {
+                const limitDownLeader = mbLeaders.find(x => x.signal === '跌停')
+                const negLeader = mbLeaders.find(x => x.signal === '负反馈')
+                if (limitDownLeader) {
+                    score -= 30
+                    reasons.push(`高标 ${limitDownLeader.leader_name} 跌停(标杆崩塌)`)
+                } else if (negLeader) {
+                    score -= 15
+                    reasons.push(`高标 ${negLeader.leader_name} 负反馈(信号转弱)`)
+                } else {
+                    const strong = mbLeaders.find(x => x.signal === '强正反馈')
+                    if (strong) {
+                        score += 20
+                        const bd = strong.board_count || strong.leader_gain_10d
+                        reasons.push(`高标 ${strong.leader_name}(${bd}连板) 强正反馈`)
+                    } else {
+                        score += 10
+                        reasons.push(`高标 ${mbLeaders[0].leader_name} ${mbLeaders[0].signal}`)
+                    }
+                }
+            }
+
+            // 3) TOP30 连板梯队厚度（>=2板算梯队成员）
+            const lianbanCount = items.filter(x => Number(x.continuous_limit_up || 0) >= 2).length
+            if (lianbanCount >= 8) { score += 15; reasons.push(`TOP30含${lianbanCount}只连板(梯队完整)`) }
+            else if (lianbanCount >= 4) { score += 10; reasons.push(`TOP30含${lianbanCount}只连板`) }
+            else if (lianbanCount >= 2) { score += 5; reasons.push(`TOP30含${lianbanCount}只连板`) }
+            else if (items.length) { reasons.push(`TOP30仅${lianbanCount}只连板(梯队稀薄)`) }
+
+            // 4) 全市场跌停数（接力杀伤）— 阈值对齐"跌停>9 警戒线"
+            if (market.value) {
+                if (limitDown >= 20) {
+                    score -= 20; reasons.push(`全市场跌停${limitDown}只(系统性杀伤)`)
+                } else if (limitDown >= 15) {
+                    score -= 15; reasons.push(`全市场跌停${limitDown}只(杀伤大)`)
+                } else if (limitDown > 9) {
+                    score -= 10; reasons.push(`全市场跌停${limitDown}只(警戒线)`)
+                } else if (limitDown >= 5) {
+                    score -= 5;  reasons.push(`全市场跌停${limitDown}只(偏多)`)
+                } else if (limitDown <= 3) {
+                    score += 10; reasons.push(`全市场跌停${limitDown}只(健康)`)
+                } else {
+                    reasons.push(`全市场跌停${limitDown}只(中性)`)
+                }
+            }
+
+            // 5) 加权竞价兜底（情绪面）
+            if (Number.isFinite(wAvg)) {
+                if (wAvg >= 0) score += 10
+                else score -= 10
+            }
+
+            // 定性结论 — 4档
+            let level, icon, conclusion
+            if (score >= 40) {
+                level = 'strong'; icon = '🚀'
+                conclusion = '接力情绪强劲，主板打板赚钱效应明显，可挑龙头积极参与'
+            } else if (score >= 10) {
+                level = 'warm'; icon = '☀️'
+                conclusion = '接力情绪偏暖，可挑高标小仓试错'
+            } else if (score >= -10) {
+                level = 'mid'; icon = '☁️'
+                conclusion = '接力分歧，观望为主或低吸老股，不追高'
+            } else {
+                level = 'bad'; icon = '🌧️'
+                conclusion = '接力情绪转弱，打板风险高，建议空仓避险'
+            }
+
+            return {
+                score,
+                level,
+                icon,
+                conclusion,
+                reasons: reasons.join('；'),
+            }
+        })
+
+        // TOP30 赚钱效应解读 — 把 板块 + 市值 + 价格 三维结构组合成一段话
+        const top30Verdict = computed(() => {
+            const s = top30Stats.value
+            if (!s) return ''
+            const { board, cap, priceMain } = s
+
+            // 板块定性
+            let boardPart
+            if (board.mainPct >= 60) boardPart = `主板主线（占 ${board.mainPct}%）`
+            else if (board.gemPct >= 60) boardPart = `创业板/科创板主导（占 ${board.gemPct}%）`
+            else boardPart = `主板与创科双线并行（主板 ${board.mainPct}% / 创科 ${board.gemPct}%）`
+
+            // 市值定性
+            let capPart
+            if (cap.smallPct >= 60) capPart = `小市值题材主导（<100亿占 ${cap.smallPct}%）`
+            else if (cap.largePct >= 60) capPart = `大市值蓝筹领涨（≥100亿占 ${cap.largePct}%）`
+            else capPart = `大小盘并行（<100亿 ${cap.smallPct}% · ≥100亿 ${cap.largePct}%）`
+
+            // 价格区间定性
+            let pricePart = '价格分布分散'
+            if (priceMain) {
+                const lbl = priceMain.label
+                const pct = priceMain.pct
+                if (lbl === '<5元') pricePart = `低价小票活跃（<5元占 ${pct}%，纯情绪炒作）`
+                else if (lbl === '5-10元') pricePart = `次低价主流（5-10元占 ${pct}%，散户偏好）`
+                else if (lbl === '10-20元') pricePart = `主流价位活跃（10-20元占 ${pct}%）`
+                else if (lbl === '20-50元') pricePart = `中价股表现（20-50元占 ${pct}%）`
+                else if (lbl === '≥50元') pricePart = `高价股领跑（≥50元占 ${pct}%，机构筹码集中）`
+            }
+
+            // 综合赚钱效应判断
+            let conclusion
+            // 大盘 + 高价股 → 机构主线
+            if (cap.largePct >= 60 && priceMain && priceMain.label === '≥50元') {
+                conclusion = '赚钱效应集中在大市值高价主线龙头，散户跟风风险高，宜挑龙头不追末梢'
+            }
+            // 创科 + 高价 → 科创主线
+            else if (board.gemPct >= 60 && priceMain && (priceMain.label === '≥50元' || priceMain.label === '20-50元')) {
+                conclusion = '赚钱效应在科创/创业板高价主线，主板小票机会有限'
+            }
+            // 主板 + 小市值 → 题材轮动
+            else if (board.mainPct >= 50 && cap.smallPct >= 50) {
+                conclusion = '赚钱效应在主板小盘题材轮动，适合短线打板接力'
+            }
+            // 小市值 + 低价 → 纯情绪
+            else if (cap.smallPct >= 60 && priceMain && (priceMain.label === '<5元' || priceMain.label === '5-10元')) {
+                conclusion = '赚钱效应在低价题材股，市场以情绪炒作为主，加仓需谨慎'
+            }
+            // 大小盘并行 → 分化
+            else if (cap.smallPct >= 30 && cap.largePct >= 30) {
+                conclusion = '大小盘分化，无明确单一主线，需精选板块龙头规避平庸标的'
+            } else {
+                conclusion = '结构均衡，暂无明显单边赚钱效应主线'
+            }
+
+            return `${boardPart}；${capPart}；${pricePart}。${conclusion}。`
         })
 
         const signalClassMap = {
@@ -889,27 +1475,40 @@ createApp({
             return map[market.value?.verdict] || '❓'
         })
 
-        // 市场洞察 computed
-        const waveClass = computed(() => {
-            const map = { '潮退': 'w-ebb', '启动浪': 'w-start', '主升浪': 'w-main', '加速浪': 'w-accel', '衰减浪': 'w-decay' }
-            return map[insight.value.wave?.wave_phase] || 'w-ebb'
-        })
-        const waveColor = computed(() => {
-            const map = { '潮退': '#6b7280', '启动浪': '#fbbf24', '主升浪': '#10b981', '加速浪': '#34d399', '衰减浪': '#ef4444' }
-            return map[insight.value.wave?.wave_phase] || '#6b7280'
-        })
-        const capitalHighlights = computed(() => {
-            if (!insight.value.capital_profile) return []
-            // Show non-sustained items first, then sustained (they are boring)
-            return insight.value.capital_profile
-                .filter(ci => ci.tag !== 'sustained')
-                .slice(0, 10)
-        })
-        function ciTagClass(tag) {
-            return { new_entry: 'new', accelerating: 'acc', sustained: 'sus', decelerating: 'dec', exhausting: 'exh' }[tag] || 'sus'
+        // 决策卡渲染 helpers（从复盘页迁入）
+        function barColor(val, max) {
+            const pct = val / max
+            if (pct >= 0.75) return 'linear-gradient(90deg,#065f46,#10b981)'
+            if (pct >= 0.5) return 'linear-gradient(90deg,#92400e,#fbbf24)'
+            if (pct >= 0.3) return 'linear-gradient(90deg,#374151,#6b7280)'
+            return 'linear-gradient(90deg,#7f1d1d,#ef4444)'
         }
-        function ciTagLabel(tag) {
-            return { new_entry: '新进', accelerating: '加速', sustained: '持续', decelerating: '减速', exhausting: '退潮' }[tag] || tag
+        function decisionClass(action) {
+            if (action === '果断开仓') return 'db-go'
+            if (action === '小仓试错') return 'db-half'
+            return 'db-no'
+        }
+
+        // 选股表决策列 helpers
+        function industryOf(code) {
+            const r = (ranking.value || []).find(x => String(x.code) === String(code))
+            return r?.industry || '-'
+        }
+        function signalOf(code) {
+            return (signals.value || []).find(s => String(s.code) === String(code)) || {}
+        }
+        function scoreOf(code) {
+            return (auctionScores.value || []).find(s => String(s.code) === String(code))
+        }
+        function decisionLevelClass(code) {
+            const lvl = signalOf(code).level
+            if (!lvl) return ''
+            return 'dc-' + lvl
+        }
+        function decisionIcon(code) {
+            const lvl = signalOf(code).level
+            const map = { strong: '🟢', normal: '🔵', watch: '🟡', avoid: '🛑' }
+            return map[lvl] || '⚪'
         }
 
         function isRepresentative(code) { return snapshot.value.representative?.code === code }
@@ -960,7 +1559,7 @@ createApp({
 
         async function loadData() {
             try {
-                const [snapRes, rankRes, scrRes, sigRes, leaderRes, devRes, sentRes, insightRes] = await Promise.all([
+                const [snapRes, rankRes, scrRes, sigRes, leaderRes, devRes, sentRes, scoreRes] = await Promise.all([
                     fetch('/api/snapshot').then(r => r.json()),
                     fetch('/api/gain-ranking').then(r => r.json()),
                     fetch('/api/screener').then(r => r.json()),
@@ -968,7 +1567,7 @@ createApp({
                     fetch('/api/leader').then(r => r.json()),
                     fetch('/api/deviation').then(r => r.json()),
                     fetch('/api/sentiment').then(r => r.json()),
-                    fetch('/api/market-insight').then(r => r.json()),
+                    fetch('/api/auction-scores').then(r => r.json()),
                 ])
                 snapshot.value = snapRes
                 ranking.value = rankRes.ranking || []
@@ -981,7 +1580,7 @@ createApp({
                 signals.value = sigRes.signals || []
                 leader.value = leaderRes
                 deviations.value = devRes.results || []
-                insight.value = insightRes || {}
+                auctionScores.value = Array.isArray(scoreRes) ? scoreRes : []
             } catch (e) { console.error('加载数据失败:', e) }
             if (isTradingTime()) loadRankingLive()
         }
@@ -1024,6 +1623,8 @@ createApp({
 
         const auctionModal = ref(false)
         const auctionData = ref({})
+        // 选股表 mini 图用的 tick 缓存，code → 该股 9:25-9:35 ticks
+        const miniTicks = ref({})
 
         async function showAuction(code, name) {
             auctionData.value = { code, name, summary: '加载中...' }
@@ -1031,33 +1632,240 @@ createApp({
             try {
                 const res = await fetch(`/api/auction-detail/${code}`).then(r => r.json())
                 auctionData.value = res
+                if (res.ticks_intraday && res.ticks_intraday.length) {
+                    miniTicks.value = { ...miniTicks.value, [String(code)]: res.ticks_intraday }
+                }
+                // 同时尝试浏览器直连 push2 抢 9:15-9:25 撮合过程数据
+                // 服务器侧 push2 被反爬阻断，但用户家里的网络可能能通
+                tryFetchPush2Auction(code).then(extra => {
+                    if (extra && extra.length) {
+                        // 合并到 auctionData，让大图用上完整 9:15-9:25 数据
+                        auctionData.value = {
+                            ...auctionData.value,
+                            ticks_auction: extra,
+                            ticks_source: (auctionData.value.ticks_source || '') + '+push2(browser)',
+                        }
+                    }
+                }).catch(() => { /* 浏览器侧也不通就放弃 */ })
             } catch (e) {
                 auctionData.value = { code, name, summary: '获取失败' }
             }
         }
 
-        async function addToWatchlist(code, name) {
-            const res = await fetch('/api/watchlist/add', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ code, name })
-            }).then(r => r.json())
-            alert(res.ok ? `${name || code} 已加入自选` : (res.msg || '添加失败'))
+        // 浏览器直连 push2 拉 9:15-9:25 集合竞价撮合过程（用户家网络通时才有数据）
+        async function tryFetchPush2Auction(code) {
+            const c = String(code).padStart(6, '0')
+            const market = c.startsWith('60') || c.startsWith('68') || c.startsWith('9') ? '1' : '0'
+            const secid = `${market}.${c}`
+            const url = `https://push2.eastmoney.com/api/qt/stock/details/get?secid=${secid}&fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55&pos=-1000`
+            const ctrl = new AbortController()
+            const timer = setTimeout(() => ctrl.abort(), 6000)
+            try {
+                const r = await fetch(url, { signal: ctrl.signal, mode: 'cors' })
+                clearTimeout(timer)
+                if (!r.ok) return null
+                const data = await r.json()
+                const raw = data?.data?.details || []
+                const dirMap = { '1': 'buy', '2': 'sell', '4': 'neutral' }
+                const ticks = []
+                for (const line of raw) {
+                    const parts = String(line).split(',')
+                    if (parts.length < 5) continue
+                    const [t, price, vol, , dirCode] = parts
+                    const p = parseFloat(price), v = parseInt(vol)
+                    if (!Number.isFinite(p) || !Number.isFinite(v)) continue
+                    ticks.push({
+                        time: t,
+                        price: p,
+                        matched_vol: v,
+                        unmatched_vol: 0,
+                        direction: dirMap[String(dirCode).trim()] || 'neutral',
+                    })
+                }
+                // 只保留 9:15-9:25 集合竞价段
+                return ticks.filter(t => t.time >= '09:15:00' && t.time < '09:25:01')
+            } catch (e) {
+                clearTimeout(timer)
+                return null
+            }
         }
+
+        // 后台懒加载所有命中股票的 mini 图数据（不阻塞首屏）
+        async function loadMiniTicksFor(codes) {
+            for (const code of codes) {
+                if (miniTicks.value[code]) continue  // 已有缓存
+                try {
+                    const res = await fetch(`/api/auction-detail/${code}`).then(r => r.json())
+                    if (res && res.ticks_intraday) {
+                        miniTicks.value = { ...miniTicks.value, [String(code)]: res.ticks_intraday }
+                    }
+                } catch (e) { /* 忽略单只失败 */ }
+            }
+        }
+        // screenerHits 变化时触发懒加载
+        Vue.watch(screenerHits, (hits) => {
+            const codes = (hits || []).map(h => String(h.code)).filter(Boolean)
+            if (codes.length) loadMiniTicksFor(codes)
+        }, { immediate: true })
+
+        // ============= mini 图 helpers (140×40 viewBox: 价格区 0-22, 量柱区 22-36) =============
+        function miniTicksOf(code) {
+            return miniTicks.value[String(code)] || []
+        }
+        function _miniPriceRange(hit) {
+            const ticks = miniTicksOf(hit.code)
+            const pc = Number(hit.open_price ? (hit.open_price / (1 + (hit.auction_gain || 0) / 100)) : 0)
+            const pre = pc > 0 ? pc : (ticks.length ? ticks[0].price : 0)
+            const prices = ticks.map(t => Number(t.price)).filter(p => p > 0)
+            if (!prices.length || pre <= 0) return null
+            const lo = Math.min(pre, ...prices)
+            const hi = Math.max(pre, ...prices)
+            const span = Math.max(hi - lo, pre * 0.005)  // 至少 0.5% 跨度防止除 0
+            const pad = span * 0.1
+            return { pre, min: lo - pad, max: hi + pad, span: hi - lo + pad * 2 }
+        }
+        function miniPreCloseY(hit) {
+            const r = _miniPriceRange(hit)
+            if (!r) return 11
+            return 22 - ((r.pre - r.min) / r.span) * 22
+        }
+        function miniPricePath(hit) {
+            const ticks = miniTicksOf(hit.code)
+            const r = _miniPriceRange(hit)
+            if (!ticks.length || !r) return ''
+            const n = ticks.length
+            const dx = n > 1 ? 140 / (n - 1) : 0
+            return ticks.map((t, i) => {
+                const x = n === 1 ? 70 : i * dx
+                const y = 22 - ((Number(t.price) - r.min) / r.span) * 22
+                return `${x.toFixed(1)},${y.toFixed(1)}`
+            }).join(' ')
+        }
+        function miniVolBars(hit) {
+            const ticks = miniTicksOf(hit.code)
+            if (!ticks.length) return []
+            const maxV = Math.max(...ticks.map(t => Number(t.matched_vol) || 0), 1)
+            const n = ticks.length
+            const totalW = 140
+            const barW = Math.max(totalW / n - 0.5, 0.6)
+            const dx = n > 1 ? totalW / n : totalW
+            return ticks.map((t, i) => {
+                const v = Number(t.matched_vol) || 0
+                const h = (v / maxV) * 14
+                const x = i * dx
+                const y = 36 - h
+                let color
+                if (i === 0 && t.time && t.time.startsWith('09:25')) color = '#fbbf24'
+                else if (t.direction === 'buy') color = '#ef4444'
+                else if (t.direction === 'sell') color = '#10b981'
+                else color = '#6b7280'
+                return { x: x.toFixed(1), y: y.toFixed(1), w: barW.toFixed(1), h: h.toFixed(1), color }
+            })
+        }
+        function miniOpenPoint(hit) {
+            const ticks = miniTicksOf(hit.code)
+            const r = _miniPriceRange(hit)
+            if (!ticks.length || !r) return null
+            const idx = ticks.findIndex(t => t.time && t.time.startsWith('09:25'))
+            if (idx < 0) return null
+            const dx = ticks.length > 1 ? 140 / (ticks.length - 1) : 0
+            return {
+                x: (ticks.length === 1 ? 70 : idx * dx).toFixed(1),
+                y: (22 - ((Number(ticks[idx].price) - r.min) / r.span) * 22).toFixed(1),
+            }
+        }
+
+        // ============= 大图 computed (740×360) =============
+        const auctionChart = computed(() => {
+            // 优先拼接 9:15-9:25 撮合过程 + 9:25-9:35 衔接
+            const auctionTicks = (auctionData.value.ticks_auction || []).filter(t => t && t.time && t.price > 0)
+            const intradayTicks = (auctionData.value.ticks_intraday || []).filter(t => t && t.time && t.price > 0)
+            const ticks = [...auctionTicks, ...intradayTicks]
+            if (!ticks.length) return null
+            const W = 720, H = 320
+            const padL = 40, padR = 60, padT = 20, padB = 30
+            const plotW = W - padL - padR
+            const priceH = 180, gap = 16
+            const volTop = padT + priceH + gap
+            const volH = H - volTop - padB
+            const pre = Number(auctionData.value.pre_close) || ticks[0].price
+            const prices = ticks.map(t => Number(t.price))
+            const lo = Math.min(pre, ...prices), hi = Math.max(pre, ...prices)
+            const pad = Math.max((hi - lo) * 0.1, pre * 0.005)
+            const min = lo - pad, max = hi + pad, span = max - min || 1
+            const preCloseY = padT + ((max - pre) / span) * priceH
+
+            const n = ticks.length
+            const dx = n > 1 ? plotW / (n - 1) : 0
+            const xOf = (i) => padL + (n === 1 ? plotW / 2 : i * dx)
+            const yOf = (price) => padT + ((max - price) / span) * priceH
+
+            const pricePath = ticks.map((t, i) => `${xOf(i).toFixed(1)},${yOf(Number(t.price)).toFixed(1)}`).join(' ')
+
+            const maxV = Math.max(...ticks.map(t => Number(t.matched_vol) || 0), 1)
+            const barW = Math.max(plotW / n - 1, 1)
+            const volBars = ticks.map((t, i) => {
+                const v = Number(t.matched_vol) || 0
+                const h = (v / maxV) * (volH - 4)
+                const x = xOf(i) - barW / 2
+                const y = volTop + (volH - h) - 2
+                let color
+                if (i === 0 && t.time.startsWith('09:25')) color = '#fbbf24'
+                else if (t.direction === 'buy') color = '#ef4444'
+                else if (t.direction === 'sell') color = '#10b981'
+                else color = '#6b7280'
+                return {
+                    x: x.toFixed(1), y: y.toFixed(1),
+                    w: barW.toFixed(1), h: h.toFixed(1),
+                    color,
+                    tip: `${t.time} 价${t.price} 量${t.matched_vol}手`,
+                }
+            })
+
+            const openIdx = ticks.findIndex(t => t.time.startsWith('09:25'))
+            const openPoint = openIdx >= 0
+                ? { x: xOf(openIdx).toFixed(1), y: yOf(Number(ticks[openIdx].price)).toFixed(1) }
+                : null
+
+            const xLabels = []
+            if (n >= 1) xLabels.push({ x: xOf(0), t: ticks[0].time.slice(0, 5) })
+            if (n >= 3) xLabels.push({ x: xOf(Math.floor(n / 2)), t: ticks[Math.floor(n / 2)].time.slice(0, 5) })
+            if (n >= 2) xLabels.push({ x: xOf(n - 1), t: ticks[n - 1].time.slice(0, 5) })
+
+            const sourceLabelMap = { eastmoney: '东方财富 (含撮合过程)', sina: '新浪 (含开盘+撮合)', tencent: '腾讯 (含开盘+撮合)', none: '无数据' }
+            const ticksSource = String(auctionData.value.ticks_source || '')
+            const sourceLabel = sourceLabelMap[ticksSource.split('+')[0]] || '未知'
+            return {
+                W, H, padL, padT, plotW, priceH, volTop, volH,
+                preCloseY,
+                pricePath, openPoint, volBars, xLabels,
+                sourceLabel: ticksSource.includes('push2(browser)')
+                    ? sourceLabel + ' + 浏览器直连 push2'
+                    : sourceLabel,
+                hasAuctionWindow: auctionTicks.length > 0,
+            }
+        })
 
         return {
             snapshot, ranking, rankingUpdatedAt, rankingLive, sentiment, market,
             screenerHits, screenerDate, signals,
-            leader, leaderList, ydayAvg, ydayAvgVerdict, ydayAvgClass, ydayAvgBadge,
-            deviations, btResult, insight,
-            today, phaseClass, progressPct, progressClass,
+            leader, leaderList, mainBoardLeadersGroup,
+            ydayAvg, ydayAvgVerdict, ydayAvgClass, ydayAvgBadge, yZbAvg, yLdAvg,
+            deviations, btResult, auctionScores, top30Stats, top30Verdict, relayVerdict, dailyAdvice,
+            lianbanLeaderState,
+            auctionX, auctionColor, vrWidth,
+            auctionChart,
+            miniTicksOf, miniPreCloseY, miniPricePath, miniVolBars, miniOpenPoint,
+            today, phaseClass, phaseColor, progressPct, progressClass,
+            industryOf, signalOf, scoreOf, decisionLevelClass, decisionIcon,
             leaderClass, leaderIcon, leaderBadgeClass,
             getLeaderClass, getLeaderIcon, getLeaderBadgeClass,
             sentimentClass, sentimentIcon, marketClass, marketIcon,
-            waveClass, waveColor, capitalHighlights,
+            barColor, decisionClass,
             refreshing, screening, backtesting,
             isRepresentative, isCandidate, isLimitUp, levelIcon, getDeviation,
-            fmtNum, fmtPct, numClass, ciTagClass, ciTagLabel,
-            refreshCycle, refreshScreener, runBacktest, addToWatchlist,
+            fmtNum, fmtPct, numClass,
+            refreshCycle, refreshScreener, runBacktest,
             auctionModal, auctionData, showAuction,
         }
     }

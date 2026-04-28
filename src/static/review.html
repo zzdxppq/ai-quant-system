@@ -16,39 +16,198 @@
         .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
         .card { background: #111827; border: 1px solid #1e2a45; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
         .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-        table { width: 100%; border-collapse: collapse; }
-        th { text-align: left; padding: 8px 10px; font-size: 12px; color: #6b7280; border-bottom: 1px solid #1e2a45; }
-        td { padding: 8px 10px; font-size: 13px; border-bottom: 1px solid #0d1220; }
-        tr:hover td { background: #0d1220; }
         .gain-pos { color: #ef4444; } .gain-neg { color: #10b981; }
         .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-        .tag-strong { background: #065f46; color: #34d399; }
-        .tag-moderate { background: #78350f; color: #fbbf24; }
-        .tag-weak { background: #7f1d1d; color: #fca5a5; }
-        .tag-veto { background: #450a0a; color: #ef4444; border: 1px solid #ef4444; }
-        .summary-box { background: #0d1220; border-radius: 8px; padding: 14px; margin-bottom: 12px; line-height: 1.6; }
-        .watch-card { background: #0d1220; border-left: 3px solid #3b82f6; padding: 12px; border-radius: 6px; margin-bottom: 10px; }
-        .watch-card .wc-title { font-size: 14px; font-weight: 600; color: #60a5fa; }
-        .watch-card .wc-meta { font-size: 12px; color: #8892a8; margin-top: 4px; }
-        .watch-card .wc-reason { font-size: 12px; color: #a0aec0; margin-top: 6px; }
-        .score-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-        .score-bar .sb-label { width: 100px; text-align: right; font-size: 12px; color: #8892a8; }
-        .score-bar .sb-track { flex: 1; height: 20px; background: #1a2040; border-radius: 4px; overflow: hidden; }
-        .score-bar .sb-fill { height: 100%; border-radius: 4px; display: flex; align-items: center; padding-left: 6px; font-size: 11px; font-weight: 600; }
-        .decision-box { padding: 16px; border-radius: 10px; text-align: center; }
-        .decision-box .db-action { font-size: 24px; font-weight: 700; }
-        .decision-box .db-detail { font-size: 13px; margin-top: 6px; }
-        .db-go { background: #0f2a1a; border: 2px solid #10b981; }
-        .db-go .db-action { color: #10b981; }
-        .db-half { background: #2a2a1a; border: 2px solid #fbbf24; }
-        .db-half .db-action { color: #fbbf24; }
-        .db-no { background: #2a1a1a; border: 2px solid #ef4444; }
-        .db-no .db-action { color: #ef4444; }
         .empty-state { text-align: center; padding: 40px; color: #4b5563; }
         .btn { padding: 6px 14px; border: 1px solid #3a4568; border-radius: 6px; background: #1a2040; color: #a0aec0; cursor: pointer; font-size: 13px; }
         .btn:hover { border-color: #60a5fa; color: #60a5fa; }
-        @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+
+        /* 市场洞察四维面板 */
+        .insight-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .insight-box { background: #0d1220; border-radius: 10px; padding: 14px 16px; border: 1px solid #1e2a45; }
+        .insight-box-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+        .insight-box-title .ib-icon { font-size: 15px; }
+        .wave-bar { height: 28px; background: #1a2040; border-radius: 6px; position: relative; overflow: hidden; margin-bottom: 8px; }
+        .wave-fill { height: 100%; border-radius: 6px; display: flex; align-items: center; padding-left: 10px; font-size: 12px; font-weight: 600; color: #fff; transition: width 0.5s ease; }
+        .wave-fill.w-ebb { background: linear-gradient(90deg, #374151, #4b5563); }
+        .wave-fill.w-start { background: linear-gradient(90deg, #92400e, #fbbf24); }
+        .wave-fill.w-main { background: linear-gradient(90deg, #065f46, #10b981); }
+        .wave-fill.w-accel { background: linear-gradient(90deg, #047857, #34d399); }
+        .wave-fill.w-decay { background: linear-gradient(90deg, #7f1d1d, #ef4444); }
+        .insight-desc { font-size: 12px; color: #8892a8; line-height: 1.5; }
+        .insight-metric { display: inline-flex; align-items: baseline; gap: 4px; margin-right: 12px; font-size: 12px; }
+        .insight-metric .im-val { font-size: 16px; font-weight: 700; }
+        .sector-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+        .sector-bar-label { width: 64px; text-align: right; color: #a0aec0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sector-bar-track { flex: 1; height: 18px; background: #1a2040; border-radius: 4px; overflow: hidden; }
+        .sector-bar-fill { height: 100%; border-radius: 4px; display: flex; align-items: center; padding-left: 6px; font-size: 11px; font-weight: 600; color: #fff; min-width: 20px; }
+        .sector-bar-fill.sb-1 { background: linear-gradient(90deg, #60a5fa, #3b82f6); }
+        .sector-bar-fill.sb-2 { background: linear-gradient(90deg, #a78bfa, #7c3aed); }
+        .sector-bar-fill.sb-3 { background: linear-gradient(90deg, #34d399, #059669); }
+        .sector-bar-fill.sb-4 { background: linear-gradient(90deg, #fbbf24, #d97706); }
+        .sector-bar-fill.sb-5 { background: linear-gradient(90deg, #f87171, #dc2626); }
+        .capital-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px; }
+        .ct-new { background: #1e3a5f; color: #60a5fa; }
+        .ct-acc { background: #065f46; color: #34d399; }
+        .ct-sus { background: #1a1a2e; color: #a0aec0; }
+        .ct-dec { background: #78350f; color: #fbbf24; }
+        .ct-exh { background: #7f1d1d; color: #ef4444; }
+        .leader-chain { font-size: 13px; font-weight: 600; padding: 8px 12px; background: #111827; border-radius: 6px; border-left: 3px solid #a78bfa; margin-bottom: 8px; }
+        .leader-item { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12px; }
+        .leader-role-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+        .lr-space { background: #7f1d1d; color: #fca5a5; }
+        .lr-chain { background: #92400e; color: #fbbf24; }
+        .lr-follow { background: #1a1a2e; color: #a0aec0; }
+
+        /* 连板天梯 */
+        .ladder-summary {
+            display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
+            font-size: 12px; color: #a0aec0;
+        }
+        .ladder-summary b { color: #ef4444; font-size: 14px; }
+        .ladder-row {
+            display: flex; gap: 12px; align-items: flex-start;
+            padding: 12px 0; border-bottom: 1px solid #1e2a45;
+        }
+        .ladder-row:last-child { border-bottom: none; }
+        .ladder-board {
+            flex-shrink: 0; min-width: 76px;
+            font-size: 18px; font-weight: 800;
+            padding: 6px 10px; border-radius: 6px;
+            text-align: center; line-height: 1.2;
+        }
+        .ladder-board .lb-count {
+            display: block; font-size: 10px; font-weight: 500;
+            margin-top: 2px; opacity: 0.85;
+        }
+        .lb-5plus { background: linear-gradient(135deg, #7f1d1d, #ef4444); color: #fff; }
+        .lb-4 { background: linear-gradient(135deg, #92400e, #f59e0b); color: #fff; }
+        .lb-3 { background: linear-gradient(135deg, #065f46, #10b981); color: #fff; }
+        .lb-2 { background: linear-gradient(135deg, #1e3a5f, #3b82f6); color: #fff; }
+        .lb-1 { background: #1a2040; color: #a0aec0; border: 1px solid #2a3050; }
+
+        .ladder-stocks { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; }
+        /* 个股卡片 — 上中下三层结构 */
+        .ls-pill {
+            display: inline-flex; flex-direction: column; align-items: stretch;
+            min-width: 100px; padding: 6px 8px;
+            border-radius: 6px; line-height: 1.3;
+            background: #0d1220; border: 1px solid #1e2a45;
+        }
+        .ls-row1 {
+            font-size: 11px; font-weight: 600; text-align: center;
+            padding: 1px 4px; border-radius: 3px; margin-bottom: 3px;
+        }
+        /* 涨停状态行 — 配色与失败状态一致：红=涨停、黄=炸板、绿=绿盘 等 */
+        .ls-row1.row1-flat { background: #2a0a0a; color: #ef4444; border: 1px solid #ef4444; }   /* 一字板：强红 */
+        .ls-row1.row1-time { background: #1a0a0a; color: #ef4444; }   /* 实体涨停：红 */
+        .ls-row1.row1-fail { background: #161e30; color: #a0aec0; }   /* 失败涨幅占位 */
+        .ls-row2 { display: flex; align-items: baseline; gap: 4px; justify-content: center; }
+        .ls-row2 .ls-name { font-weight: 700; font-size: 13px; color: #ef4444; }
+        .ls-row2 .ls-code { color: #6b7280; font-size: 10px; }
+        .ls-row3 {
+            font-size: 10px; color: #8892a8;
+            text-align: center; margin-top: 2px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            max-width: 110px;
+        }
+        .ls-pill.ls-gem { border-color: #5b21b6; }
+        .ls-pill.ls-failed {
+            background: #161e30;
+            border-style: dashed; opacity: 0.85;
+        }
+        .ls-pill.ls-failed .ls-row2 .ls-name {
+            color: #a0aec0; text-decoration: line-through; text-decoration-color: #4b5563;
+        }
+        .ls-pill.ls-leader { box-shadow: 0 0 0 1px #fbbf24; }
+        .ls-leader-tag {
+            display: inline-block; padding: 0 3px; border-radius: 2px;
+            font-size: 9px; background: #92400e; color: #fbbf24;
+            margin-right: 2px; vertical-align: middle;
+        }
+
+        /* 板块涨停统计 */
+        .sector-stats { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #2a3050; }
+        .sector-stats-title { font-size: 13px; color: #a0aec0; margin-bottom: 8px; }
+        .sector-row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 6px 10px; border-radius: 6px;
+            background: #0d1220; margin-bottom: 4px;
+            font-size: 12px;
+        }
+        .sector-row .sr-name {
+            min-width: 100px; font-weight: 700; color: #60a5fa;
+        }
+        .sector-row .sr-count {
+            min-width: 60px; font-weight: 700; color: #ef4444; font-size: 14px;
+        }
+        .sector-row .sr-leader { color: #a0aec0; }
+        .sector-row .sr-leader b { color: #ef4444; }
+
+        /* 市场广度（市场洞察上方）*/
+        .breadth-bar {
+            display: flex; gap: 12px; padding: 12px 16px;
+            background: #0d1220; border-radius: 8px;
+            border: 1px solid #1e2a45;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+        .breadth-cell { display: flex; flex-direction: column; gap: 2px; }
+        .breadth-cell .bc-label { font-size: 11px; color: #6b7280; }
+        .breadth-cell .bc-value { font-size: 18px; font-weight: 700; }
+
+        /* 晋级失败 */
+        .toggle-switch {
+            display: inline-flex; align-items: center; gap: 6px;
+            cursor: pointer; user-select: none;
+            font-size: 12px; color: #a0aec0;
+            margin-left: 8px;
+        }
+        .toggle-switch .ts-track {
+            width: 32px; height: 16px; border-radius: 9px;
+            background: #2a3050; position: relative;
+            transition: background 0.2s;
+        }
+        .toggle-switch .ts-thumb {
+            position: absolute; top: 1px; left: 1px;
+            width: 14px; height: 14px; border-radius: 50%;
+            background: #6b7280; transition: all 0.2s;
+        }
+        .toggle-switch.ts-on .ts-track { background: #1e3a5f; }
+        .toggle-switch.ts-on .ts-thumb { left: 17px; background: #60a5fa; }
+        .failed-section {
+            margin-top: 16px; padding-top: 16px;
+            border-top: 1px dashed #2a3050;
+        }
+        .failed-title {
+            font-size: 13px; color: #a0aec0; margin-bottom: 10px;
+        }
+        .failed-row {
+            display: flex; gap: 10px; align-items: flex-start;
+            padding: 8px 0; border-bottom: 1px dashed #1e2a45;
+        }
+        .failed-status {
+            flex-shrink: 0; min-width: 60px;
+            padding: 3px 8px; border-radius: 4px;
+            font-size: 11px; font-weight: 700; text-align: center;
+        }
+        .fs-跌停 { background: #2a0a0a; color: #ef4444; border: 1px solid #ef4444; }
+        .fs-深水 { background: #2a1a0a; color: #f59e0b; }
+        .fs-绿盘 { background: #1a2a1a; color: #10b981; }
+        .fs-平开 { background: #1a1a2a; color: #6b7280; }
+        .fs-炸板 { background: #2a2a1a; color: #fbbf24; border: 1px solid #92400e; }
+        .fp-pill {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 3px 8px; border-radius: 4px; font-size: 12px;
+            background: #0d1220; border: 1px solid #1e2a45;
+        }
+        .fp-pill .fp-name { color: #a0aec0; font-weight: 600; }
+        .fp-pill .fp-pct.gain-pos { color: #ef4444; }
+        .fp-pill .fp-pct.gain-neg { color: #10b981; }
+
+        @media (max-width: 768px) {
+            .insight-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -58,172 +217,325 @@
         <div class="nav">
             <a href="/">看板</a>
             <a href="/history">选股记录</a>
-            <a href="/watchlist">自选股</a>
             <a href="/review" class="active">复盘</a>
         </div>
     </div>
 
     <div class="container">
-        <!-- 竞价决策卡 -->
-        <div class="card" v-if="scores.length">
-            <div class="card-title">🎯 今日竞价决策卡</div>
-            <div v-for="sc in scores" :key="sc.code" style="margin-bottom:20px;">
-                <div style="display:flex;gap:16px;align-items:flex-start;">
-                    <div style="flex:1;">
-                        <h3 style="margin-bottom:10px;">{{ sc.name }}（{{ sc.code }}）{{ sc.total_score }}分</h3>
-                        <div class="score-bar">
-                            <span class="sb-label">自身竞价(40)</span>
-                            <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d1_self/40*100)+'%', background: barColor(sc.d1_self, 40)}">{{ sc.d1_self }}</div></div>
-                        </div>
-                        <div class="score-bar">
-                            <span class="sb-label">情绪锚(25)</span>
-                            <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d2_leader/25*100)+'%', background: barColor(sc.d2_leader, 25)}">{{ sc.d2_leader }}</div></div>
-                        </div>
-                        <div class="score-bar">
-                            <span class="sb-label">涨幅榜方向(20)</span>
-                            <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d3_ranking/20*100)+'%', background: barColor(sc.d3_ranking, 20)}">{{ sc.d3_ranking }}</div></div>
-                        </div>
-                        <div class="score-bar">
-                            <span class="sb-label">板块效应(15)</span>
-                            <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d4_sector/15*100)+'%', background: barColor(sc.d4_sector, 15)}">{{ sc.d4_sector }}</div></div>
-                        </div>
-                        <div style="font-size:12px;color:#8892a8;margin-top:8px;">
-                            <div>D1: {{ sc.d1_detail }}</div>
-                            <div>D2: {{ sc.d2_detail }}</div>
-                            <div>D3: {{ sc.d3_detail }}</div>
-                            <div>D4: {{ sc.d4_detail }}</div>
-                        </div>
-                        <div v-if="sc.vetoes && sc.vetoes.length" style="margin-top:8px;">
-                            <span v-for="v in sc.vetoes" :key="v" class="tag tag-veto" style="margin-right:6px;">⚠️ {{ v }}</span>
+        <!-- 市场广度（上证指数 + 涨跌家数）-->
+        <div v-if="insight.breadth" class="breadth-bar">
+            <div class="breadth-cell">
+                <span class="bc-label">上证指数</span>
+                <span class="bc-value" :class="(insight.breadth.sh_pct||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                    {{ insight.breadth.sh_close ?? '—' }}
+                    <span style="font-size:13px;font-weight:600;">
+                        {{ insight.breadth.sh_pct == null ? '' : ((insight.breadth.sh_pct >= 0 ? '+' : '') + insight.breadth.sh_pct + '%') }}
+                    </span>
+                </span>
+            </div>
+            <div class="breadth-cell">
+                <span class="bc-label">上涨家数</span>
+                <span class="bc-value gain-pos">{{ insight.breadth.advance ?? '—' }}</span>
+            </div>
+            <div class="breadth-cell">
+                <span class="bc-label">下跌家数</span>
+                <span class="bc-value gain-neg">{{ insight.breadth.decline ?? '—' }}</span>
+            </div>
+            <div class="breadth-cell" v-if="insight.breadth.flat != null">
+                <span class="bc-label">平盘</span>
+                <span class="bc-value" style="color:#6b7280;">{{ insight.breadth.flat }}</span>
+            </div>
+            <div class="breadth-cell" style="margin-left:auto;justify-content:center;">
+                <span class="bc-label">涨跌比</span>
+                <span class="bc-value"
+                      :class="(insight.breadth.advance||0) > (insight.breadth.decline||0) ? 'gain-pos' : 'gain-neg'">
+                    {{ insight.breadth.decline > 0 ? (insight.breadth.advance / insight.breadth.decline).toFixed(2) : '—' }}
+                </span>
+            </div>
+        </div>
+
+        <!-- 市场洞察 · 四维读盘 -->
+        <div class="card" v-if="insight.wave">
+            <div class="card-title">
+                🧠 市场洞察 · 四维读盘
+                <span style="margin-left:auto;font-size:12px;color:#6b7280;">{{ insight.date }}</span>
+            </div>
+            <div class="insight-grid">
+                <!-- 周期波形 -->
+                <div class="insight-box">
+                    <div class="insight-box-title">
+                        <span class="ib-icon">🌊</span> 周期波形
+                        <span style="margin-left:auto;font-size:18px;font-weight:700;" :style="{color: waveColor}">
+                            {{ insight.wave.wave_phase }}
+                        </span>
+                    </div>
+                    <div class="wave-bar">
+                        <div class="wave-fill" :class="waveClass" :style="{width: insight.wave.intensity + '%'}">
+                            {{ insight.wave.intensity.toFixed(0) }}
                         </div>
                     </div>
-                    <div style="min-width:180px;">
-                        <div class="decision-box" :class="decisionClass(sc.action)">
-                            <div class="db-action">{{ sc.action }}</div>
-                            <div class="db-detail">{{ sc.position }}</div>
-                            <div class="db-detail" v-if="sc.stop_loss">止损: {{ sc.stop_loss }} ({{ sc.stop_loss_pct }}%)</div>
+                    <div style="display:flex;flex-wrap:wrap;margin-bottom:6px;">
+                        <span class="insight-metric">
+                            榜首 <span class="im-val gain-pos">{{ fmtPct(insight.wave.top1_gain) }}</span>
+                        </span>
+                        <span class="insight-metric">
+                            前5均 <span class="im-val gain-pos">{{ fmtPct(insight.wave.top5_avg) }}</span>
+                        </span>
+                        <span class="insight-metric">
+                            全榜均 <span class="im-val" :class="numClass(insight.wave.top30_avg)">{{ fmtPct(insight.wave.top30_avg) }}</span>
+                        </span>
+                        <span class="insight-metric">
+                            >45%数 <span class="im-val" style="color:#fbbf24;">{{ insight.wave.breadth }}</span>
+                        </span>
+                        <span class="insight-metric">
+                            衰减比 <span class="im-val" :style="{color: insight.wave.decay_ratio >= 0.5 ? '#34d399' : '#ef4444'}">{{ insight.wave.decay_ratio.toFixed(2) }}</span>
+                        </span>
+                    </div>
+                    <div class="insight-desc">{{ insight.wave.description }}</div>
+                </div>
+
+                <!-- 板块集中度 -->
+                <div class="insight-box">
+                    <div class="insight-box-title">
+                        <span class="ib-icon">🏭</span> 板块集中度
+                        <span style="margin-left:auto;font-size:16px;font-weight:700;color:#60a5fa;">
+                            {{ insight.sector_concentration }}%
+                        </span>
+                    </div>
+                    <div v-for="(sh, idx) in insight.sector_heats.slice(0, 5)" :key="sh.industry" class="sector-bar-row">
+                        <span class="sector-bar-label">{{ sh.industry }}</span>
+                        <div class="sector-bar-track">
+                            <div class="sector-bar-fill" :class="'sb-' + (idx + 1)"
+                                 :style="{width: Math.max(sh.weight * 3, 12) + '%'}">
+                                {{ sh.count }}只 {{ sh.weight }}%
+                            </div>
                         </div>
-                        <div style="font-size:11px;color:#6b7280;margin-top:6px;text-align:center;">{{ sc.reason }}</div>
+                        <span style="font-size:11px;color:#6b7280;width:50px;text-align:right;">
+                            均{{ sh.avg_gain_10d.toFixed(0) }}%
+                        </span>
+                    </div>
+                    <div class="insight-desc" style="margin-top:6px;">{{ insight.sector_verdict }}</div>
+                </div>
+
+                <!-- 资金行为 -->
+                <div class="insight-box">
+                    <div class="insight-box-title">
+                        <span class="ib-icon">💰</span> 资金行为画像
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <span class="capital-tag ct-new">新进 {{ insight.new_entry_count }}</span>
+                        <span class="capital-tag ct-acc">加速 {{ insight.accelerating_count }}</span>
+                        <span class="capital-tag ct-sus">持续 {{ insight.sustained_count }}</span>
+                        <span class="capital-tag ct-dec">减速 {{ insight.decelerating_count }}</span>
+                        <span class="capital-tag ct-exh">退潮 {{ insight.exhausting_count }}</span>
+                    </div>
+                    <div class="insight-desc" style="font-size:13px;font-weight:600;margin-bottom:4px;">
+                        {{ insight.capital_summary }}
+                    </div>
+                    <div style="max-height:120px;overflow-y:auto;">
+                        <div v-for="ci in capitalHighlights" :key="ci.code"
+                             style="font-size:11px;color:#8892a8;padding:2px 0;">
+                            <span :class="'capital-tag ct-' + ciTagClass(ci.tag)">{{ ciTagLabel(ci.tag) }}</span>
+                            {{ ci.name }} {{ ci.detail }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 情绪领袖 -->
+                <div class="insight-box">
+                    <div class="insight-box-title">
+                        <span class="ib-icon">👑</span> 情绪领袖
+                    </div>
+                    <div class="leader-chain" v-if="insight.emotion_chain">
+                        {{ insight.emotion_chain }}
+                    </div>
+                    <div v-for="el in insight.emotion_leaders" :key="el.code" class="leader-item">
+                        <span class="leader-role-tag"
+                              :class="el.role === 'space_opener' ? 'lr-space' : el.role === 'chain_starter' ? 'lr-chain' : 'lr-follow'">
+                            {{ el.role === 'space_opener' ? '空间板' : el.role === 'chain_starter' ? '连板龙' : '跟随' }}
+                        </span>
+                        <span style="font-weight:600;">{{ el.name }}</span>
+                        <span class="gain-pos">{{ fmtPct(el.gain_10d) }}</span>
+                        <span v-if="el.continuous_limit_up >= 2" style="color:#fbbf24;">
+                            {{ el.continuous_limit_up }}板
+                        </span>
+                        <span style="color:#6b7280;">{{ el.reason }}</span>
                     </div>
                 </div>
             </div>
         </div>
         <div class="card" v-else>
-            <div class="card-title">🎯 今日竞价决策卡</div>
-            <div class="empty-state">今日无选股命中，无需决策</div>
+            <div class="card-title">🧠 市场洞察 · 四维读盘</div>
+            <div class="empty-state">市场洞察数据加载中（依赖 latest_insight.json）</div>
         </div>
 
-        <div class="grid-2">
-            <!-- 次日观察池 -->
-            <div class="card">
-                <div class="card-title">🐟 次日鱼塘（观察池）
-                    <button class="btn" style="margin-left:auto;font-size:11px;" @click="runReview">刷新复盘</button>
-                </div>
-                <div v-if="review.watch_pool && review.watch_pool.length">
-                    <div v-for="w in review.watch_pool" :key="w.code" class="watch-card">
-                        <div class="wc-title">{{ w.name }}（{{ w.code }}）{{ w.board_count }}连板</div>
-                        <div class="wc-meta">
-                            板块: {{ w.industry }} · 收盘: {{ w.close }} · 市值: {{ w.market_cap_yi }}亿 · 累计涨幅: {{ w.total_gain_pct }}%
-                        </div>
-                        <div class="wc-reason">📌 {{ w.reason }}</div>
-                        <div class="wc-reason">👀 观察点: {{ w.watch_points }}</div>
-                        <div class="wc-reason">💰 理想竞价区间: {{ w.auction_range }}</div>
-                    </div>
-                </div>
-                <div v-else class="empty-state">等待收盘后自动生成</div>
-            </div>
-
-            <!-- 市场情绪 -->
-            <div class="card">
-                <div class="card-title">📊 市场情绪小结</div>
-                <div class="summary-box" v-if="review.market_summary">
-                    {{ review.market_summary }}
-                </div>
-                <div v-if="review.main_theme" style="margin-bottom:8px;">
-                    主线板块: <b style="color:#60a5fa;">{{ review.main_theme }}</b>（{{ review.theme_strength }}）
-                </div>
-                <div>涨停: {{ review.limit_up_count || 0 }}只 · 主板: {{ review.main_board_limit_up || 0 }}只 · 最高连板: {{ review.highest_board || 0 }}板</div>
-
-                <!-- 连板梯队 -->
-                <div style="margin-top:12px;" v-if="review.lianban_ladder && review.lianban_ladder.length">
-                    <div class="card-title" style="font-size:13px;">连板梯队</div>
-                    <table>
-                        <thead><tr><th>代码</th><th>名称</th><th>连板</th><th>板块</th></tr></thead>
-                        <tbody>
-                            <tr v-for="s in review.lianban_ladder.slice(0,15)" :key="s.code">
-                                <td>{{ s.code }}</td>
-                                <td>{{ s.name }}</td>
-                                <td style="font-weight:700;" :class="s.board_count >= 3 ? 'gain-pos' : ''">{{ s.board_count }}板</td>
-                                <td>{{ s.is_main_board ? '主板' : '创/科' }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- 决策追踪 -->
+        <!-- 连板天梯（按昨日板数分组，每组含晋级 + 失败） -->
         <div class="card">
-            <div class="card-title">📋 决策追踪记录</div>
-            <table v-if="decisions.length">
-                <thead><tr>
-                    <th>日期</th><th>系统建议</th><th>实际操作</th><th>标的</th><th>买入价</th><th>收盘价</th><th>盈亏</th><th>偏差</th>
-                </tr></thead>
-                <tbody>
-                    <tr v-for="d in decisions" :key="d.date">
-                        <td>{{ d.date }}</td>
-                        <td><span class="tag" :class="actionTag(d.system_action)">{{ d.system_action || '-' }}</span></td>
-                        <td>{{ d.user_action || '-' }}</td>
-                        <td>{{ d.user_code || '-' }}</td>
-                        <td>{{ d.user_price || '-' }}</td>
-                        <td>{{ d.result_close || '-' }}</td>
-                        <td :class="(d.result_gain_pct||0) >= 0 ? 'gain-pos' : 'gain-neg'">
-                            {{ d.result_gain_pct ? (d.result_gain_pct > 0 ? '+' : '') + d.result_gain_pct + '%' : '-' }}
-                        </td>
-                        <td style="font-size:11px;color:#8892a8;">{{ d.deviation || '-' }}</td>
-                    </tr>
-                </tbody>
-            </table>
-            <div v-else class="empty-state">暂无决策记录</div>
+            <div class="card-title">
+                🪜 连板天梯（晋级矩阵）
+                <span v-if="boardGroups.length" style="font-weight:400;font-size:13px;color:#a0aec0;margin-left:6px;">
+                    · 今日涨停 {{ todayCount }} 只
+                </span>
+                <label class="toggle-switch" :class="{ 'ts-on': showFailed }"
+                       @click="showFailed = !showFailed"
+                       v-if="totalFailed > 0"
+                       style="margin-left:auto;">
+                    <span class="ts-track"><span class="ts-thumb"></span></span>
+                    显示晋级失败（{{ totalFailed }} 只）
+                </label>
+                <button class="btn" style="margin-left:8px;font-size:11px;" @click="runReview">刷新复盘</button>
+            </div>
+
+            <div v-if="!boardGroups.length" class="empty-state">
+                等待收盘后自动生成（15:45 cron）
+            </div>
+
+            <!-- 按昨日板数分组 -->
+            <div v-for="grp in boardGroups" :key="grp.prev_board" class="ladder-row">
+                <div class="ladder-board" :class="boardCls(grp.prev_board)">
+                    <template v-if="grp.prev_board === 0">新进</template>
+                    <template v-else>{{ grp.prev_board }}板→{{ grp.next_board }}板</template>
+                    <span class="lb-count">
+                        ✓{{ grp.promoted.length }}
+                        <template v-if="grp.failed.length">/✗{{ grp.failed.length }}</template>
+                    </span>
+                </div>
+                <div class="ladder-stocks">
+                    <!-- 晋级成功 — 上中下三层 -->
+                    <span v-for="s in grp.promoted" :key="s.code"
+                          class="ls-pill" :class="{'ls-gem': !s.is_main_board, 'ls-leader': isSectorLeader(s.code)}"
+                          :title="`晋级 ${grp.prev_board} → ${s.today_board}板，今涨 ${s.today_pct}%`">
+                        <span class="ls-row1" :class="s.is_flat ? 'row1-flat' : 'row1-time'">
+                            <template v-if="s.is_flat">一字板</template>
+                            <template v-else>{{ s.lbt || '涨停' }}</template>
+                        </span>
+                        <span class="ls-row2">
+                            <span class="ls-name">
+                                <span v-if="isSectorLeader(s.code)" class="ls-leader-tag">龙</span>{{ s.name }}
+                            </span>
+                            <span class="ls-code">{{ s.code }}</span>
+                        </span>
+                        <span class="ls-row3">{{ s.industry || '-' }}<span v-if="!s.is_main_board" style="color:#8b5cf6;"> · 创/科</span></span>
+                    </span>
+                    <!-- 晋级失败（开关控制） -->
+                    <template v-if="showFailed">
+                        <span v-for="s in grp.failed" :key="s.code"
+                              class="ls-pill ls-failed" :class="{'ls-gem': !s.is_main_board}"
+                              :title="`昨${grp.prev_board}板 · 今日 ${s.status}，收 ${s.today_close}`">
+                            <span class="ls-row1 row1-fail" :class="'fs-' + s.status">
+                                {{ s.status }} {{ s.today_pct >= 0 ? '+' : '' }}{{ s.today_pct }}%
+                            </span>
+                            <span class="ls-row2">
+                                <span class="ls-name">{{ s.name }}</span>
+                                <span class="ls-code">{{ s.code }}</span>
+                            </span>
+                            <span class="ls-row3">{{ s.industry || '-' }}<span v-if="!s.is_main_board" style="color:#8b5cf6;"> · 创/科</span></span>
+                        </span>
+                    </template>
+                </div>
+            </div>
+
+            <!-- 板块涨停统计 + 龙头 -->
+            <div v-if="sectorStats.length" class="sector-stats">
+                <div class="sector-stats-title">📦 板块涨停分布（共 {{ sectorStats.length }} 个板块 · 龙头加 ⭐）</div>
+                <div v-for="grp in sectorStats" :key="grp.industry" class="sector-row">
+                    <span class="sr-name">{{ grp.industry }}</span>
+                    <span class="sr-count">{{ grp.count }}只</span>
+                    <span class="sr-leader">
+                        ⭐ <b>{{ grp.leader.name }}</b>
+                        <span style="color:#6b7280;">{{ grp.leader.code }}</span>
+                        <span v-if="grp.leader.board_count >= 2" style="color:#fbbf24;font-weight:700;">
+                            {{ grp.leader.board_count }}板
+                        </span>
+                        <span :class="grp.leader.change_pct >= 0 ? 'gain-pos' : 'gain-neg'">
+                            {{ grp.leader.change_pct >= 0 ? '+' : '' }}{{ grp.leader.change_pct }}%
+                        </span>
+                    </span>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
-const { createApp, ref, onMounted } = Vue
+const { createApp, ref, computed, onMounted } = Vue
 createApp({
     setup() {
         const review = ref({})
-        const scores = ref([])
-        const decisions = ref([])
+        const insight = ref({})
+        const showFailed = ref(false)
 
-        function barColor(val, max) {
-            const pct = val / max
-            if (pct >= 0.75) return 'linear-gradient(90deg,#065f46,#10b981)'
-            if (pct >= 0.5) return 'linear-gradient(90deg,#92400e,#fbbf24)'
-            if (pct >= 0.3) return 'linear-gradient(90deg,#374151,#6b7280)'
-            return 'linear-gradient(90deg,#7f1d1d,#ef4444)'
+        // 市场洞察 helpers
+        const waveClass = computed(() => {
+            const map = { '潮退': 'w-ebb', '启动浪': 'w-start', '主升浪': 'w-main', '加速浪': 'w-accel', '衰减浪': 'w-decay' }
+            return map[insight.value.wave?.wave_phase] || 'w-ebb'
+        })
+        const waveColor = computed(() => {
+            const map = { '潮退': '#6b7280', '启动浪': '#fbbf24', '主升浪': '#10b981', '加速浪': '#34d399', '衰减浪': '#ef4444' }
+            return map[insight.value.wave?.wave_phase] || '#6b7280'
+        })
+        const capitalHighlights = computed(() => {
+            if (!insight.value.capital_profile) return []
+            return insight.value.capital_profile.filter(ci => ci.tag !== 'sustained').slice(0, 10)
+        })
+        function ciTagClass(tag) {
+            return { new_entry: 'new', accelerating: 'acc', sustained: 'sus', decelerating: 'dec', exhausting: 'exh' }[tag] || 'sus'
         }
-        function decisionClass(action) {
-            if (action === '果断开仓') return 'db-go'
-            if (action === '小仓试错') return 'db-half'
-            return 'db-no'
+        function ciTagLabel(tag) {
+            return { new_entry: '新进', accelerating: '加速', sustained: '持续', decelerating: '减速', exhausting: '退潮' }[tag] || tag
         }
-        function actionTag(action) {
-            if (action === '果断开仓') return 'tag-strong'
-            if (action === '小仓试错') return 'tag-moderate'
-            return 'tag-weak'
+        function fmtPct(v) {
+            if (v === null || v === undefined || v === '' || isNaN(v)) return '-'
+            const n = Number(v); return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
+        }
+        function numClass(v) {
+            if (v === null || v === undefined || v === '' || isNaN(v)) return ''
+            return Number(v) >= 0 ? 'gain-pos' : 'gain-neg'
+        }
+
+        // 晋级矩阵：按昨日板数分组，每组含 promoted/failed
+        const boardGroups = computed(() => review.value.prev_board_groups || [])
+        const todayCount = computed(() => review.value.limit_up_count || 0)
+        const totalFailed = computed(() =>
+            boardGroups.value.reduce((sum, g) => sum + (g.failed?.length || 0), 0)
+        )
+
+        function boardCls(prevBoard) {
+            if (prevBoard === 0) return 'lb-1'  // 新进
+            if (prevBoard >= 4) return 'lb-5plus'
+            if (prevBoard === 3) return 'lb-4'
+            if (prevBoard === 2) return 'lb-3'
+            return 'lb-2'  // 首板→2板
+        }
+
+        function failedColor(status) {
+            const map = {
+                '跌停': '#ef4444', '深水': '#f59e0b', '绿盘': '#10b981',
+                '平开': '#6b7280', '炸板': '#fbbf24', '无数据': '#6b7280',
+            }
+            return map[status] || '#6b7280'
+        }
+
+        // 板块涨停统计 + 龙头
+        const sectorStats = computed(() => review.value.sector_zt_stats || [])
+        const sectorLeaderSet = computed(() => {
+            const set = new Set()
+            for (const s of sectorStats.value) {
+                if (s.leader?.code) set.add(String(s.leader.code))
+            }
+            return set
+        })
+        function isSectorLeader(code) {
+            return sectorLeaderSet.value.has(String(code))
         }
 
         async function loadData() {
-            const [revRes, scRes, decRes] = await Promise.all([
+            const [revRes, insightRes] = await Promise.all([
                 fetch('/api/review').then(r => r.json()),
-                fetch('/api/auction-scores').then(r => r.json()),
-                fetch('/api/decisions').then(r => r.json()),
+                fetch('/api/market-insight').then(r => r.json()),
             ])
             review.value = revRes || {}
-            scores.value = scRes || []
-            decisions.value = decRes.records || []
+            insight.value = insightRes || {}
         }
 
         async function runReview() {
@@ -232,7 +544,16 @@ createApp({
         }
 
         onMounted(loadData)
-        return { review, scores, decisions, barColor, decisionClass, actionTag, runReview }
+        return {
+            review, insight,
+            showFailed,
+            boardGroups, todayCount, totalFailed,
+            boardCls, failedColor,
+            sectorStats, isSectorLeader,
+            runReview,
+            waveClass, waveColor, capitalHighlights,
+            ciTagClass, ciTagLabel, fmtPct, numClass,
+        }
     }
 }).mount('#app')
 </script>

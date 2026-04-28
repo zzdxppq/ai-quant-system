@@ -147,7 +147,23 @@
                     <tbody>
                         <template v-for="(group, date) in groupedRecords" :key="date">
                             <tr>
-                                <td colspan="11" class="date-group">{{ date }}（{{ group.length }} 只）</td>
+                                <td colspan="11" class="date-group">
+                                    {{ date }}（{{ group.length }} 只）
+                                    <span v-if="dailyEnv(group)" style="margin-left:16px;font-weight:400;font-size:12px;color:#a0aec0;">
+                                        <template v-if="dailyEnv(group).market_limit_down !== null && dailyEnv(group).market_limit_down !== undefined">
+                                            · 跌停
+                                            <b :style="{color: (dailyEnv(group).market_limit_down > 9 ? '#10b981' : '#ef4444')}">{{ dailyEnv(group).market_limit_down }}</b>
+                                        </template>
+                                        <template v-if="dailyEnv(group).weighted_auction_gain !== null && dailyEnv(group).weighted_auction_gain !== undefined">
+                                            · 加权竞价
+                                            <b :class="numClass(dailyEnv(group).weighted_auction_gain)">{{ fmtPct(dailyEnv(group).weighted_auction_gain) }}</b>
+                                        </template>
+                                        <template v-if="dailyEnv(group).yesterday_lianban_today_avg !== null && dailyEnv(group).yesterday_lianban_today_avg !== undefined">
+                                            · 昨日连板今日均价
+                                            <b :class="numClass(dailyEnv(group).yesterday_lianban_today_avg)">{{ fmtPct(dailyEnv(group).yesterday_lianban_today_avg) }}</b>
+                                        </template>
+                                    </span>
+                                </td>
                             </tr>
                             <tr v-for="r in group" :key="r.code + r.date">
                                 <td>{{ r.date }}</td>
@@ -215,6 +231,21 @@ createApp({
             return (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
         }
 
+        // 当日市场环境：取分组中第一条记录的 3 项指标（同一天所有记录都冗余存了同一组值）
+        function dailyEnv(group) {
+            if (!group || !group.length) return null
+            const r = group[0]
+            const has = r.market_limit_down != null
+                || r.weighted_auction_gain != null
+                || r.yesterday_lianban_today_avg != null
+            if (!has) return null
+            return {
+                market_limit_down: r.market_limit_down,
+                weighted_auction_gain: r.weighted_auction_gain,
+                yesterday_lianban_today_avg: r.yesterday_lianban_today_avg,
+            }
+        }
+
         async function loadData() {
             try {
                 const res = await fetch('/api/screener-history').then(r => r.json())
@@ -227,7 +258,7 @@ createApp({
 
         onMounted(loadData)
 
-        return { records, stats, groupedRecords, rateClass, numClass, fmtPct }
+        return { records, stats, groupedRecords, rateClass, numClass, fmtPct, dailyEnv }
     }
 }).mount('#app')
 </script>

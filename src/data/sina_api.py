@@ -69,7 +69,7 @@ def fetch_realtime_batch(codes: list[str], batch_size: int = 50) -> pd.DataFrame
 
     # 数值转换
     numeric_cols = ["open", "pre_close", "close", "high", "low", "volume", "amount",
-                    "bid1_price", "ask1_price"]
+                    "bid1_price", "ask1_price", "bid1_volume", "ask1_volume"]
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -138,6 +138,8 @@ def _parse_response(text: str, original_codes: list[str]) -> list[dict]:
             "ask1_price": parts[7],
             "volume": parts[8],       # 成交量（股）
             "amount": parts[9],       # 成交额（元）
+            "bid1_volume": parts[10] if len(parts) > 10 else "0",  # 买一申报量（股）— 一字涨停封单核心字段
+            "ask1_volume": parts[20] if len(parts) > 20 else "0",  # 卖一申报量（股）
             "date": parts[30] if len(parts) > 30 else "",
             "time": parts[31] if len(parts) > 31 else "",
         }

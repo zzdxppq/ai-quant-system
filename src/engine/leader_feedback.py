@@ -244,6 +244,393 @@ def find_main_board_leader_from_snapshot(
     return None
 
 
+def evaluate_lianban_leader(
+    leader_code: str,
+    leader_name: str,
+    board_count: int,
+    realtime_df: pd.DataFrame,
+) -> LeaderFeedback:
+    """评估主板连板高标竞价反馈（用连板数代替10日涨幅作为情绪锚定）"""
+    row = realtime_df[realtime_df["code"].astype(str) == str(leader_code)]
+    if row.empty:
+        try:
+            from src.data.fetcher import fetch_realtime_batch
+            fallback_df = fetch_realtime_batch([str(leader_code)])
+            if not fallback_df.empty:
+                row = fallback_df[fallback_df["code"].astype(str) == str(leader_code)]
+        except Exception:
+            pass
+
+    if row.empty:
+        return LeaderFeedback(
+            leader_code=leader_code, leader_name=leader_name,
+            leader_gain_10d=float(board_count), pre_close=0, auction_open=0,
+            auction_change_pct=0, signal=LeaderSignal.NEUTRAL, can_trade=False,
+            aggression="观望",
+            reason=f"未找到{leader_name}({leader_code})的竞价数据，建议观望",
+        )
+
+    row = row.iloc[0]
+    pre_close = float(row.get("pre_close", 0))
+    auction_open = float(row.get("open", 0))
+
+    if pre_close <= 0:
+        return LeaderFeedback(
+            leader_code=leader_code, leader_name=leader_name,
+            leader_gain_10d=float(board_count), pre_close=0, auction_open=0,
+            auction_change_pct=0, signal=LeaderSignal.NEUTRAL, can_trade=False,
+            aggression="观望", reason="昨收价异常，无法判断",
+        )
+
+    change_pct = (auction_open / pre_close - 1) * 100
+    # 主板连板高标按定义只来自主板，跌停 -10%
+    limit_down_pct = -10.0
+
+    signal, can_trade, aggression, reason = _classify_lianban(
+        change_pct, limit_down_pct, leader_name, board_count
+    )
+
+    return LeaderFeedback(
+        leader_code=leader_code, leader_name=leader_name,
+        leader_gain_10d=float(board_count),  # 复用字段，承载连板数
+        pre_close=round(pre_close, 2),
+        auction_open=round(auction_open, 2),
+        auction_change_pct=round(change_pct, 2),
+        signal=signal, can_trade=can_trade, aggression=aggression, reason=reason,
+    )
+
+
+def _classify_lianban(
+    change_pct: float,
+    limit_down_pct: float,
+    name: str,
+    board_count: int,
+) -> tuple[LeaderSignal, bool, str, str]:
+    """连板高标信号分类（措辞围绕连板情绪）"""
+    if change_pct <= limit_down_pct + 0.5:
+        return (
+            LeaderSignal.LIMIT_DOWN, False, "不操作",
+            f"主板{board_count}连板{name}竞价跌停({change_pct:+.1f}%)，"
+            f"连板高标崩塌，接力情绪极度恶化",
+        )
+    if change_pct < -3.0:
+        return (
+            LeaderSignal.NEGATIVE, False, "不操作",
+            f"主板{board_count}连板{name}竞价深水开({change_pct:+.1f}%)，"
+            f"接力情绪严重不足",
+        )
+    if change_pct < 0:
+        return (
+            LeaderSignal.NEUTRAL, True, "谨慎",
+            f"主板{board_count}连板{name}竞价微幅低开({change_pct:+.1f}%)，"
+            f"接力情绪偏弱但未崩",
+        )
+    if change_pct <= 3.0:
+        return (
+            LeaderSignal.POSITIVE, True, "正常",
+            f"主板{board_count}连板{name}竞价红开({change_pct:+.1f}%)，"
+            f"接力情绪正常偏暖",
+        )
+    return (
+        LeaderSignal.STRONG_POSITIVE, True, "积极",
+        f"主板{board_count}连板{name}竞价大幅高开({change_pct:+.1f}%)，"
+        f"接力情绪强劲延续",
+    )
+
+
+def _is_main_board_code(code: str) -> bool:
+    code = str(code)
+    if code.startswith(("300", "301", "688", "8", "4")):
+        return False
+    return True
+
+
+def find_main_board_lianban_leaders(
+    limit_up_history: dict,
+    spot_df: pd.DataFrame,
+) -> list[tuple[str, str, int]]:
+    """找到「主板」昨日连板数最高的所有股票（>=2连板，平局全返回）
+
+    Returns:
+        [(code, name, board_count), ...]，按 code 升序；无候选返回 []
+    """
+    if not limit_up_history:
+        return []
+
+    from src.engine.screener import _detect_continuous_limit_up
+    continuous = _detect_continuous_limit_up(limit_up_history)
+    if not continuous:
+        return []
+
+    main_board = {c: d for c, d in continuous.items() if _is_main_board_code(c)}
+    main_board = {c: d for c, d in main_board.items() if d >= 2}
+    if not main_board:
+        return []
+
+    max_count = max(main_board.values())
+    top_codes = sorted([c for c, d in main_board.items() if d == max_count])
+
+    results: list[tuple[str, str, int]] = []
+    for code in top_codes:
+        name = ""
+        if spot_df is not None and not spot_df.empty:
+            match = spot_df[spot_df["code"].astype(str) == str(code)]
+            if not match.empty:
+                name = str(match.iloc[0].get("name", ""))
+        results.append((code, name, max_count))
+    return results
+
+
+def find_main_board_lianban_leader(
+    limit_up_history: dict,
+    spot_df: pd.DataFrame,
+) -> Optional[tuple[str, str, int]]:
+    """单只兼容包装：返回平局中 code 最小的一只。"""
+    leaders = find_main_board_lianban_leaders(limit_up_history, spot_df)
+    return leaders[0] if leaders else None
+
+
+def compute_yesterday_main_board_auction(
+    limit_up_history: dict,
+    spot_df: pd.DataFrame,
+) -> Optional[dict]:
+    """计算「昨日主板涨停股」今日竞价的平均表现，用于接力情绪锚定
+
+    Returns:
+        {date, sample_count, avg_change_pct, positive_count, negative_count, limit_down_count}
+        或 None
+    """
+    if not limit_up_history:
+        return None
+
+    from src.config import now_cn
+    today_str = now_cn().strftime("%Y%m%d")
+
+    all_dates = sorted(limit_up_history.keys(), reverse=True)
+    past_dates = [d for d in all_dates if d != today_str]
+    if not past_dates:
+        return None
+
+    yesterday_str = past_dates[0]
+    df = limit_up_history[yesterday_str]
+    if df is None or df.empty:
+        return None
+
+    code_col = None
+    for col in ["code", "代码", "股票代码"]:
+        if col in df.columns:
+            code_col = col
+            break
+    if code_col is None:
+        if len(df.columns) == 0:
+            return None
+        code_col = df.columns[0]
+
+    codes = [
+        str(c).zfill(6)
+        for c in df[code_col].astype(str).tolist()
+        if _is_main_board_code(c)
+    ]
+    if not codes:
+        return None
+
+    # 传入 spot_df 通常是东财 top500 局部样本，无法覆盖全部昨日涨停股。
+    # 检查命中率，命中率<70% 时主动用新浪全市场（5000+ 只）兜底，确保样本完整。
+    def _spot_hit_rate(s):
+        if s is None or s.empty:
+            return 0.0
+        s_codes = set(s["code"].astype(str))
+        hits = sum(1 for c in codes if c in s_codes)
+        return hits / len(codes) if codes else 0.0
+
+    hit_rate = _spot_hit_rate(spot_df)
+    if hit_rate < 0.7:
+        try:
+            from src.data.sina_spot_api import fetch_a_share_list_sina
+            full_df = fetch_a_share_list_sina()
+            if full_df is not None and not full_df.empty:
+                full_hit_rate = _spot_hit_rate(full_df)
+                if full_hit_rate > hit_rate:
+                    print(f"[昨日主板涨停均价] 局部 spot 命中率 {hit_rate:.0%} 不足，"
+                          f"切换新浪全市场（命中率 {full_hit_rate:.0%}）")
+                    spot_df = full_df
+        except Exception as e:
+            print(f"[昨日主板涨停均价] 新浪全市场拉取失败: {e}")
+
+    if spot_df is None or spot_df.empty:
+        return None
+
+    changes = []
+    pos = neg = ld = 0
+    high5_count = 0   # 高开 >5%
+    flat2_count = 0   # 平开附近 ±2%
+    low5_count = 0    # 低开 <-5%
+    for code in codes:
+        match = spot_df[spot_df["code"].astype(str) == code]
+        if match.empty:
+            continue
+        row = match.iloc[0]
+        pre_close = float(row.get("pre_close", 0))
+        open_price = float(row.get("open", 0))
+        if pre_close <= 0 or open_price <= 0:
+            continue
+        chg = (open_price / pre_close - 1) * 100
+        changes.append(chg)
+        if chg > 0:
+            pos += 1
+        elif chg < 0:
+            neg += 1
+        if chg <= -9.5:
+            ld += 1
+        if chg > 5:
+            high5_count += 1
+        elif chg < -5:
+            low5_count += 1
+        if -2 <= chg <= 2:
+            flat2_count += 1
+
+    if not changes:
+        return None
+
+    avg = sum(changes) / len(changes)
+    sorted_chg = sorted(changes)
+    n = len(sorted_chg)
+    median = (sorted_chg[n // 2] + sorted_chg[(n - 1) // 2]) / 2 if n else 0
+    return {
+        "date": yesterday_str,
+        "sample_count": len(changes),
+        "avg_change_pct": round(avg, 2),
+        "median_change_pct": round(median, 2),
+        "high5_count": high5_count,
+        "flat2_count": flat2_count,
+        "low5_count": low5_count,
+        "positive_count": pos,
+        "negative_count": neg,
+        "limit_down_count": ld,
+    }
+
+
+def compute_yesterday_limit_down_today_auction(
+    spot_df: pd.DataFrame,
+) -> Optional[dict]:
+    """昨日竞价跌停股 今日竞价均价 — 弱势股反弹/续跌信号
+
+    数据源：sentiment_history.json 中昨日保存的 limit_down_codes
+    """
+    if spot_df is None or spot_df.empty:
+        return None
+    from src.engine.sentiment_pool import get_prev_limit_down_codes
+    codes = get_prev_limit_down_codes()
+    if not codes:
+        return None
+
+    spot_codes = set(spot_df["code"].astype(str))
+    changes = []
+    pos = neg = ld = 0
+    for c in codes:
+        c = str(c).zfill(6)
+        if c not in spot_codes:
+            continue
+        row = spot_df[spot_df["code"].astype(str) == c].iloc[0]
+        pre_close = float(row.get("pre_close", 0))
+        open_price = float(row.get("open", 0))
+        if pre_close <= 0 or open_price <= 0:
+            continue
+        chg = (open_price / pre_close - 1) * 100
+        changes.append(chg)
+        if chg > 0:
+            pos += 1
+        elif chg < 0:
+            neg += 1
+        if chg <= -9.5:
+            ld += 1
+
+    if not changes:
+        return None
+
+    avg = sum(changes) / len(changes)
+    return {
+        "pool_size": len(codes),
+        "sample_count": len(changes),
+        "avg_change_pct": round(avg, 2),
+        "positive_count": pos,
+        "negative_count": neg,
+        "limit_down_count": ld,
+    }
+
+
+def compute_yesterday_zb_today_auction(
+    spot_df: pd.DataFrame,
+) -> Optional[dict]:
+    """昨日炸板股 今日竞价均价 — 接力情绪反向锚定
+
+    炸板池来自东财 push2ex（与一字涨停池同源）。
+    一字涨停 vs 炸板的差异：
+      - 一字涨停：盘中无炸开，封板成功
+      - 炸板：盘中曾涨停但被砸开，最终未涨停
+    炸板股次日的接力情绪通常更弱（卖盘高位换手），其今日竞价表现是 重要负向信号。
+
+    Returns:
+        {date, sample_count, avg_change_pct, positive_count, negative_count, limit_down_count}
+    """
+    if spot_df is None or spot_df.empty:
+        return None
+
+    from src.config import now_cn
+    from src.data.zt_pool_api import fetch_zb_pool
+
+    today_str = now_cn().strftime("%Y%m%d")
+    # 昨日炸板（取最近一交易日。当前 today 的 zb 池在收盘后才有，所以 9:27 时拉昨日）
+    # 简单做法：先试今天再倒推（外层调用通常已有昨日缓存习惯）
+    from datetime import timedelta
+    base = now_cn().date()
+    pool = {}
+    yesterday_str = None
+    for back in range(1, 8):
+        d = (base - timedelta(days=back)).strftime("%Y%m%d")
+        pool = fetch_zb_pool(d)
+        if pool:
+            yesterday_str = d
+            break
+    if not pool:
+        return None
+
+    spot_codes = set(spot_df["code"].astype(str))
+    changes = []
+    pos = neg = ld = 0
+    for code in pool.keys():
+        c = str(code).zfill(6)
+        if c not in spot_codes:
+            continue
+        row = spot_df[spot_df["code"].astype(str) == c].iloc[0]
+        pre_close = float(row.get("pre_close", 0))
+        open_price = float(row.get("open", 0))
+        if pre_close <= 0 or open_price <= 0:
+            continue
+        chg = (open_price / pre_close - 1) * 100
+        changes.append(chg)
+        if chg > 0:
+            pos += 1
+        elif chg < 0:
+            neg += 1
+        if chg <= -9.5:
+            ld += 1
+
+    if not changes:
+        return None
+
+    avg = sum(changes) / len(changes)
+    return {
+        "date": yesterday_str,
+        "pool_size": len(pool),
+        "sample_count": len(changes),
+        "avg_change_pct": round(avg, 2),
+        "positive_count": pos,
+        "negative_count": neg,
+        "limit_down_count": ld,
+    }
+
+
 def find_main_board_leader_from_ranking(
     ranking_file: str,
 ) -> Optional[tuple[str, str, float]]:

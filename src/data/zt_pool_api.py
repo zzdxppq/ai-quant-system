@@ -19,6 +19,7 @@ import httpx
 from src.config import now_cn
 
 ZT_POOL_URL = "http://push2ex.eastmoney.com/getTopicZTPool"
+ZB_POOL_URL = "http://push2ex.eastmoney.com/getTopicZBPool"  # 炸板池
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -76,6 +77,53 @@ def fetch_zt_pool(date: Optional[str] = None) -> dict:
         }
 
     print(f"涨停板池: {len(result)} 只 (date={date})")
+    return result
+
+
+def fetch_zb_pool(date: Optional[str] = None) -> dict:
+    """拉取指定交易日的炸板池（盘中曾涨停但收盘未封住）
+
+    Returns:
+        {code: {"name": str, "zbc": int, "industry": str}}
+    """
+    if date is None:
+        date = now_cn().strftime("%Y%m%d")
+
+    params = {
+        "ut": "7eea3edcaed734bea9cbfc24409ed989",
+        "dpt": "wz.ztzt",
+        "Pageindex": "0",
+        "pagesize": "500",
+        "sort": "fbt:asc",
+        "date": date,
+        "_": str(int(time.time() * 1000)),
+    }
+
+    try:
+        with httpx.Client(timeout=10, headers=HEADERS) as client:
+            resp = client.get(ZB_POOL_URL, params=params)
+            data = resp.json()
+    except Exception as e:
+        print(f"炸板池请求失败: {e}")
+        return {}
+
+    if not data or not data.get("data"):
+        return {}
+    pool = data["data"].get("pool") or []
+    if not pool:
+        return {}
+
+    result: dict = {}
+    for item in pool:
+        code = str(item.get("c", "")).strip()
+        if not code:
+            continue
+        result[code] = {
+            "name": item.get("n", ""),
+            "zbc": int(item.get("zbc", 0) or 0),
+            "industry": item.get("hybk", ""),
+        }
+    print(f"炸板池: {len(result)} 只 (date={date})")
     return result
 
 

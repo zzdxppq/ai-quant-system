@@ -67,15 +67,31 @@ def fetch_full_market_spot() -> pd.DataFrame:
                "pre_close", "market_cap", "total_market_cap"]]
 
 
-def _fetch_one_gain_10d(code: str) -> dict | None:
-    """单只60根日K → 10日涨幅；返回 None 表示新股或拉取失败"""
+def _fetch_one_gain_10d(code: str, realtime_close: float = 0.0) -> dict | None:
+    """单只60根日K → 10日涨幅；返回 None 表示新股或拉取失败
+
+    Args:
+        code: 股票代码
+        realtime_close: spot实时价，>0 时优先使用（比K线末根更准）
+    """
     from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
+    from src.config import now_cn
     df = fetch_kline(code, SCALE_DAILY, datalen=NEW_STOCK_MIN_TRADING_DAYS)
     if df is None or df.empty or len(df) < NEW_STOCK_MIN_TRADING_DAYS:
         return None
     try:
-        close_now = float(df.iloc[-1]["close"])
-        close_10d_ago = float(df.iloc[-11]["close"])
+        # 最新价：优先用实时行情（准确），K线末根兜底
+        close_now = realtime_close if realtime_close > 0 else float(df.iloc[-1]["close"])
+
+        # 10日基准：判断K线是否包含当天，对齐通达信 REF(C,10)
+        today_str = now_cn().strftime("%Y-%m-%d")
+        last_kline_date = str(df.iloc[-1]["date"])[:10]
+        if last_kline_date == today_str:
+            idx = max(0, len(df) - 11)
+        else:
+            idx = max(0, len(df) - 10)
+
+        close_10d_ago = float(df.iloc[idx]["close"])
     except (KeyError, IndexError, ValueError):
         return None
     if close_10d_ago <= 0:
@@ -83,14 +99,29 @@ def _fetch_one_gain_10d(code: str) -> dict | None:
     return {"code": code, "gain_10d": round((close_now / close_10d_ago - 1) * 100, 2)}
 
 
-def _scan_10d_gain_parallel(codes: list[str], max_workers: int = 12) -> pd.DataFrame:
-    """并行扫描 10 日涨幅"""
+def _scan_10d_gain_parallel(
+    codes: list[str],
+    spot_prices: dict[str, float] | None = None,
+    max_workers: int = 12,
+) -> pd.DataFrame:
+    """并行扫描 10 日涨幅
+
+    Args:
+        codes: 待扫描的股票代码列表
+        spot_prices: {code: 实时收盘价} 从spot数据传入，确保涨幅用实时价计算
+        max_workers: 并行线程数
+    """
+    if spot_prices is None:
+        spot_prices = {}
     results: list[dict] = []
     total = len(codes)
     print(f"并行扫描 10 日涨幅: {total} 只, workers={max_workers}")
 
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futures = {ex.submit(_fetch_one_gain_10d, c): c for c in codes}
+        futures = {
+            ex.submit(_fetch_one_gain_10d, c, spot_prices.get(c, 0.0)): c
+            for c in codes
+        }
         done = 0
         for fut in as_completed(futures):
             try:
@@ -303,8 +334,14 @@ def scan_full_market_10d_ranking(top_n: int = 30) -> pd.DataFrame:
     print(f"ST/停牌过滤后剩 {len(universe)} 只")
 
     # 3. 并行扫 10 日涨幅（同时过滤新股）
+    #    传入 spot 实时价，确保涨幅基于最新行情而非可能延迟的 K 线末根
+    spot_prices = dict(zip(
+        universe["code"].astype(str),
+        universe["close"].astype(float),
+    ))
     gain_df = _scan_10d_gain_parallel(
         universe["code"].astype(str).tolist(),
+        spot_prices=spot_prices,
         max_workers=12,
     )
     if gain_df.empty:

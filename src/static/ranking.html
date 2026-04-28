@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>10日涨幅榜 TOP30 · AI量化周期看板</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #0a0e1a; color: #e0e6ed; min-height: 100vh; }
+        .header {
+            background: linear-gradient(135deg, #1a1f35, #0d1220);
+            border-bottom: 1px solid #2a3050;
+            padding: 16px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .header h1 {
+            font-size: 20px; font-weight: 600;
+            background: linear-gradient(90deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .header .nav { display: flex; gap: 12px; }
+        .header .nav a {
+            color: #a0aec0; text-decoration: none; font-size: 13px;
+            padding: 6px 14px; border: 1px solid #3a4568; border-radius: 6px;
+        }
+        .header .nav a:hover, .header .nav a.active { border-color: #60a5fa; color: #60a5fa; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .card { background: #111827; border: 1px solid #1e2a45; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+        .card-title { font-size: 14px; color: #8892a8; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .card-title .icon { font-size: 16px; }
+
+        /* 表格 */
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 8px 10px; font-size: 12px; color: #6b7280; border-bottom: 1px solid #1e2a45; font-weight: 500; }
+        td { padding: 8px 10px; font-size: 13px; border-bottom: 1px solid #0d1220; }
+        tr:hover td { background: #0d1220; }
+        .gain-pos { color: #ef4444; }
+        .gain-neg { color: #10b981; }
+        .sticky-thead thead th {
+            position: sticky; top: 0; z-index: 2;
+            background: #111827; box-shadow: inset 0 -1px 0 #1e2a45;
+        }
+        .limit-up-row td { color: #ef4444; font-weight: 600; }
+        .limit-up-row:hover td { background: #2a0a0a; }
+        .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+        .tag-rep { background: #1e3a5f; color: #60a5fa; }
+        .tag-candidate { background: #1a2e1a; color: #34d399; }
+        .tag-main { background: #2a2a1a; color: #fbbf24; }
+        .tag-gem { background: #1a1a2e; color: #8b5cf6; }
+        .empty-state { text-align: center; padding: 40px; color: #4b5563; }
+        .btn { padding: 6px 14px; border: 1px solid #3a4568; border-radius: 6px; background: #1a2040; color: #a0aec0; cursor: pointer; font-size: 13px; }
+        .btn:hover { border-color: #60a5fa; color: #60a5fa; }
+
+        /* TOP30 结构占比条 */
+        .top30-stats { margin-bottom: 12px; }
+        .t30-row { display: flex; align-items: stretch; gap: 4px; margin-bottom: 6px; height: 26px; }
+        .t30-label { width: 72px; font-size: 12px; color: #8892a8; display: flex; align-items: center; flex-shrink: 0; }
+        .t30-seg {
+            display: flex; align-items: center; padding: 0 8px;
+            font-size: 11px; font-weight: 600; color: #fff;
+            border-radius: 4px; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis; min-width: 0;
+        }
+        .t30-main { background: linear-gradient(90deg, #1e3a5f, #3b82f6); }
+        .t30-gem { background: linear-gradient(90deg, #5b21b6, #8b5cf6); }
+        .t30-small { background: linear-gradient(90deg, #065f46, #10b981); }
+        .t30-large { background: linear-gradient(90deg, #92400e, #f59e0b); }
+        .t30-unknown { background: #374151; color: #9ca3af; }
+        .t30-p1 { background: linear-gradient(90deg, #374151, #6b7280); }
+        .t30-p2 { background: linear-gradient(90deg, #1e3a5f, #60a5fa); }
+        .t30-p3 { background: linear-gradient(90deg, #065f46, #34d399); }
+        .t30-p4 { background: linear-gradient(90deg, #92400e, #fbbf24); }
+        .t30-p5 { background: linear-gradient(90deg, #7f1d1d, #ef4444); }
+        .t30-summary { font-size: 12px; color: #a0aec0; margin-top: 4px; padding-left: 76px; }
+        .t30-verdict {
+            margin-top: 10px; padding: 10px 14px;
+            background: #0d1220; border-left: 3px solid #a78bfa;
+            border-radius: 6px; font-size: 13px; line-height: 1.6; color: #d1d5db;
+        }
+        .t30-verdict b { color: #a78bfa; }
+        .t30-relay { margin-top: 8px; padding: 10px 14px; border-radius: 6px; font-size: 13px; line-height: 1.6; }
+        .t30-relay-detail { margin-top: 4px; font-size: 12px; color: #a0aec0; }
+        .relay-strong { background: #0f2a1a; border-left: 3px solid #10b981; color: #d1d5db; }
+        .relay-strong b { color: #34d399; }
+        .relay-warm   { background: #1a2332; border-left: 3px solid #60a5fa; color: #d1d5db; }
+        .relay-warm b { color: #60a5fa; }
+        .relay-mid    { background: #2a2a1a; border: 3px solid #fbbf24; border-style: none none none solid; color: #d1d5db; }
+        .relay-mid b  { color: #fbbf24; }
+        .relay-bad    { background: #2a1a1a; border-left: 3px solid #ef4444; color: #d1d5db; }
+        .relay-bad b  { color: #ef4444; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="header">
+        <h1>10日涨幅榜 TOP30</h1>
+        <div class="nav">
+            <a href="/">看板</a>
+            <a href="/ranking" class="active">10日涨幅榜</a>
+            <a href="/review">复盘</a>
+            <a href="/history">选股记录</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">📊</span> 10日涨幅榜 TOP30
+                <span v-if="rankingLive" style="margin-left:8px;font-size:11px;color:#34d399;">● 实时</span>
+                <span v-if="rankingUpdatedAt" style="margin-left:auto;font-size:12px;color:#6b7280;">
+                    {{ rankingUpdatedAt }}
+                </span>
+            </div>
+
+            <!-- 结构占比 -->
+            <div v-if="top30Stats" class="top30-stats">
+                <div class="t30-row">
+                    <span class="t30-label">板块结构</span>
+                    <span class="t30-seg t30-main" :style="{flex: top30Stats.board.mainPct || 0.01}">
+                        主板 {{ top30Stats.board.main }}（{{ top30Stats.board.mainPct }}%）
+                    </span>
+                    <span class="t30-seg t30-gem" :style="{flex: top30Stats.board.gemPct || 0.01}">
+                        创/科 {{ top30Stats.board.gem }}（{{ top30Stats.board.gemPct }}%）
+                    </span>
+                </div>
+                <div class="t30-row">
+                    <span class="t30-label">市值分布</span>
+                    <span class="t30-seg t30-small" :style="{flex: top30Stats.cap.smallPct || 0.01}">
+                        &lt;100亿 {{ top30Stats.cap.small }}（{{ top30Stats.cap.smallPct }}%）
+                    </span>
+                    <span class="t30-seg t30-large" :style="{flex: top30Stats.cap.largePct || 0.01}">
+                        ≥100亿 {{ top30Stats.cap.large }}（{{ top30Stats.cap.largePct }}%）
+                    </span>
+                    <span v-if="top30Stats.cap.unknown" class="t30-seg t30-unknown" :style="{flex: top30Stats.cap.unknownPct || 0.01}">
+                        未知 {{ top30Stats.cap.unknown }}
+                    </span>
+                </div>
+                <div class="t30-row">
+                    <span class="t30-label">价格区间</span>
+                    <span v-for="b in top30Stats.priceBuckets" :key="b.label"
+                          class="t30-seg" :class="b.cls" :style="{flex: b.pct || 0.01}">
+                        {{ b.label }} {{ b.count }}（{{ b.pct }}%）
+                    </span>
+                </div>
+                <div class="t30-summary" v-if="top30Stats.priceMain">
+                    主要价格区间：<b style="color:#60a5fa;">{{ top30Stats.priceMain.label }}</b>
+                    （{{ top30Stats.priceMain.count }} 只 · {{ top30Stats.priceMain.pct }}%）
+                </div>
+                <div class="t30-verdict" v-if="top30Verdict">
+                    💡 <b>赚钱效应解读：</b>{{ top30Verdict }}
+                </div>
+                <div v-if="relayVerdict" class="t30-relay" :class="'relay-' + relayVerdict.level">
+                    🔗 <b>连板接力赚钱效应：{{ relayVerdict.icon }} {{ relayVerdict.conclusion }}</b>
+                    <div class="t30-relay-detail">
+                        {{ relayVerdict.reasons }}
+                        （接力健康度评分 {{ relayVerdict.score >= 0 ? '+' : '' }}{{ relayVerdict.score }}）
+                    </div>
+                </div>
+            </div>
+
+            <!-- TOP30 表格 -->
+            <div style="max-height:70vh;overflow-y:auto;overflow-x:auto;">
+                <table v-if="ranking.length" class="sticky-thead">
+                    <thead><tr>
+                        <th>#</th><th>代码</th><th>名称</th><th>板块</th><th>最新价</th>
+                        <th>市值(亿)</th><th>涨幅</th><th>竞价涨幅</th><th>10日涨幅</th>
+                        <th>连板</th><th>最后封板</th><th>偏离(%)</th><th>标记</th>
+                    </tr></thead>
+                    <tbody>
+                        <tr v-for="(item, idx) in ranking" :key="item.code"
+                            :class="isLimitUp(item) ? 'limit-up-row' : ''">
+                            <td>{{ item.rank || (idx + 1) }}</td>
+                            <td>{{ item.code }}</td>
+                            <td>{{ item.name }}</td>
+                            <td>{{ item.industry || '-' }}</td>
+                            <td>{{ fmtNum(item.close, 2) }}</td>
+                            <td>{{ fmtNum(item.market_cap_yi, 1) }}</td>
+                            <td :class="numClass(item.change_pct)">{{ fmtPct(item.change_pct) }}</td>
+                            <td :class="numClass(item.auction_gain)">{{ fmtPct(item.auction_gain) }}</td>
+                            <td :class="numClass(item.gain_10d)">{{ fmtPct(item.gain_10d) }}</td>
+                            <td>{{ item.continuous_limit_up ? item.continuous_limit_up + '板' : '-' }}</td>
+                            <td>{{ item.last_limit_up_time || '-' }}</td>
+                            <td :class="item.deviation_pct > 100 ? 'gain-pos' : ''">
+                                {{ fmtNum(item.deviation_pct, 1) }}
+                            </td>
+                            <td>
+                                <span v-if="isRepresentative(item.code)" class="tag tag-rep">代表股</span>
+                                <span v-else-if="isCandidate(item.code)" class="tag tag-candidate">候选</span>
+                                <span v-if="item.is_main_board === false" class="tag tag-gem">创/科</span>
+                                <span v-else class="tag tag-main">主板</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div v-else class="empty-state">暂无数据</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const { createApp, ref, computed, onMounted } = Vue
+createApp({
+    setup() {
+        const snapshot = ref({})
+        const ranking = ref([])
+        const rankingUpdatedAt = ref('')
+        const rankingLive = ref(false)
+        const sentiment = ref({})
+        const market = ref(null)
+        const leader = ref({})
+
+        // ============= helpers =============
+        function fmtNum(v, digits = 2) {
+            if (v === null || v === undefined || v === '' || isNaN(v)) return '-'
+            return Number(v).toFixed(digits)
+        }
+        function fmtPct(v) {
+            if (v === null || v === undefined || v === '' || isNaN(v)) return '-'
+            const n = Number(v); return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
+        }
+        function numClass(v) {
+            if (v === null || v === undefined || v === '' || isNaN(v)) return ''
+            return Number(v) >= 0 ? 'gain-pos' : 'gain-neg'
+        }
+        function isRepresentative(code) { return snapshot.value.representative?.code === code }
+        function isCandidate(code) { return snapshot.value.candidates?.some(c => c.code === code) }
+        function isLimitUp(item) {
+            if ((item.continuous_limit_up || 0) >= 1) return true
+            const isGem = !item.is_main_board
+            const thr = isGem ? 19.5 : 9.8
+            return (item.change_pct || 0) >= thr
+        }
+        // ============= TOP30 结构占比 =============
+        const top30Stats = computed(() => {
+            const items = ranking.value || []
+            if (!items.length) return null
+            const total = items.length
+            const round1 = (n) => Math.round(n * 1000 / total) / 10
+
+            const main = items.filter(x => x.is_main_board !== false).length
+            const gem = total - main
+
+            let small = 0, large = 0, unknown = 0
+            for (const x of items) {
+                const mc = Number(x.market_cap_yi || 0)
+                if (mc <= 0) unknown++
+                else if (mc < 100) small++
+                else large++
+            }
+
+            const buckets = [
+                { label: '<5元',     cls: 't30-p1', count: 0 },
+                { label: '5-10元',   cls: 't30-p2', count: 0 },
+                { label: '10-20元',  cls: 't30-p3', count: 0 },
+                { label: '20-50元',  cls: 't30-p4', count: 0 },
+                { label: '≥50元',    cls: 't30-p5', count: 0 },
+            ]
+            for (const x of items) {
+                const p = Number(x.close || 0)
+                if (p <= 0) continue
+                if (p < 5) buckets[0].count++
+                else if (p < 10) buckets[1].count++
+                else if (p < 20) buckets[2].count++
+                else if (p < 50) buckets[3].count++
+                else buckets[4].count++
+            }
+            const priceBuckets = buckets.map(b => ({ ...b, pct: round1(b.count) })).filter(b => b.count > 0)
+            const priceMain = priceBuckets.length
+                ? priceBuckets.reduce((a, b) => (b.count > a.count ? b : a))
+                : null
+
+            return {
+                total,
+                board: { main, gem, mainPct: round1(main), gemPct: round1(gem) },
+                cap: { small, large, unknown, smallPct: round1(small), largePct: round1(large), unknownPct: round1(unknown) },
+                priceBuckets, priceMain,
+            }
+        })
+
+        const top30Verdict = computed(() => {
+            const s = top30Stats.value
+            if (!s) return ''
+            const { board, cap, priceMain } = s
+            let boardPart, capPart, pricePart = '价格分布分散'
+            if (board.mainPct >= 60) boardPart = `主板主线（占 ${board.mainPct}%）`
+            else if (board.gemPct >= 60) boardPart = `创业板/科创板主导（占 ${board.gemPct}%）`
+            else boardPart = `主板与创科双线并行（主板 ${board.mainPct}% / 创科 ${board.gemPct}%）`
+            if (cap.smallPct >= 60) capPart = `小市值题材主导（<100亿占 ${cap.smallPct}%）`
+            else if (cap.largePct >= 60) capPart = `大市值蓝筹领涨（≥100亿占 ${cap.largePct}%）`
+            else capPart = `大小盘并行（<100亿 ${cap.smallPct}% · ≥100亿 ${cap.largePct}%）`
+            if (priceMain) {
+                const lbl = priceMain.label, pct = priceMain.pct
+                if (lbl === '<5元') pricePart = `低价小票活跃（<5元占 ${pct}%，纯情绪炒作）`
+                else if (lbl === '5-10元') pricePart = `次低价主流（5-10元占 ${pct}%，散户偏好）`
+                else if (lbl === '10-20元') pricePart = `主流价位活跃（10-20元占 ${pct}%）`
+                else if (lbl === '20-50元') pricePart = `中价股表现（20-50元占 ${pct}%）`
+                else if (lbl === '≥50元') pricePart = `高价股领跑（≥50元占 ${pct}%，机构筹码集中）`
+            }
+            let conclusion
+            if (cap.largePct >= 60 && priceMain && priceMain.label === '≥50元') {
+                conclusion = '赚钱效应集中在大市值高价主线龙头，散户跟风风险高，宜挑龙头不追末梢'
+            } else if (board.gemPct >= 60 && priceMain && (priceMain.label === '≥50元' || priceMain.label === '20-50元')) {
+                conclusion = '赚钱效应在科创/创业板高价主线，主板小票机会有限'
+            } else if (board.mainPct >= 50 && cap.smallPct >= 50) {
+                conclusion = '赚钱效应在主板小盘题材轮动，适合短线打板接力'
+            } else if (cap.smallPct >= 60 && priceMain && (priceMain.label === '<5元' || priceMain.label === '5-10元')) {
+                conclusion = '赚钱效应在低价题材股，市场以情绪炒作为主，加仓需谨慎'
+            } else if (cap.smallPct >= 30 && cap.largePct >= 30) {
+                conclusion = '大小盘分化，无明确单一主线，需精选板块龙头规避平庸标的'
+            } else {
+                conclusion = '结构均衡，暂无明显单边赚钱效应主线'
+            }
+            return `${boardPart}；${capPart}；${pricePart}。${conclusion}。`
+        })
+
+        // ============= 连板接力赚钱效应 =============
+        const relayVerdict = computed(() => {
+            const yAvg = leader.value.yesterday_main_board_avg_auction
+            const mbLeaders = leader.value.main_board_leaders || []
+            const items = ranking.value || []
+            const limitDown = Number(market.value?.limit_down ?? 0)
+            const wAvg = Number(sentiment.value?.weighted_auction_gain ?? NaN)
+            if (!yAvg && !mbLeaders.length && !items.length && !market.value && !sentiment.value?.verdict) return null
+
+            let score = 0
+            const reasons = []
+
+            if (yAvg && yAvg.sample_count) {
+                const a = yAvg.avg_change_pct
+                const sgn = a >= 0 ? '+' : ''
+                if (a >= 1.5) { score += 30; reasons.push(`昨日主板涨停${yAvg.sample_count}只今日均价${sgn}${a}%(强接力)`) }
+                else if (a >= 0) { score += 15; reasons.push(`昨日主板涨停${yAvg.sample_count}只今日均价${sgn}${a}%(偏暖)`) }
+                else if (a >= -2) { score -= 10; reasons.push(`昨日主板涨停${yAvg.sample_count}只今日均价${a}%(分歧)`) }
+                else { score -= 30; reasons.push(`昨日主板涨停${yAvg.sample_count}只今日均价${a}%(崩盘)`) }
+            }
+            if (mbLeaders.length) {
+                const ld = mbLeaders.find(x => x.signal === '跌停')
+                const ng = mbLeaders.find(x => x.signal === '负反馈')
+                if (ld) { score -= 30; reasons.push(`高标 ${ld.leader_name} 跌停(标杆崩塌)`) }
+                else if (ng) { score -= 15; reasons.push(`高标 ${ng.leader_name} 负反馈(信号转弱)`) }
+                else {
+                    const sg = mbLeaders.find(x => x.signal === '强正反馈')
+                    if (sg) { score += 20; const bd = sg.board_count || sg.leader_gain_10d; reasons.push(`高标 ${sg.leader_name}(${bd}连板) 强正反馈`) }
+                    else { score += 10; reasons.push(`高标 ${mbLeaders[0].leader_name} ${mbLeaders[0].signal}`) }
+                }
+            }
+            const lianbanCount = items.filter(x => Number(x.continuous_limit_up || 0) >= 2).length
+            if (lianbanCount >= 8) { score += 15; reasons.push(`TOP30含${lianbanCount}只连板(梯队完整)`) }
+            else if (lianbanCount >= 4) { score += 10; reasons.push(`TOP30含${lianbanCount}只连板`) }
+            else if (lianbanCount >= 2) { score += 5; reasons.push(`TOP30含${lianbanCount}只连板`) }
+            else if (items.length) { reasons.push(`TOP30仅${lianbanCount}只连板(梯队稀薄)`) }
+            if (market.value) {
+                if (limitDown >= 20) { score -= 20; reasons.push(`全市场跌停${limitDown}只(系统性杀伤)`) }
+                else if (limitDown >= 15) { score -= 15; reasons.push(`全市场跌停${limitDown}只(杀伤大)`) }
+                else if (limitDown > 9) { score -= 10; reasons.push(`全市场跌停${limitDown}只(警戒线)`) }
+                else if (limitDown >= 5) { score -= 5; reasons.push(`全市场跌停${limitDown}只(偏多)`) }
+                else if (limitDown <= 3) { score += 10; reasons.push(`全市场跌停${limitDown}只(健康)`) }
+                else reasons.push(`全市场跌停${limitDown}只(中性)`)
+            }
+            if (Number.isFinite(wAvg)) {
+                if (wAvg >= 0) score += 10
+                else score -= 10
+            }
+            let level, icon, conclusion
+            if (score >= 40) { level = 'strong'; icon = '🚀'; conclusion = '接力情绪强劲，主板打板赚钱效应明显，可挑龙头积极参与' }
+            else if (score >= 10) { level = 'warm'; icon = '☀️'; conclusion = '接力情绪偏暖，可挑高标小仓试错' }
+            else if (score >= -10) { level = 'mid'; icon = '☁️'; conclusion = '接力分歧，观望为主或低吸老股，不追高' }
+            else { level = 'bad'; icon = '🌧️'; conclusion = '接力情绪转弱，打板风险高，建议空仓避险' }
+            return { score, level, icon, conclusion, reasons: reasons.join('；') }
+        })
+
+        function isTradingTime() {
+            const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }))
+            const d = now.getDay()
+            if (d === 0 || d === 6) return false
+            const m = now.getHours() * 60 + now.getMinutes()
+            return (m >= 555 && m <= 690) || (m >= 780 && m <= 900)
+        }
+
+        async function loadRankingLive() {
+            try {
+                const res = await fetch('/api/ranking-live').then(r => r.json())
+                if (res.ranking && res.ranking.length) {
+                    ranking.value = res.ranking
+                    rankingUpdatedAt.value = res.updated_at || ''
+                    rankingLive.value = !!res.live
+                }
+            } catch (e) { console.error('实时排行刷新失败:', e) }
+        }
+
+        async function loadData() {
+            const live = isTradingTime()
+            try {
+                const [snapRes, rankRes, sentRes, leaderRes] = await Promise.all([
+                    fetch('/api/snapshot').then(r => r.json()),
+                    fetch('/api/gain-ranking').then(r => r.json()),
+                    fetch('/api/sentiment').then(r => r.json()),
+                    fetch('/api/leader').then(r => r.json()),
+                ])
+                snapshot.value = snapRes
+                // 交易时段：不让落盘静态数据覆盖 loadRankingLive 维护的实时数据
+                // 仅在首次（ranking 还为空）或非交易时段才用 gain-ranking 写入
+                if (!live || !ranking.value.length) {
+                    ranking.value = rankRes.ranking || []
+                    rankingUpdatedAt.value = rankRes.updated_at || rankRes.date || ''
+                    rankingLive.value = false
+                }
+                sentiment.value = sentRes || {}
+                market.value = sentRes?.market || null
+                leader.value = leaderRes
+            } catch (e) { console.error('加载数据失败:', e) }
+            if (live) loadRankingLive()
+        }
+
+        onMounted(loadData)
+        // 非 ranking 字段 60s 刷新一次（snapshot/sentiment/leader）
+        setInterval(loadData, 60000)
+        // ranking 单独维护：交易时段 10s/次，非交易 60s/次
+        let liveTimer = null
+        function startLivePolling() {
+            const interval = isTradingTime() ? 10000 : 60000
+            if (liveTimer) clearInterval(liveTimer)
+            liveTimer = setInterval(loadRankingLive, interval)
+        }
+        startLivePolling()
+        // 每分钟检测一次是否跨过交易时段边界，及时切换 polling 频率
+        setInterval(startLivePolling, 60000)
+
+        return {
+            snapshot, ranking, rankingUpdatedAt, rankingLive, sentiment, market, leader,
+            top30Stats, top30Verdict, relayVerdict,
+            fmtNum, fmtPct, numClass, isRepresentative, isCandidate, isLimitUp,
+        }
+    }
+}).mount('#app')
+</script>
+</body>
+</html>

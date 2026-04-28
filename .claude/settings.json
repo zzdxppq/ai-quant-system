@@ -1,6 +1,22 @@
 {
+  "_youlidao": {
+    "sandboxVersion": 1
+  },
   "permissions": {
-    "deny": ["AskUserQuestion"]
+    "deny": [
+      "AskUserQuestion"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "denyRead": [
+        "/home/ubuntu/users"
+      ],
+      "allowRead": [
+        "/home/ubuntu/users/a932b755-9560-4de2-8f43-ef3f7a19d01d"
+      ]
+    }
   },
   "hooks": {
     "Stop": [
