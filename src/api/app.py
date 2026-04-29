@@ -381,6 +381,31 @@ async def run_review_now():
         return JSONResponse({"status": "error", "msg": str(e)})
 
 
+@app.get("/api/monthly-report")
+async def get_monthly_report(year: int = 0, month: int = 0):
+    """获取月度报告"""
+    from src.engine.monthly_report import generate_monthly_report
+    try:
+        report = generate_monthly_report(year if year > 0 else None, month if month > 0 else None)
+        return JSONResponse(report)
+    except Exception as e:
+        return JSONResponse({"error": str(e)})
+
+
+@app.get("/api/missed-trades")
+async def get_missed_trades():
+    """获取踏空追踪（系统选出但未参与的标的）"""
+    from src.engine.decision_tracker import get_missed_trades
+    return JSONResponse({"records": get_missed_trades()})
+
+
+@app.get("/api/sanbanzhu/{code}")
+async def check_sanbanzhu(code: str):
+    """检查单只股票是否三板组"""
+    from src.engine.sanbanzhu import check_sanbanzhu as _check
+    return JSONResponse(_check(code))
+
+
 @app.get("/api/market-insight")
 async def get_market_insight():
     """获取四维市场洞察（板块集中度/资金行为/情绪领袖/周期波形）"""

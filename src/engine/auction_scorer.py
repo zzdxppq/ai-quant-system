@@ -92,9 +92,26 @@ def score_auction(
     result.d4_sector = d4
     result.d4_detail = d4_detail
 
+    # ═══ 高度压制调整 ═══
+    height_penalty = 0
+    highest_board = _get_market_highest_board()
+    target_board = hit.get("continuous_limit_up", 0)
+
+    if highest_board >= 9:
+        height_penalty = -15
+        result.vetoes.append(f"市场{highest_board}板极高压制，建议空仓")
+    elif highest_board >= 7 and target_board < 4:
+        height_penalty = -8
+    elif highest_board >= 7:
+        height_penalty = -5
+
     # ═══ 汇总 ═══
-    result.total_score = round(d1 + d2 + d3 + d4, 1)
+    raw_score = d1 + d2 + d3 + d4 + height_penalty
+    result.total_score = round(max(0, raw_score), 1)
     result.has_veto = len(result.vetoes) > 0
+
+    if height_penalty != 0:
+        result.d2_detail += f"；高度压制({highest_board}板){height_penalty:+}分"
 
     # ═══ 决策 ═══
     _make_decision(result, hit)
@@ -361,6 +378,33 @@ def score_all_hits(hits: list[dict]) -> list[dict]:
     )
 
     return results
+
+
+def _get_market_highest_board() -> int:
+    """获取市场最高连板数"""
+    try:
+        cache_file = DATA_DIR / "limit_up_cache.json"
+        if cache_file.exists():
+            cache = json.loads(cache_file.read_text())
+            sorted_dates = sorted(cache.keys(), reverse=True)
+            if not sorted_dates:
+                return 0
+            latest = sorted_dates[0]
+            max_board = 0
+            for s in cache[latest]:
+                code = s.get("code", "")
+                count = 1
+                for d in sorted_dates[1:]:
+                    codes_in_day = [r.get("code", "") for r in cache.get(d, [])]
+                    if code in codes_in_day:
+                        count += 1
+                    else:
+                        break
+                max_board = max(max_board, count)
+            return max_board
+    except Exception:
+        pass
+    return 0
 
 
 def _load_json(filename: str) -> Optional[dict]:

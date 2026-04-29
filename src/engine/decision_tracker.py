@@ -219,6 +219,70 @@ def get_records(limit: int = 30) -> list[dict]:
     return records[:limit]
 
 
+def get_missed_trades(limit: int = 30) -> list[dict]:
+    """获取系统选出但用户未参与（'否'/'放弃'）的标的及其后续表现
+
+    用于踏空分析：看那些你没做的票到底怎么样了
+    """
+    records = _load_records()
+    missed = []
+
+    for r in records:
+        user_action = r.get("user_action", "")
+        if user_action in ("放弃", "观望", "否", ""):
+            # 用户没做，看系统选出了什么
+            hits = r.get("screener_hits", [])
+            for h in hits:
+                code = h.get("code", "")
+                if not code:
+                    continue
+
+                # 查该标的后续表现
+                entry = {
+                    "date": r["date"],
+                    "code": code,
+                    "name": h.get("name", ""),
+                    "board_label": f"{h.get('continuous_limit_up',0)}进{h.get('continuous_limit_up',0)+1}",
+                    "auction_gain": h.get("auction_gain", 0),
+                    "system_action": r.get("system_action", ""),
+                    "user_action": user_action or "未记录",
+                    "result_close": None,
+                    "result_gain": None,
+                    "is_limit_up": None,
+                    "next_day_gain": None,
+                }
+
+                # 查K线看结果
+                try:
+                    from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
+                    df = fetch_kline(code, SCALE_DAILY, datalen=5)
+                    if df is not None and not df.empty:
+                        dates = [str(row["date"])[:10] for _, row in df.iterrows()]
+                        if r["date"] in dates:
+                            idx = dates.index(r["date"])
+                            close = float(df.iloc[idx]["close"])
+                            open_p = h.get("open_price", 0)
+                            pre = float(df.iloc[idx - 1]["close"]) if idx > 0 else 0
+                            entry["result_close"] = round(close, 2)
+                            if open_p > 0:
+                                entry["result_gain"] = round((close / open_p - 1) * 100, 2)
+                            if pre > 0:
+                                day_pct = (close / pre - 1) * 100
+                                limit = 19.5 if code.startswith(("300", "301", "688")) else 9.8
+                                entry["is_limit_up"] = day_pct >= limit
+                            # 次日
+                            if idx + 1 < len(df):
+                                next_close = float(df.iloc[idx + 1]["close"])
+                                entry["next_day_gain"] = round((next_close / close - 1) * 100, 2)
+                except Exception:
+                    pass
+
+                missed.append(entry)
+
+    missed.sort(key=lambda x: x["date"], reverse=True)
+    return missed[:limit]
+
+
 def get_stats() -> dict:
     """统计决策表现"""
     records = _load_records()

@@ -83,6 +83,54 @@ def _load_daily_market_env() -> dict:
     return env
 
 
+def _get_market_highest_board() -> int:
+    """获取市场当前最高连板数"""
+    try:
+        cache_file = DATA_DIR / "limit_up_cache.json"
+        if cache_file.exists():
+            cache = json.loads(cache_file.read_text())
+            sorted_dates = sorted(cache.keys(), reverse=True)
+            if not sorted_dates:
+                return 0
+            latest = sorted_dates[0]
+            stocks = cache[latest]
+            # 计算每只的连板数
+            max_board = 0
+            for s in stocks:
+                code = s.get("code", "")
+                count = 1
+                for d in sorted_dates[1:]:
+                    codes_in_day = [r.get("code", "") for r in cache.get(d, [])]
+                    if code in codes_in_day:
+                        count += 1
+                    else:
+                        break
+                max_board = max(max_board, count)
+            return max_board
+    except Exception:
+        pass
+    return 0
+
+
+def _lookup_industry(code: str) -> str:
+    """从缓存查板块"""
+    try:
+        ic = DATA_DIR / "industry_cache.json"
+        if ic.exists():
+            ind_map = json.loads(ic.read_text())
+            if code in ind_map:
+                return ind_map[code]
+        rf = DATA_DIR / "latest_ranking.json"
+        if rf.exists():
+            rd = json.loads(rf.read_text())
+            for r in rd.get("ranking", []):
+                if str(r.get("code", "")) == code:
+                    return r.get("industry", "")
+    except Exception:
+        pass
+    return ""
+
+
 def archive_today_hits(hits: list[dict], spot_df=None):
     """9:27选股后归档当日结果
 
@@ -115,22 +163,38 @@ def archive_today_hits(hits: list[dict], spot_df=None):
         key = (today, code)
         if key in existing:
             continue
+        board = h.get("continuous_limit_up", 0)
+        # 连板标签：1进2 / 2进3 / 3进4 / 4进5 / 5进6+
+        board_label = f"{board}进{board+1}" if board >= 1 else "首板"
+        # 市场最高板
+        highest_board = _get_market_highest_board()
+        # 板块
+        industry = h.get("industry", "") or _lookup_industry(code)
+
         records.append({
             "date": today,
             "code": code,
             "name": h.get("name", ""),
-            "continuous_limit_up": h.get("continuous_limit_up", 0),
+            "continuous_limit_up": board,
+            "board_label": board_label,
             "open_price": h.get("open_price", 0),
             "pre_close": pre_close_map.get(code, 0),
             "auction_gain": h.get("auction_gain", 0),
+            "market_cap": h.get("market_cap", 0),
+            "industry": industry,
+            "market_highest_board": highest_board,
             "close_price": None,
             "close_gain": None,
             "day_change": None,
             "next_day_open": None,
             "next_day_auction_gain": None,
+            "next_day_close_gain": None,
             "is_win": None,
+            "is_limit_up": None,
+            "is_zhaban": None,         # 涨停炸板
+            "sanbanzhu": False,        # 三板组标记
+            "sanbanzhu_detail": "",    # 三板组席位详情
             "status": "pending",
-            # 当日市场环境（每条记录冗余存一份，前端按日期分组展示）
             "market_limit_down": market_env["market_limit_down"],
             "weighted_auction_gain": market_env["weighted_auction_gain"],
             "yesterday_lianban_today_avg": market_env["yesterday_lianban_today_avg"],
@@ -195,9 +259,14 @@ def backfill_close(spot_df):
                 day_change = (close / pre_close - 1) * 100 if pre_close > 0 else r["close_gain"]
                 r["day_change"] = round(day_change, 2)
                 r["is_limit_up"] = day_change >= limit_threshold
-                # 胜负判定规则：当日涨停 + 次日收红 = 盈，否则 = 亏
-                # 当日未涨停 → 直接判亏
-                # 当日涨停但次日数据还没有 → 暂不判定(is_win=None)，等settled时判
+                # 涨停炸板判定：最高价触及涨停但收盘未涨停
+                # 需要K线的high数据，这里先用day_change近似：
+                # 如果 day_change >= limit_threshold * 0.9 但 < limit_threshold → 疑似炸板
+                if not r["is_limit_up"] and day_change >= limit_threshold * 0.85:
+                    r["is_zhaban"] = True
+                elif r["is_limit_up"]:
+                    r["is_zhaban"] = False
+                # 胜负判定规则：当日涨停 + 次日收红 = 盈，否�� = 亏
                 if not r["is_limit_up"]:
                     r["is_win"] = False
                 else:
@@ -346,11 +415,60 @@ def calc_win_stats() -> dict:
     year_start = now.strftime("%Y-01-01")
     yearly = [r for r in judged if r["date"] >= year_start]
 
+    # === 分维度统计 ===
+    # 按连板类型
+    by_board = {}
+    for r in judged:
+        label = r.get("board_label", f"{r.get('continuous_limit_up',0)}进{r.get('continuous_limit_up',0)+1}")
+        by_board.setdefault(label, []).append(r)
+
+    board_stats = {}
+    for label, subset in sorted(by_board.items()):
+        board_stats[label] = _stat(subset)
+
+    # 按市场情绪（用跌停数分档）
+    emotion_stats = {}
+    for r in judged:
+        ld = r.get("market_limit_down")
+        if ld is not None:
+            if ld <= 3:
+                emo = "强势(跌停≤3)"
+            elif ld <= 7:
+                emo = "正常(跌停4-7)"
+            else:
+                emo = "弱势(跌停>7)"
+        else:
+            emo = "未知"
+        emotion_stats.setdefault(emo, []).append(r)
+    emotion_stats = {k: _stat(v) for k, v in emotion_stats.items()}
+
+    # 按结果分类（涨停/炸板/未涨停）
+    outcome_stats = {"涨停": [], "涨停炸板": [], "未涨停": []}
+    for r in judged:
+        if r.get("is_limit_up"):
+            outcome_stats["涨停"].append(r)
+        elif r.get("is_zhaban"):
+            outcome_stats["��停炸板"].append(r)
+        else:
+            outcome_stats["未涨停"].append(r)
+    outcome_stats = {k: _stat(v) for k, v in outcome_stats.items() if v}
+
+    # 按板块
+    by_industry = {}
+    for r in judged:
+        ind = r.get("industry", "未知") or "未知"
+        by_industry.setdefault(ind, []).append(r)
+    industry_stats = {k: _stat(v) for k, v in sorted(by_industry.items(), key=lambda x: -len(x[1]))}
+
     return {
         "total": _stat(judged),
         "weekly": _stat(weekly),
         "monthly": _stat(monthly),
         "yearly": _stat(yearly),
+        "by_board": board_stats,
+        "by_emotion": emotion_stats,
+        "by_outcome": outcome_stats,
+        "by_industry": industry_stats,
     }
 
 

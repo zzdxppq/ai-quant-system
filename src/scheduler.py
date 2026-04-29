@@ -571,16 +571,39 @@ def run_screener_update() -> dict:
     except Exception as e:
         print(f"[邮件] 推送异常: {e}")
 
-    # 9. 异步刷新看板数据（周期+排行+洞察），不阻塞选股返回
+    # 9. 异步后台任务（不阻塞选股返回）
     import threading
-    def _background_refresh():
+
+    def _background_tasks():
+        # 9a. 三板组检查（查龙��榜匹配席位）
+        if hits:
+            try:
+                from src.engine.sanbanzhu import check_and_annotate
+                hits_dicts = [asdict(h) for h in hits]
+                check_and_annotate(hits_dicts)
+                # 更新选股记录中的三板组标记
+                from src.engine.screener_history import _load, _save
+                records = _load()
+                today = now_cn().strftime("%Y-%m-%d")
+                sbz_map = {h["code"]: h for h in hits_dicts}
+                for r in records:
+                    if r["date"] == today and r["code"] in sbz_map:
+                        h = sbz_map[r["code"]]
+                        r["sanbanzhu"] = h.get("sanbanzhu", False)
+                        r["sanbanzhu_detail"] = h.get("sanbanzhu_detail", "")
+                _save(records)
+            except Exception as e:
+                print(f"  [三板组] 异常: {e}")
+
+        # 9b. 刷新周期+排行+洞察
         try:
             print("  [后台] 刷新周期+排行+洞察...")
             run_cycle_update()
             print("  [后台] 刷新完成")
         except Exception as e:
             print(f"  [后台] 刷新异常: {e}")
-    threading.Thread(target=_background_refresh, daemon=True).start()
+
+    threading.Thread(target=_background_tasks, daemon=True).start()
 
     print("=" * 50)
 
