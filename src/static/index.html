@@ -623,6 +623,7 @@
                         <td>
                             {{ hit.name }}
                             <span v-if="hit.matched_cycle" class="tag tag-rep">🎯</span>
+                            <span v-if="hit.sanbanzhu" class="tag tag-warn" title="三板组席位">⚠️三板组</span>
                         </td>
                         <td>{{ hit.open_price || '-' }}</td>
                         <td class="gain-pos"><b>{{ hit.auction_gain }}%</b></td>

@@ -308,7 +308,7 @@ def _build_html(
             <tr>
               <td style="padding:8px;border-bottom:1px solid #1e2a45;">{code}</td>
               <td style="padding:8px;border-bottom:1px solid #1e2a45;color:#e0e6ed;">
-                {h.get('name', '')}{cycle_tag}
+                {h.get('name', '')}{cycle_tag}{'<span style="background:#7f1d1d;color:#fca5a5;padding:1px 4px;border-radius:3px;font-size:10px;margin-left:4px;">⚠三板组</span>' if h.get('sanbanzhu') else ''}
               </td>
               <td style="padding:8px;border-bottom:1px solid #1e2a45;">{h.get('open_price', '—')}</td>
               <td style="padding:8px;border-bottom:1px solid #1e2a45;color:#ef4444;font-weight:700;">

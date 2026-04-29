@@ -454,14 +454,86 @@
                 </div>
             </div>
         </div>
+        <!-- 月度报告 -->
+        <div class="card">
+            <div class="card-title">📊 月度策略报告
+                <button class="btn" style="margin-left:auto;font-size:11px;" @click="loadReport">刷新报告</button>
+            </div>
+            <div v-if="report.period">
+                <div style="display:flex;gap:16px;margin-bottom:12px;">
+                    <div class="stat-box"><div class="sb-label">期间</div><div class="sb-val">{{ report.period }}</div></div>
+                    <div class="stat-box"><div class="sb-label">信号数</div><div class="sb-val">{{ report.total_signals }}</div></div>
+                    <div class="stat-box"><div class="sb-label">胜率</div><div class="sb-val" :style="{color: report.win_rate >= 50 ? '#10b981' : '#ef4444'}">{{ report.win_rate }}%</div></div>
+                    <div class="stat-box"><div class="sb-label">盈/亏</div><div class="sb-val">{{ report.wins }}/{{ report.losses }}</div></div>
+                    <div class="stat-box" v-if="report.sanbanzhu_count > 0"><div class="sb-label">三板组</div><div class="sb-val" style="color:#ef4444;">{{ report.sanbanzhu_count }}笔</div></div>
+                </div>
+                <!-- 连板分布 -->
+                <div v-if="report.board_distribution && Object.keys(report.board_distribution).length" style="margin-bottom:12px;">
+                    <div style="font-size:12px;color:#6b7280;margin-bottom:4px;">连板类型分布</div>
+                    <div v-for="(s, label) in report.board_distribution" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:3px;font-size:12px;">
+                        <span style="width:50px;color:#a0aec0;">{{ label }}</span>
+                        <div style="flex:1;height:14px;background:#1a2040;border-radius:3px;overflow:hidden;">
+                            <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'3px', background: s.win_rate >= 60 ? '#10b981' : s.win_rate >= 40 ? '#fbbf24' : '#ef4444'}"></div>
+                        </div>
+                        <span style="width:70px;color:#6b7280;">{{ s.win_rate }}% ({{ s.wins }}/{{ s.total }})</span>
+                    </div>
+                </div>
+                <!-- 优化建议 -->
+                <div v-if="report.suggestions && report.suggestions.length" style="background:#0d1220;padding:10px;border-radius:6px;border-left:3px solid #fbbf24;">
+                    <div style="font-size:12px;color:#fbbf24;margin-bottom:4px;">优化建议</div>
+                    <div v-for="s in report.suggestions" :key="s" style="font-size:12px;color:#c9d1d9;margin-bottom:2px;">• {{ s }}</div>
+                </div>
+            </div>
+            <div v-else class="empty-state">暂无月度报告数据</div>
+        </div>
+
+        <!-- 踏空追踪 -->
+        <div class="card">
+            <div class="card-title">👀 踏空追踪（系统选出但未参与）</div>
+            <table v-if="missed.length">
+                <thead><tr>
+                    <th>日期</th><th>代码</th><th>名称</th><th>连板</th><th>竞价涨幅</th><th>系统建议</th><th>你的操作</th><th>当日涨停</th><th>次日涨幅</th>
+                </tr></thead>
+                <tbody>
+                    <tr v-for="m in missed" :key="m.date+m.code">
+                        <td>{{ m.date }}</td>
+                        <td>{{ m.code }}</td>
+                        <td>{{ m.name }}</td>
+                        <td>{{ m.board_label }}</td>
+                        <td :class="(m.auction_gain||0) >= 0 ? 'gain-pos' : 'gain-neg'">{{ m.auction_gain ? (m.auction_gain > 0 ? '+' : '') + m.auction_gain + '%' : '-' }}</td>
+                        <td>{{ m.system_action || '-' }}</td>
+                        <td style="color:#6b7280;">{{ m.user_action }}</td>
+                        <td>
+                            <span v-if="m.is_limit_up === true" class="tag tag-win">涨停</span>
+                            <span v-else-if="m.is_limit_up === false" class="tag tag-lose">未涨停</span>
+                            <span v-else>-</span>
+                        </td>
+                        <td :class="(m.next_day_gain||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                            {{ m.next_day_gain != null ? (m.next_day_gain > 0 ? '+' : '') + m.next_day_gain + '%' : '-' }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <div v-else class="empty-state">暂无踏空数据（在决策追踪中记录"放弃"后自动追踪）</div>
+        </div>
     </div>
 </div>
+
+<style>
+.stat-box { background:#0d1220;border-radius:6px;padding:8px 14px;text-align:center;min-width:80px; }
+.sb-label { font-size:11px;color:#6b7280; }
+.sb-val { font-size:18px;font-weight:700;color:#e0e6ed;margin-top:2px; }
+.tag-win { background: #3b0a0a; color: #ef4444; display:inline-block; padding:1px 6px; border-radius:4px; font-size:11px; }
+.tag-lose { background: #0a2a1a; color: #10b981; display:inline-block; padding:1px 6px; border-radius:4px; font-size:11px; }
+</style>
 
 <script>
 const { createApp, ref, computed, onMounted } = Vue
 createApp({
     setup() {
         const review = ref({})
+        const report = ref({})
+        const missed = ref([])
         const insight = ref({})
         const showFailed = ref(false)
 
@@ -530,12 +602,21 @@ createApp({
         }
 
         async function loadData() {
-            const [revRes, insightRes] = await Promise.all([
+            const [revRes, insightRes, repRes, missRes] = await Promise.all([
                 fetch('/api/review').then(r => r.json()),
                 fetch('/api/market-insight').then(r => r.json()),
+                fetch('/api/monthly-report').then(r => r.json()).catch(() => ({})),
+                fetch('/api/missed-trades').then(r => r.json()).catch(() => ({records:[]})),
             ])
             review.value = revRes || {}
             insight.value = insightRes || {}
+            report.value = repRes || {}
+            missed.value = missRes.records || []
+        }
+
+        async function loadReport() {
+            const res = await fetch('/api/monthly-report').then(r => r.json())
+            report.value = res || {}
         }
 
         async function runReview() {
@@ -545,12 +626,12 @@ createApp({
 
         onMounted(loadData)
         return {
-            review, insight,
+            review, insight, report, missed,
             showFailed,
             boardGroups, todayCount, totalFailed,
             boardCls, failedColor,
             sectorStats, isSectorLeader,
-            runReview,
+            runReview, loadReport,
             waveClass, waveColor, capitalHighlights,
             ciTagClass, ciTagLabel, fmtPct, numClass,
         }
