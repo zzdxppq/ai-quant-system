@@ -531,6 +531,17 @@
                         <div class="hm-label">梯队加权竞价</div>
                         <div class="hm-value" :class="(sentiment.weighted_auction_gain||0) >= 0 ? 'hm-good' : 'hm-bad'">
                             {{ sentiment.weighted_auction_gain == null ? '—' : ((sentiment.weighted_auction_gain >= 0 ? '+' : '') + sentiment.weighted_auction_gain + '%') }}
+                            <span v-if="sentiment.prev_day_weighted_auction_gain != null && sentiment.weighted_auction_gain != null"
+                                  style="font-size:14px;margin-left:4px;"
+                                  :style="{color: sentiment.weighted_auction_gain > sentiment.prev_day_weighted_auction_gain ? '#ef4444' : sentiment.weighted_auction_gain < sentiment.prev_day_weighted_auction_gain ? '#10b981' : '#6b7280'}">
+                                {{ sentiment.weighted_auction_gain > sentiment.prev_day_weighted_auction_gain ? '↑' : sentiment.weighted_auction_gain < sentiment.prev_day_weighted_auction_gain ? '↓' : '→' }}
+                            </span>
+                        </div>
+                        <div class="mb-sub" v-if="sentiment.prev_day_weighted_auction_gain != null">
+                            昨日 {{ (sentiment.prev_day_weighted_auction_gain >= 0 ? '+' : '') + sentiment.prev_day_weighted_auction_gain + '%' }}
+                            <span v-if="sentiment.weighted_auction_gain != null">
+                                （{{ (sentiment.weighted_auction_gain - sentiment.prev_day_weighted_auction_gain) >= 0 ? '+' : '' }}{{ (sentiment.weighted_auction_gain - sentiment.prev_day_weighted_auction_gain).toFixed(2) }}）
+                            </span>
                         </div>
                     </div>
                     <div class="hm-cell hm-primary">

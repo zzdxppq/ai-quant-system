@@ -371,12 +371,17 @@ def save_sentiment(
     # 写盘前先把昨日竞价跌停数注入 market_stats
     if market_stats is not None:
         market_stats.prev_day_limit_down = _get_prev_day_limit_down(market_stats.date)
+        # 把加权竞价暂存到 market_stats 用于历史记录
+        market_stats._weighted_auction_gain = sentiment.weighted_auction_gain
     data = asdict(sentiment)
     if market_stats:
         data["market"] = asdict(market_stats)
+    # 注入昨日梯队加权竞价
+    prev_wavg = _get_prev_day_weighted_auction(sentiment.date)
+    data["prev_day_weighted_auction_gain"] = prev_wavg
     path = DATA_DIR / "latest_sentiment.json"
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
-    # 追加到 sentiment_history.json（用于明日"昨日竞价跌停"展示）
+    # 追加到 sentiment_history.json（用于明日对比）
     if market_stats:
         _append_sentiment_history(market_stats)
 
@@ -408,6 +413,8 @@ def _append_sentiment_history(stats: MarketAuctionStats) -> None:
         "verdict": stats.verdict,
         # 保存代码列表，明日可用于"昨日跌停今日竞价"统计
         "limit_down_codes": [s["code"] for s in (stats.limit_down_list or [])],
+        # 保存梯队加权竞价，明日可展示对比
+        "weighted_auction_gain": getattr(stats, "_weighted_auction_gain", None),
     })
     history = history[-60:]
     _history_file().write_text(json.dumps(history, ensure_ascii=False, indent=2))
@@ -423,6 +430,18 @@ def _get_prev_day_limit_down(today_date: str) -> Optional[int]:
     if not past:
         return None
     return past[-1].get("limit_down")
+
+
+def _get_prev_day_weighted_auction(today_date: str) -> Optional[float]:
+    """从 sentiment_history.json 读取上一交易日的梯队加权竞价"""
+    history = _load_sentiment_history()
+    if not history:
+        return None
+    today_d = today_date[:10]
+    past = [h for h in history if h.get("date", "")[:10] != today_d]
+    if not past:
+        return None
+    return past[-1].get("weighted_auction_gain")
 
 
 def get_prev_limit_down_codes() -> list:
