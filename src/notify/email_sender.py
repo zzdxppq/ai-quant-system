@@ -212,56 +212,33 @@ def _build_html(
             return "—"
         return f"{'+' if v >= 0 else ''}{v}%"
 
-    _cell = 'style="background:#f8f9fa;border:1px solid #e5e7eb;padding:10px 12px;border-radius:8px;width:33%;vertical-align:top;"'
-    _label = 'style="font-size:12px;color:#6b7280;margin-bottom:4px;"'
-    _val = 'style="font-size:20px;font-weight:700;margin-top:4px;"'
-    _sub = 'style="font-size:11px;color:#9ca3af;margin-top:2px;"'
+    def _metric_cell(label, value, color, sub=""):
+        sub_html = f'<div style="font-size:10px;color:#999;margin-top:1px;">{sub}</div>' if sub else ''
+        return (
+            f'<td style="background:#f8f9fa;border:1px solid #e5e7eb;padding:6px 10px;border-radius:6px;width:33%;vertical-align:top;">'
+            f'<div style="font-size:11px;color:#888;">{label}</div>'
+            f'<div style="font-size:16px;font-weight:700;color:{color};margin-top:2px;">{value}</div>'
+            f'{sub_html}</td>'
+        )
+
+    # 连板高标：去掉emoji，缩短文字
+    lb_val = lianban['label']
+    lb_sub = lianban['detail'][:30] + ('…' if len(lianban['detail']) > 30 else '')
 
     metrics_html = f"""
-    <table style="width:100%;border-collapse:separate;border-spacing:8px 6px;margin-top:12px;">
+    <table style="width:100%;border-collapse:separate;border-spacing:6px 4px;margin-top:8px;">
       <tr>
-        <td {_cell}>
-          <div {_label}>竞价跌停 (&gt;5⚠)</div>
-          <div {_val} style="color:{num_color(limit_down, True)};">
-            {limit_down if limit_down is not None else '—'}
-          </div>
-        </td>
-        <td {_cell}>
-          <div {_label}>梯队加权竞价</div>
-          <div {_val} style="color:{num_color(w_avg)};">
-            {fmt_pct(w_avg)}
-          </div>
-        </td>
-        <td {_cell}>
-          <div {_label}>昨日连板高标竞价</div>
-          <div {_val} style="color:{lianban['color']};">
-            {lianban['icon']} {lianban['label']}
-          </div>
-          <div {_sub}>{lianban['detail'][:40]}{'…' if len(lianban['detail']) > 40 else ''}</div>
-        </td>
+        {_metric_cell('竞价跌停(&gt;5⚠)', limit_down if limit_down is not None else '—', num_color(limit_down, True))}
+        {_metric_cell('梯队加权竞价', fmt_pct(w_avg), num_color(w_avg))}
+        {_metric_cell('连板高标竞价', lb_val, lianban['color'], lb_sub)}
       </tr>
       <tr>
-        <td {_cell}>
-          <div {_label}>昨日涨停溢价率</div>
-          <div {_val} style="color:{num_color(y_avg.get('avg_change_pct'))};">
-            {fmt_pct(y_avg.get('avg_change_pct'))}
-          </div>
-          <div {_sub}>{f"样本{y_avg.get('sample_count')}只 高开{y_avg.get('positive_count',0)}/低开{y_avg.get('negative_count',0)}" if y_avg.get('sample_count') else ''}</div>
-        </td>
-        <td {_cell}>
-          <div {_label}>昨日炸板今日均价</div>
-          <div {_val} style="color:{num_color(y_zb.get('avg_change_pct'))};">
-            {fmt_pct(y_zb.get('avg_change_pct'))}
-          </div>
-          <div {_sub}>{f"样本{y_zb.get('sample_count')}只" if y_zb.get('sample_count') else '—'}</div>
-        </td>
-        <td {_cell}>
-          <div {_label}>昨日跌停今日均价</div>
-          <div {_val} style="color:{num_color(y_ld.get('avg_change_pct'))};">
-            {fmt_pct(y_ld.get('avg_change_pct'))}
-          </div>
-          <div {_sub}>{f"样本{y_ld.get('sample_count')}只" if y_ld.get('sample_count') else '—'}</div>
-        </td>
+        {_metric_cell('昨日涨停溢价', fmt_pct(y_avg.get('avg_change_pct')), num_color(y_avg.get('avg_change_pct')),
+                       f"{y_avg.get('sample_count','')}只 高{y_avg.get('positive_count',0)}/低{y_avg.get('negative_count',0)}" if y_avg.get('sample_count') else '')}
+        {_metric_cell('昨日炸板今日', fmt_pct(y_zb.get('avg_change_pct')), num_color(y_zb.get('avg_change_pct')),
+                       f"{y_zb.get('sample_count','')}只" if y_zb.get('sample_count') else '')}
+        {_metric_cell('昨日跌停今日', fmt_pct(y_ld.get('avg_change_pct')), num_color(y_ld.get('avg_change_pct')),
+                       f"{y_ld.get('sample_count','')}只" if y_ld.get('sample_count') else '')}
       </tr>
     </table>
     """
