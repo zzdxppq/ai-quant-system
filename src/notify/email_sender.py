@@ -187,14 +187,15 @@ def _build_html(
 ) -> str:
     now = now_cn().strftime("%Y-%m-%d %H:%M:%S")
 
-    # === 4 指标格数据 ===
+    # === 6 指标格数据 ===
     market = (sentiment_data or {}).get("market") or {}
     limit_down = market.get("limit_down")
     w_avg = (sentiment_data or {}).get("weighted_auction_gain")
     y_avg = ((leader or {}).get("yesterday_main_board_avg_auction") or {})
+    y_zb = ((leader or {}).get("yesterday_zb_today_auction") or {})
+    y_ld = ((leader or {}).get("yesterday_limit_down_today_auction") or {})
     lianban = _calc_lianban_state(leader)
 
-    # 配色按 A 股惯例
     def num_color(v, threshold_high_is_bad=False):
         if v is None or v == "—":
             return "#6b7280"
@@ -211,38 +212,55 @@ def _build_html(
             return "—"
         return f"{'+' if v >= 0 else ''}{v}%"
 
+    _cell = 'style="background:#f8f9fa;border:1px solid #e5e7eb;padding:10px 12px;border-radius:8px;width:33%;vertical-align:top;"'
+    _label = 'style="font-size:12px;color:#6b7280;margin-bottom:4px;"'
+    _val = 'style="font-size:20px;font-weight:700;margin-top:4px;"'
+    _sub = 'style="font-size:11px;color:#9ca3af;margin-top:2px;"'
+
     metrics_html = f"""
-    <table style="width:100%;border-collapse:separate;border-spacing:8px 0;margin-top:12px;">
+    <table style="width:100%;border-collapse:separate;border-spacing:8px 6px;margin-top:12px;">
       <tr>
-        <td style="background:#0d1220;border:1px solid #1e2a45;padding:10px 12px;border-radius:8px;width:25%;">
-          <div style="font-size:11px;color:#6b7280;">竞价跌停 (&gt;5⚠)</div>
-          <div style="font-size:22px;font-weight:700;margin-top:4px;color:{num_color(limit_down, True)};">
+        <td {_cell}>
+          <div {_label}>竞价跌停 (&gt;5⚠)</div>
+          <div {_val} style="color:{num_color(limit_down, True)};">
             {limit_down if limit_down is not None else '—'}
           </div>
         </td>
-        <td style="background:#0d1220;border:1px solid #1e2a45;padding:10px 12px;border-radius:8px;width:25%;">
-          <div style="font-size:11px;color:#6b7280;">梯队加权竞价</div>
-          <div style="font-size:22px;font-weight:700;margin-top:4px;color:{num_color(w_avg)};">
+        <td {_cell}>
+          <div {_label}>梯队加权竞价</div>
+          <div {_val} style="color:{num_color(w_avg)};">
             {fmt_pct(w_avg)}
           </div>
         </td>
-        <td style="background:#0d1220;border:1px solid #1e2a45;padding:10px 12px;border-radius:8px;width:25%;">
-          <div style="font-size:11px;color:#6b7280;">昨日连板高标竞价</div>
-          <div style="font-size:22px;font-weight:700;margin-top:4px;color:{lianban['color']};">
+        <td {_cell}>
+          <div {_label}>昨日连板高标竞价</div>
+          <div {_val} style="color:{lianban['color']};">
             {lianban['icon']} {lianban['label']}
           </div>
-          <div style="font-size:10px;color:#9ca3af;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-            {lianban['detail'][:50]}{'…' if len(lianban['detail']) > 50 else ''}
-          </div>
+          <div {_sub}>{lianban['detail'][:40]}{'…' if len(lianban['detail']) > 40 else ''}</div>
         </td>
-        <td style="background:#0d1220;border:1px solid #1e2a45;padding:10px 12px;border-radius:8px;width:25%;">
-          <div style="font-size:11px;color:#6b7280;">昨日涨停溢价率</div>
-          <div style="font-size:22px;font-weight:700;margin-top:4px;color:{num_color(y_avg.get('avg_change_pct'))};">
+      </tr>
+      <tr>
+        <td {_cell}>
+          <div {_label}>昨日涨停溢价率</div>
+          <div {_val} style="color:{num_color(y_avg.get('avg_change_pct'))};">
             {fmt_pct(y_avg.get('avg_change_pct'))}
           </div>
-          <div style="font-size:10px;color:#6b7280;margin-top:2px;">
-            {f"样本 {y_avg.get('sample_count')} 只" if y_avg.get('sample_count') else ''}
+          <div {_sub}>{f"样本{y_avg.get('sample_count')}只 高开{y_avg.get('positive_count',0)}/低开{y_avg.get('negative_count',0)}" if y_avg.get('sample_count') else ''}</div>
+        </td>
+        <td {_cell}>
+          <div {_label}>昨日炸板今日均价</div>
+          <div {_val} style="color:{num_color(y_zb.get('avg_change_pct'))};">
+            {fmt_pct(y_zb.get('avg_change_pct'))}
           </div>
+          <div {_sub}>{f"样本{y_zb.get('sample_count')}只" if y_zb.get('sample_count') else '—'}</div>
+        </td>
+        <td {_cell}>
+          <div {_label}>昨日跌停今日均价</div>
+          <div {_val} style="color:{num_color(y_ld.get('avg_change_pct'))};">
+            {fmt_pct(y_ld.get('avg_change_pct'))}
+          </div>
+          <div {_sub}>{f"样本{y_ld.get('sample_count')}只" if y_ld.get('sample_count') else '—'}</div>
         </td>
       </tr>
     </table>
