@@ -352,7 +352,7 @@
         .mb-label { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
         .mb-num { font-size: 28px; font-weight: 700; line-height: 1.1; }
         .mb-num-mid { font-size: 18px; font-weight: 700; line-height: 1.1; }
-        .mb-sub { margin-top: 4px; font-size: 10px; color: #6b7280; line-height: 1.3; }
+        .mb-sub { margin-top: 4px; font-size: 11px; color: #a0aec0; line-height: 1.3; }
         /* A股配色：涨/好/正向 用红，跌/坏/负向 用绿，中性蓝 */
         .mb-num-good { color: #ef4444; }
         .mb-num-ok   { color: #60a5fa; }
@@ -514,9 +514,17 @@
                         <div class="hm-label">竞价跌停 (&gt;5⚠)</div>
                         <div class="hm-value" :class="(market?.limit_down||0) > 5 ? 'hm-bad' : 'hm-ok'">
                             {{ market?.limit_down ?? '—' }}
+                            <span v-if="market?.prev_day_limit_down != null && market?.limit_down != null"
+                                  style="font-size:14px;margin-left:4px;"
+                                  :style="{color: market.limit_down > market.prev_day_limit_down ? '#ef4444' : market.limit_down < market.prev_day_limit_down ? '#10b981' : '#6b7280'}">
+                                {{ market.limit_down > market.prev_day_limit_down ? '↑' : market.limit_down < market.prev_day_limit_down ? '↓' : '→' }}
+                            </span>
                         </div>
                         <div class="mb-sub" v-if="market?.prev_day_limit_down != null">
-                            昨日竞价跌停: {{ market.prev_day_limit_down }}
+                            昨日 {{ market.prev_day_limit_down }}
+                            <span v-if="market?.limit_down != null">
+                                （{{ market.limit_down > market.prev_day_limit_down ? '+' : '' }}{{ market.limit_down - market.prev_day_limit_down }}）
+                            </span>
                         </div>
                     </div>
                     <div class="hm-cell hm-primary">
