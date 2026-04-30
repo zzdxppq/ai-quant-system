@@ -42,6 +42,7 @@
             background: #111827; box-shadow: inset 0 -1px 0 #1e2a45;
         }
         .limit-up-row td { color: #ef4444; font-weight: 600; }
+        .limit-up-row td.gain-neg { color: #10b981; }  /* 涨停行内的负值仍显示绿色 */
         .limit-up-row:hover td { background: #2a0a0a; }
         .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
         .tag-rep { background: #1e3a5f; color: #60a5fa; }
@@ -165,7 +166,7 @@
                     <thead><tr>
                         <th>#</th><th>代码</th><th>名称</th><th>板块</th><th>最新价</th>
                         <th>市值(亿)</th><th>涨幅</th><th>竞价涨幅</th><th>10日涨幅</th>
-                        <th>连板</th><th>最后封板</th><th>偏离(%)</th><th>标记</th>
+                        <th>连板</th><th>最后封板</th><th>偏离(%)</th><th>周期</th><th>标记</th>
                     </tr></thead>
                     <tbody>
                         <tr v-for="(item, idx) in ranking" :key="item.code"
@@ -184,6 +185,7 @@
                             <td :class="item.deviation_pct > 100 ? 'gain-pos' : ''">
                                 {{ fmtNum(item.deviation_pct, 1) }}
                             </td>
+                            <td>{{ item.top30_streak ? item.top30_streak + '天' : '-' }}</td>
                             <td>
                                 <span v-if="isRepresentative(item.code)" class="tag tag-rep">代表股</span>
                                 <span v-else-if="isCandidate(item.code)" class="tag tag-candidate">候选</span>

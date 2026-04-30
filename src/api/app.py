@@ -382,14 +382,51 @@ async def run_review_now():
 
 
 @app.get("/api/monthly-report")
-async def get_monthly_report(year: int = 0, month: int = 0):
-    """获取月度报告"""
+async def get_monthly_report(year: int = 0, month: int = 0, force: int = 0):
+    """获取月度报告
+
+    - 不传 year/month: 默认返回最新已保存的报告；若无则生成上月
+    - 传 year/month: 优先读取本地已保存的 report_YYYY_MM.json，无则生成
+    - force=1: 强制重新生成并覆盖本地文件
+    """
     from src.engine.monthly_report import generate_monthly_report
     try:
-        report = generate_monthly_report(year if year > 0 else None, month if month > 0 else None)
+        if force:
+            report = generate_monthly_report(year if year > 0 else None, month if month > 0 else None)
+            return JSONResponse(report)
+
+        # 未指定年月：取已保存报告中最新的一份
+        if year <= 0 or month <= 0:
+            files = sorted(DATA_DIR.glob("report_*.json"), reverse=True)
+            if files:
+                return JSONResponse(json.loads(files[0].read_text(encoding="utf-8")))
+            # 无任何已保存报告，按默认逻辑生成上月
+            report = generate_monthly_report(None, None)
+            return JSONResponse(report)
+
+        # 指定年月：优先读本地
+        report_file = DATA_DIR / f"report_{year}_{month:02d}.json"
+        if report_file.exists():
+            return JSONResponse(json.loads(report_file.read_text(encoding="utf-8")))
+        report = generate_monthly_report(year, month)
         return JSONResponse(report)
     except Exception as e:
         return JSONResponse({"error": str(e)})
+
+
+@app.get("/api/monthly-report/list")
+async def list_monthly_reports():
+    """已保存的月度报告列表（按年月降序）"""
+    items = []
+    for f in sorted(DATA_DIR.glob("report_*.json"), reverse=True):
+        # 文件名格式：report_YYYY_MM.json
+        try:
+            parts = f.stem.split("_")
+            y, m = int(parts[1]), int(parts[2])
+            items.append({"year": y, "month": m, "period": f"{y}年{m}月"})
+        except (IndexError, ValueError):
+            continue
+    return JSONResponse({"items": items})
 
 
 @app.get("/api/hit-live")
@@ -516,12 +553,32 @@ async def get_market_insight():
 
 
 @app.get("/api/screener-history")
-async def get_screener_history():
-    """获取选股记录+胜率统计"""
-    from src.engine.screener_history import get_history, calc_win_stats
+async def get_screener_history(year: int = 0, month: int = 0):
+    """获取选股记录+胜率统计
+
+    Query 参数：
+        year, month: 联动过滤记录与分维度统计；不传则返回全量
+            - total/weekly 始终为全量/实时
+            - monthly = 选定 year+month（不传则当前自然月）
+            - yearly = 选定 year（不传则当前自然年）
+            - by_*（分维度）= 选定 year+month 子集
+
+    每次请求时对今日记录做一次幂等修正（用最新K线和最新 sentiment 校正
+    收盘价/10日涨幅/加权竞价等指标，与首页看板对齐）。
+    """
+    from src.engine.screener_history import (
+        get_history, calc_win_stats, refresh_today_records, list_available_periods,
+    )
+    try:
+        refresh_today_records()
+    except Exception as e:
+        print(f"[选股记录] refresh_today_records 失败: {e}")
+    y = year if year > 0 else None
+    m = month if month > 0 else None
     return JSONResponse({
-        "records": get_history(limit=500),
-        "stats": calc_win_stats(),
+        "records": get_history(limit=0, year=y, month=m),
+        "stats": calc_win_stats(filter_year=y, filter_month=m),
+        "available_periods": list_available_periods(),
     })
 
 

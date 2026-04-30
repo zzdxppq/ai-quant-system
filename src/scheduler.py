@@ -111,6 +111,11 @@ def run_ranking_refresh() -> dict:
             return {"ranking": [], "date": now_cn().strftime("%Y-%m-%d %H:%M:%S")}
 
     ranking_records = ranking_df.to_dict("records")
+    try:
+        from src.engine.top30_streak import stamp_streak
+        stamp_streak(ranking_records)
+    except Exception as e:
+        print(f"  周期计数失败: {e}")
     ranking_data = {
         "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
         "updated_at": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
@@ -175,6 +180,11 @@ def run_cycle_update() -> dict:
 
     # 保存排行（已是 top30，不再截断）
     ranking_records = ranking_df.to_dict("records")
+    try:
+        from src.engine.top30_streak import stamp_streak
+        stamp_streak(ranking_records)
+    except Exception as e:
+        print(f"  周期计数失败: {e}")
     ranking_data = {
         "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
         "updated_at": now_cn().strftime("%Y-%m-%d %H:%M:%S"),

@@ -217,6 +217,33 @@
         .fp-pill .fp-pct.gain-pos { color: #ef4444; }
         .fp-pill .fp-pct.gain-neg { color: #10b981; }
 
+        /* ===== 接力专项区域样式 ===== */
+        .dec-badge {
+            display:inline-block; padding:3px 12px; border-radius:14px;
+            font-size:13px; font-weight:700; letter-spacing:0.5px;
+        }
+        .dec-headline {
+            background:#0d1220; padding:12px 14px; margin:8px 0 14px;
+            border-radius:6px; font-size:14px; line-height:1.7; color:#e0e6ed;
+        }
+        .scorecard-table { width:100%; border-collapse:collapse; }
+        .scorecard-table th { text-align:left; padding:8px 10px; font-size:12px; color:#6b7280; border-bottom:1px solid #1e2a45; font-weight:500; }
+        .scorecard-table td { padding:8px 10px; font-size:13px; border-bottom:1px solid #0d1220; }
+        .scorecard-table tr:last-child td { border-bottom:none; }
+        .kv-table { width:100%; border-collapse:collapse; }
+        .kv-table td { padding:7px 10px; font-size:13px; border-bottom:1px solid #0d1220; }
+        .kv-table tr:last-child td { border-bottom:none; }
+        .kv-label { color:#8892a8; font-size:12px; width:140px; }
+        .prom-table { width:100%; border-collapse:collapse; }
+        .prom-table th { text-align:left; padding:8px 10px; font-size:12px; color:#6b7280; border-bottom:1px solid #1e2a45; font-weight:500; }
+        .prom-table td { padding:8px 10px; font-size:13px; border-bottom:1px solid #0d1220; }
+        .prom-table tr.row-warn td { background:#1a0a0a; }
+        .watch-item {
+            background:#0d1220; border-left:3px solid #fbbf24; border-radius:6px;
+            padding:10px 14px; margin-bottom:10px;
+        }
+        .watch-item:last-child { margin-bottom:0; }
+
         @media (max-width: 768px) {
             .insight-grid { grid-template-columns: 1fr; }
         }
@@ -237,7 +264,7 @@
         <!-- Tab 切换 -->
         <div class="tabs">
             <button class="tab-btn" :class="{active: activeTab === 'daily'}" @click="activeTab = 'daily'">今日复盘</button>
-            <button class="tab-btn" :class="{active: activeTab === 'monthly'}" @click="activeTab = 'monthly'">月度策略报告</button>
+            <button class="tab-btn" :class="{active: activeTab === 'monthly'}" @click="activeTab = 'monthly'">月度复盘</button>
         </div>
 
         <div v-show="activeTab === 'daily'">
@@ -273,138 +300,171 @@
             </div>
         </div>
 
-        <!-- 市场洞察 · 四维读盘 -->
-        <div class="card" v-if="insight.wave">
-            <div class="card-title">
-                🧠 市场洞察 · 四维读盘
-                <span style="margin-left:auto;font-size:12px;color:#6b7280;">{{ insight.date }}</span>
+        <!-- ============ 区域 A：接力环境评分卡 + 一句话决策 ============ -->
+        <div class="card" v-if="review.scorecard && review.scorecard.indicators">
+            <div class="card-title" style="display:flex;align-items:center;gap:10px;">
+                <span>🎯 接力环境评分卡</span>
+                <span class="dec-badge" :style="{background: review.scorecard.decision_color, color:'#fff'}">
+                    {{ review.scorecard.total_score }}/5 · {{ review.scorecard.decision }}
+                </span>
+                <span style="margin-left:auto;font-size:12px;color:#6b7280;">{{ review.date }}</span>
             </div>
-            <div class="insight-grid">
-                <!-- 周期波形 -->
-                <div class="insight-box">
-                    <div class="insight-box-title">
-                        <span class="ib-icon">🌊</span> 周期波形
-                        <span style="margin-left:auto;font-size:18px;font-weight:700;" :style="{color: waveColor}">
-                            {{ insight.wave.wave_phase }}
-                        </span>
-                    </div>
-                    <div class="wave-bar">
-                        <div class="wave-fill" :class="waveClass" :style="{width: insight.wave.intensity + '%'}">
-                            {{ insight.wave.intensity.toFixed(0) }}
-                        </div>
-                    </div>
-                    <div style="display:flex;flex-wrap:wrap;margin-bottom:6px;">
-                        <span class="insight-metric">
-                            榜首 <span class="im-val gain-pos">{{ fmtPct(insight.wave.top1_gain) }}</span>
-                        </span>
-                        <span class="insight-metric">
-                            前5均 <span class="im-val gain-pos">{{ fmtPct(insight.wave.top5_avg) }}</span>
-                        </span>
-                        <span class="insight-metric">
-                            全榜均 <span class="im-val" :class="numClass(insight.wave.top30_avg)">{{ fmtPct(insight.wave.top30_avg) }}</span>
-                        </span>
-                        <span class="insight-metric">
-                            >45%数 <span class="im-val" style="color:#fbbf24;">{{ insight.wave.breadth }}</span>
-                        </span>
-                        <span class="insight-metric">
-                            衰减比 <span class="im-val" :style="{color: insight.wave.decay_ratio >= 0.5 ? '#34d399' : '#ef4444'}">{{ insight.wave.decay_ratio.toFixed(2) }}</span>
-                        </span>
-                    </div>
-                    <div class="insight-desc">{{ insight.wave.description }}</div>
-                </div>
-
-                <!-- 板块集中度 -->
-                <div class="insight-box">
-                    <div class="insight-box-title">
-                        <span class="ib-icon">🏭</span> 板块集中度
-                        <span style="margin-left:auto;font-size:16px;font-weight:700;color:#60a5fa;">
-                            {{ insight.sector_concentration }}%
-                        </span>
-                    </div>
-                    <div v-for="(sh, idx) in insight.sector_heats.slice(0, 5)" :key="sh.industry" class="sector-bar-row">
-                        <span class="sector-bar-label">{{ sh.industry }}</span>
-                        <div class="sector-bar-track">
-                            <div class="sector-bar-fill" :class="'sb-' + (idx + 1)"
-                                 :style="{width: Math.max(sh.weight * 3, 12) + '%'}">
-                                {{ sh.count }}只 {{ sh.weight }}%
-                            </div>
-                        </div>
-                        <span style="font-size:11px;color:#6b7280;width:50px;text-align:right;">
-                            均{{ sh.avg_gain_10d.toFixed(0) }}%
-                        </span>
-                    </div>
-                    <div class="insight-desc" style="margin-top:6px;">{{ insight.sector_verdict }}</div>
-                </div>
-
-                <!-- 资金行为 -->
-                <div class="insight-box">
-                    <div class="insight-box-title">
-                        <span class="ib-icon">💰</span> 资金行为画像
-                    </div>
-                    <div style="margin-bottom:8px;">
-                        <span class="capital-tag ct-new">新进 {{ insight.new_entry_count }}</span>
-                        <span class="capital-tag ct-acc">加速 {{ insight.accelerating_count }}</span>
-                        <span class="capital-tag ct-sus">持续 {{ insight.sustained_count }}</span>
-                        <span class="capital-tag ct-dec">减速 {{ insight.decelerating_count }}</span>
-                        <span class="capital-tag ct-exh">退潮 {{ insight.exhausting_count }}</span>
-                    </div>
-                    <div class="insight-desc" style="font-size:13px;font-weight:600;margin-bottom:4px;">
-                        {{ insight.capital_summary }}
-                    </div>
-                    <div style="max-height:120px;overflow-y:auto;">
-                        <div v-for="ci in capitalHighlights" :key="ci.code"
-                             style="font-size:11px;color:#8892a8;padding:2px 0;">
-                            <span :class="'capital-tag ct-' + ciTagClass(ci.tag)">{{ ciTagLabel(ci.tag) }}</span>
-                            {{ ci.name }} {{ ci.detail }}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 情绪领袖 -->
-                <div class="insight-box">
-                    <div class="insight-box-title">
-                        <span class="ib-icon">👑</span> 情绪领袖
-                    </div>
-                    <div class="leader-chain" v-if="insight.emotion_chain">
-                        {{ insight.emotion_chain }}
-                    </div>
-                    <div v-for="el in insight.emotion_leaders" :key="el.code" class="leader-item">
-                        <span class="leader-role-tag"
-                              :class="el.role === 'space_opener' ? 'lr-space' : el.role === 'chain_starter' ? 'lr-chain' : 'lr-follow'">
-                            {{ el.role === 'space_opener' ? '空间板' : el.role === 'chain_starter' ? '连板龙' : '跟随' }}
-                        </span>
-                        <span style="font-weight:600;">{{ el.name }}</span>
-                        <span class="gain-pos">{{ fmtPct(el.gain_10d) }}</span>
-                        <span v-if="el.continuous_limit_up >= 2" style="color:#fbbf24;">
-                            {{ el.continuous_limit_up }}板
-                        </span>
-                        <span style="color:#6b7280;">{{ el.reason }}</span>
-                    </div>
-                </div>
+            <!-- 一句话决策 -->
+            <div class="dec-headline" :style="{borderLeft: '4px solid ' + review.scorecard.decision_color}">
+                {{ review.scorecard.headline }}
             </div>
-        </div>
-        <div class="card" v-else>
-            <div class="card-title">🧠 市场洞察 · 四维读盘</div>
-            <div class="empty-state">市场洞察数据加载中（依赖 latest_insight.json）</div>
+            <!-- 5 项评分指标 -->
+            <table class="scorecard-table">
+                <thead><tr>
+                    <th>指标</th><th>今日数据</th><th>达标标准</th><th>得分</th><th>说明</th>
+                </tr></thead>
+                <tbody>
+                    <tr v-for="ind in review.scorecard.indicators" :key="ind.label">
+                        <td><b>{{ ind.label }}</b></td>
+                        <td :style="{color: ind.score === 1 ? '#10b981' : '#ef4444', fontWeight: 600}">{{ ind.today }}</td>
+                        <td style="color:#a0aec0;">{{ ind.target }}</td>
+                        <td>
+                            <span :style="{color: ind.score === 1 ? '#10b981' : '#6b7280', fontWeight: 700}">
+                                {{ ind.score }}
+                            </span>
+                        </td>
+                        <td style="color:#6b7280;font-size:12px;">{{ ind.detail }}</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
 
-        <!-- 连板天梯（按昨日板数分组，每组含晋级 + 失败） -->
+        <!-- ============ 区域 B：资金接力情绪 ============ -->
+        <div class="card" v-if="review.relay_env">
+            <div class="card-title">🔥 资金接力情绪</div>
+            <table class="kv-table">
+                <tbody>
+                    <tr v-if="review.relay_env.space_board">
+                        <td class="kv-label">市场空间板</td>
+                        <td>
+                            <b>{{ review.relay_env.space_board.code }} {{ review.relay_env.space_board.name }}</b>
+                            <span style="color:#fbbf24;font-weight:700;margin-left:6px;">{{ review.relay_env.space_board.board_count }}板</span>
+                            <span class="gain-pos" style="margin-left:6px;">{{ fmtPct(review.relay_env.space_board.change_pct) }}</span>
+                            <span style="color:#6b7280;font-size:12px;margin-left:8px;">{{ review.relay_env.space_board.industry }}</span>
+                        </td>
+                    </tr>
+                    <tr v-if="review.relay_env.prev_space_board_today">
+                        <td class="kv-label">昨日空间板今日</td>
+                        <td>
+                            <b>{{ review.relay_env.prev_space_board_today.code }} {{ review.relay_env.prev_space_board_today.name }}</b>
+                            <span style="color:#a0aec0;font-size:12px;margin-left:6px;">昨{{ review.relay_env.prev_space_board_today.yesterday_board }}板</span>
+                            <span :class="numClass(review.relay_env.prev_space_board_today.today_pct)" style="margin-left:8px;font-weight:700;">
+                                {{ fmtPct(review.relay_env.prev_space_board_today.today_pct) }}
+                            </span>
+                            <span :style="{color: review.relay_env.prev_space_board_today.today_held ? '#10b981' : '#ef4444', marginLeft:'8px', fontSize:'12px', fontWeight:600}">
+                                {{ review.relay_env.prev_space_board_today.today_held ? '✓ 未断板' : '✗ 已断板' }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr v-if="ladderArr.length">
+                        <td class="kv-label">连板梯队完整性</td>
+                        <td>
+                            <span v-for="row in ladderArr" :key="row.b" style="display:inline-block;margin-right:10px;font-size:12px;">
+                                <span style="color:#a0aec0;">{{ row.b }}板:</span>
+                                <b style="color:#fbbf24;margin-left:4px;">{{ row.n }}只</b>
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">加速 / 减速</td>
+                        <td>
+                            <span class="capital-tag ct-acc">加速 {{ review.relay_env.accelerating_count }}</span>
+                            <span class="capital-tag ct-dec" style="margin-left:6px;">减速 {{ review.relay_env.decelerating_count }}</span>
+                        </td>
+                    </tr>
+                    <tr v-if="review.relay_env.yesterday_zb_today_avg_pct !== null">
+                        <td class="kv-label">昨日炸板今日均价</td>
+                        <td>
+                            <b :class="numClass(review.relay_env.yesterday_zb_today_avg_pct)">
+                                {{ fmtPct(review.relay_env.yesterday_zb_today_avg_pct) }}
+                            </b>
+                            <span v-if="(review.relay_env.yesterday_zb_today_avg_pct||0) < 0" style="color:#ef4444;margin-left:8px;font-size:12px;">⚠ 亏钱效应扩散</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ============ 区域 C：晋级矩阵核心摘要 ============ -->
+        <div class="card" v-if="review.promotion_summary && review.promotion_summary.length">
+            <div class="card-title">📈 晋级矩阵摘要</div>
+            <table class="prom-table">
+                <thead><tr>
+                    <th>晋级层</th><th>成功/总数</th><th>成功率</th><th>失败票今日均价</th><th></th>
+                </tr></thead>
+                <tbody>
+                    <tr v-for="row in review.promotion_summary" :key="row.label" :class="{'row-warn': row.warn}">
+                        <td><b>{{ row.label }}</b></td>
+                        <td>{{ row.success }}/{{ row.total }}</td>
+                        <td :style="{color: row.success_rate >= 50 ? '#10b981' : row.success_rate >= 30 ? '#fbbf24' : '#ef4444', fontWeight:700}">
+                            {{ row.success_rate }}%
+                        </td>
+                        <td :class="numClass(row.fail_avg_pct)">{{ fmtPct(row.fail_avg_pct) }}</td>
+                        <td>
+                            <span v-if="row.warn" style="color:#ef4444;font-size:11px;font-weight:600;">⚠ 警告</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <div style="font-size:11px;color:#6b7280;margin-top:6px;">
+                重点关注：2进3 成功率 &lt;40% 或 失败票均价 &lt;-3% → 次日暂停接力
+            </div>
+        </div>
+
+        <!-- ============ 区域 D：次日关注标的池（仅条件筛选） ============ -->
         <div class="card">
-            <div class="card-title">
+            <div class="card-title">🎯 次日关注标的池
+                <span style="margin-left:auto;font-size:11px;color:#6b7280;font-weight:400;">
+                    板块集中度≥25% · 14:00 后封板 · 流通市值 30~150亿
+                </span>
+            </div>
+            <div v-if="watchPool.length">
+                <div v-for="(w, i) in watchPool" :key="w.code" class="watch-item">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                        <span style="color:#fbbf24;font-weight:700;font-size:14px;">{{ i+1 }}. {{ w.name }}</span>
+                        <span style="color:#6b7280;font-size:12px;">{{ w.code }}</span>
+                        <span style="background:#92400e;color:#fbbf24;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:700;">{{ w.board_count }}板</span>
+                        <span style="color:#a0aec0;font-size:12px;">{{ w.industry }}</span>
+                        <span style="color:#a0aec0;font-size:12px;margin-left:auto;">市值 {{ Math.round(w.market_cap_yi) }}亿</span>
+                    </div>
+                    <div style="font-size:12px;color:#c9d1d9;line-height:1.6;">
+                        <span style="color:#34d399;">逻辑：</span>{{ w.reason }}
+                    </div>
+                    <div style="font-size:11px;color:#8892a8;margin-top:2px;">
+                        竞价区间 <b style="color:#60a5fa;">{{ w.auction_range }}</b> · {{ w.watch_points }}
+                    </div>
+                </div>
+            </div>
+            <div v-else class="empty-state" style="padding:24px;font-size:13px;">
+                无 — 今日所有候选都不满足三项严格条件，明日不主动开仓
+            </div>
+        </div>
+
+        <!-- 连板天梯（按昨日板数分组）— 默认折叠 -->
+        <div class="card">
+            <div class="card-title" @click="ladderOpen = !ladderOpen" style="cursor:pointer;user-select:none;">
+                <span style="margin-right:6px;">{{ ladderOpen ? '▾' : '▸' }}</span>
                 🪜 连板天梯（晋级矩阵）
                 <span v-if="boardGroups.length" style="font-weight:400;font-size:13px;color:#a0aec0;margin-left:6px;">
                     · 今日涨停 {{ todayCount }} 只
                 </span>
                 <label class="toggle-switch" :class="{ 'ts-on': showFailed }"
-                       @click="showFailed = !showFailed"
-                       v-if="totalFailed > 0"
+                       @click.stop="showFailed = !showFailed"
+                       v-if="totalFailed > 0 && ladderOpen"
                        style="margin-left:auto;">
                     <span class="ts-track"><span class="ts-thumb"></span></span>
                     显示晋级失败（{{ totalFailed }} 只）
                 </label>
-                <button class="btn" style="margin-left:8px;font-size:11px;" @click="runReview">刷新复盘</button>
+                <button class="btn" style="margin-left:auto;font-size:11px;" @click.stop="runReview" v-if="!ladderOpen">刷新复盘</button>
+                <button class="btn" style="margin-left:8px;font-size:11px;" @click.stop="runReview" v-else>刷新复盘</button>
             </div>
 
+            <div v-show="ladderOpen">
             <div v-if="!boardGroups.length" class="empty-state">
                 等待收盘后自动生成（15:45 cron）
             </div>
@@ -454,10 +514,20 @@
                 </div>
             </div>
 
-            <!-- 板块涨停统计 + 龙头 -->
-            <div v-if="sectorStats.length" class="sector-stats">
-                <div class="sector-stats-title">📦 板块涨停分布（共 {{ sectorStats.length }} 个板块 · 龙头加 ⭐）</div>
-                <div v-for="grp in sectorStats" :key="grp.industry" class="sector-row">
+            </div><!-- end v-show ladderOpen -->
+        </div>
+
+        <!-- 板块涨停分布 — 默认折叠 + 仅 ≥2 只 -->
+        <div class="card" v-if="sectorStatsFiltered.length">
+            <div class="card-title" @click="sectorOpen = !sectorOpen" style="cursor:pointer;user-select:none;">
+                <span style="margin-right:6px;">{{ sectorOpen ? '▾' : '▸' }}</span>
+                📦 板块涨停分布
+                <span style="font-weight:400;font-size:13px;color:#a0aec0;margin-left:6px;">
+                    · {{ sectorStatsFiltered.length }} 个板块 ≥2只 · 龙头加 ⭐
+                </span>
+            </div>
+            <div v-show="sectorOpen">
+                <div v-for="grp in sectorStatsFiltered" :key="grp.industry" class="sector-row">
                     <span class="sr-name">{{ grp.industry }}</span>
                     <span class="sr-count">{{ grp.count }}只</span>
                     <span class="sr-leader">
@@ -476,37 +546,204 @@
         </div><!-- end v-show daily -->
 
         <div v-show="activeTab === 'monthly'">
-        <!-- 月度报告 -->
+        <!-- 月度复盘（基于选股记录·每日盘后更新） -->
         <div class="card">
-            <div class="card-title">📊 月度策略报告
-                <button class="btn" style="margin-left:auto;font-size:11px;" @click="loadReport">刷新报告</button>
-            </div>
-            <div v-if="report.period">
-                <div style="display:flex;gap:16px;margin-bottom:12px;">
-                    <div class="stat-box"><div class="sb-label">期间</div><div class="sb-val">{{ report.period }}</div></div>
-                    <div class="stat-box"><div class="sb-label">信号数</div><div class="sb-val">{{ report.total_signals }}</div></div>
-                    <div class="stat-box"><div class="sb-label">胜率</div><div class="sb-val" :style="{color: report.win_rate >= 50 ? '#10b981' : '#ef4444'}">{{ report.win_rate }}%</div></div>
-                    <div class="stat-box"><div class="sb-label">盈/亏</div><div class="sb-val">{{ report.wins }}/{{ report.losses }}</div></div>
-                    <div class="stat-box" v-if="report.sanbanzhu_count > 0"><div class="sb-label">三板组</div><div class="sb-val" style="color:#ef4444;">{{ report.sanbanzhu_count }}笔</div></div>
+            <div class="card-title">📊 月度复盘
+                <div style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px;">
+                    <select v-model="histYear" @change="onHistYearChange" style="background:#0d1220;color:#e0e6ed;border:1px solid #2a3050;border-radius:4px;padding:2px 6px;font-size:12px;">
+                        <option value="">选择年</option>
+                        <option v-for="y in histAvailableYears" :key="y" :value="y">{{ y }}年</option>
+                    </select>
+                    <select v-model="histMonth" @change="onHistMonthChange" style="background:#0d1220;color:#e0e6ed;border:1px solid #2a3050;border-radius:4px;padding:2px 6px;font-size:12px;" :disabled="!histYear">
+                        <option value="">选择月</option>
+                        <option v-for="m in histMonthsForYear(histYear)" :key="m" :value="m">{{ m }}月</option>
+                    </select>
+                    <button class="btn" style="font-size:11px;padding:2px 8px;" @click="loadHistory()" :disabled="histLoading" title="重新拉取选股记录">{{ histLoading ? '加载中…' : '刷新' }}</button>
+                    <a class="btn" style="font-size:11px;padding:2px 8px;text-decoration:none;" :href="histAllLink">查看所有 →</a>
                 </div>
-                <!-- 连板分布 -->
-                <div v-if="report.board_distribution && Object.keys(report.board_distribution).length" style="margin-bottom:12px;">
-                    <div style="font-size:12px;color:#6b7280;margin-bottom:4px;">连板类型分布</div>
-                    <div v-for="(s, label) in report.board_distribution" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:3px;font-size:12px;">
-                        <span style="width:50px;color:#a0aec0;">{{ label }}</span>
-                        <div style="flex:1;height:14px;background:#1a2040;border-radius:3px;overflow:hidden;">
-                            <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'3px', background: s.win_rate >= 60 ? '#10b981' : s.win_rate >= 40 ? '#fbbf24' : '#ef4444'}"></div>
+            </div>
+
+            <!-- 4 张胜率卡 -->
+            <div class="hist-stats-row">
+                <div class="hist-stat-card">
+                    <div class="hsc-label">本周胜率</div>
+                    <div class="hsc-rate" :class="rateClass(histStats.weekly)">{{ histLoaded ? statRate(histStats.weekly) + '%' : '—' }}</div>
+                    <div class="hsc-detail">{{ histLoaded ? statDetail(histStats.weekly) : '加载中…' }}</div>
+                </div>
+                <div class="hist-stat-card">
+                    <div class="hsc-label">本月胜率</div>
+                    <div class="hsc-rate" :class="rateClass(histStats.monthly)">{{ histLoaded ? statRate(histStats.monthly) + '%' : '—' }}</div>
+                    <div class="hsc-detail">{{ histLoaded ? statDetail(histStats.monthly) : '加载中…' }}</div>
+                </div>
+                <div class="hist-stat-card">
+                    <div class="hsc-label">本年胜率</div>
+                    <div class="hsc-rate" :class="rateClass(histStats.yearly)">{{ histLoaded ? statRate(histStats.yearly) + '%' : '—' }}</div>
+                    <div class="hsc-detail">{{ histLoaded ? statDetail(histStats.yearly) : '加载中…' }}</div>
+                </div>
+                <div class="hist-stat-card">
+                    <div class="hsc-label">总胜率</div>
+                    <div class="hsc-rate" :class="rateClass(histStats.total)">{{ histLoaded ? statRate(histStats.total) + '%' : '—' }}</div>
+                    <div class="hsc-detail">{{ histLoaded ? statDetail(histStats.total) : '加载中…' }}</div>
+                </div>
+            </div>
+
+            <!-- 分维度胜率 -->
+            <div v-if="histStats.by_board && Object.keys(histStats.by_board).length" style="margin-top:14px;padding-top:14px;border-top:1px dashed #2a3050;">
+                <div style="font-size:13px;color:#8892a8;margin-bottom:10px;">
+                    分维度胜率（{{ histScopeLabel }}）
+                </div>
+                <div style="display:flex;gap:24px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:200px;">
+                        <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">按连板类型</div>
+                        <div v-for="(s, label) in histStats.by_board" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
+                            <span style="width:50px;color:#a0aec0;">{{ label }}</span>
+                            <div style="flex:1;height:16px;background:#1a2040;border-radius:4px;overflow:hidden;">
+                                <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: rateBarColor(s.win_rate), display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
+                                    {{ s.win_rate }}%
+                                </div>
+                            </div>
+                            <span style="width:40px;color:#6b7280;font-size:11px;">{{ s.wins }}/{{ s.trades }}</span>
                         </div>
-                        <span style="width:70px;color:#6b7280;">{{ s.win_rate }}% ({{ s.wins }}/{{ s.total }})</span>
+                    </div>
+                    <div style="flex:1;min-width:200px;" v-if="histStats.by_emotion && Object.keys(histStats.by_emotion).length">
+                        <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">按市场情绪</div>
+                        <div v-for="(s, label) in histStats.by_emotion" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
+                            <span style="width:100px;color:#a0aec0;font-size:11px;">{{ label }}</span>
+                            <div style="flex:1;height:16px;background:#1a2040;border-radius:4px;overflow:hidden;">
+                                <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: rateBarColor(s.win_rate), display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
+                                    {{ s.win_rate }}%
+                                </div>
+                            </div>
+                            <span style="width:40px;color:#6b7280;font-size:11px;">{{ s.wins }}/{{ s.trades }}</span>
+                        </div>
+                    </div>
+                    <div style="flex:1;min-width:200px;" v-if="histStats.by_cycle_stock && Object.keys(histStats.by_cycle_stock).length">
+                        <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">按是否周期股</div>
+                        <div v-for="(s, label) in histStats.by_cycle_stock" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
+                            <span style="width:70px;color:#a0aec0;">{{ label }}</span>
+                            <div style="flex:1;height:16px;background:#1a2040;border-radius:4px;overflow:hidden;">
+                                <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: rateBarColor(s.win_rate), display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
+                                    {{ s.win_rate }}%
+                                </div>
+                            </div>
+                            <span style="width:40px;color:#6b7280;font-size:11px;">{{ s.wins }}/{{ s.trades }}</span>
+                        </div>
+                    </div>
+                    <div style="flex:1;min-width:200px;" v-if="histStats.by_outcome && Object.keys(histStats.by_outcome).length">
+                        <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">按结果分类</div>
+                        <div v-for="(s, label) in histStats.by_outcome" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
+                            <span style="width:70px;color:#a0aec0;">{{ label }}</span>
+                            <span style="font-weight:700;color:#e0e6ed;">{{ s.trades }} 笔</span>
+                            <span style="color:#6b7280;font-size:11px;">占比 {{ histStats.total.trades > 0 ? (s.trades / histStats.total.trades * 100).toFixed(0) : 0 }}%</span>
+                        </div>
                     </div>
                 </div>
-                <!-- 优化建议 -->
-                <div v-if="report.suggestions && report.suggestions.length" style="background:#0d1220;padding:10px;border-radius:6px;border-left:3px solid #fbbf24;">
-                    <div style="font-size:12px;color:#fbbf24;margin-bottom:4px;">优化建议</div>
-                    <div v-for="s in report.suggestions" :key="s" style="font-size:12px;color:#c9d1d9;margin-bottom:2px;">• {{ s }}</div>
+                <!-- 开仓指导（资深龙头选手视角，多维深度分析） -->
+                <div v-if="histStats.suggestion" style="margin-top:14px;padding:14px 16px;background:#0d1220;border-left:4px solid #fbbf24;border-radius:6px;">
+                    <div style="font-size:11px;color:#fbbf24;margin-bottom:8px;font-weight:600;letter-spacing:0.5px;">📌 开仓指导 · 龙头视角</div>
+                    <!-- 兼容旧字符串格式 -->
+                    <div v-if="typeof histStats.suggestion === 'string'" style="font-size:13px;color:#e0e6ed;line-height:1.6;">{{ histStats.suggestion }}</div>
+                    <template v-else>
+                        <div v-if="histStats.suggestion.headline" style="font-size:14px;color:#e0e6ed;line-height:1.5;font-weight:600;margin-bottom:8px;">
+                            {{ histStats.suggestion.headline }}
+                        </div>
+                        <div v-if="histStats.suggestion.rules && histStats.suggestion.rules.length" style="margin-bottom:6px;">
+                            <div style="font-size:11px;color:#34d399;font-weight:600;margin-bottom:3px;">✓ 执行规则</div>
+                            <div v-for="r in histStats.suggestion.rules" :key="r"
+                                 style="font-size:12px;color:#c9d1d9;line-height:1.6;padding:2px 0;">• {{ r }}</div>
+                        </div>
+                        <div v-if="histStats.suggestion.risks && histStats.suggestion.risks.length" style="margin-bottom:6px;">
+                            <div style="font-size:11px;color:#ef4444;font-weight:600;margin-bottom:3px;">⚠ 风险/规避</div>
+                            <div v-for="r in histStats.suggestion.risks" :key="r"
+                                 style="font-size:12px;color:#c9d1d9;line-height:1.6;padding:2px 0;">• {{ r }}</div>
+                        </div>
+                        <div v-if="histStats.suggestion.notes && histStats.suggestion.notes.length"
+                             style="margin-top:8px;padding-top:6px;border-top:1px dashed #2a3050;">
+                            <div v-for="r in histStats.suggestion.notes" :key="r"
+                                 style="font-size:11px;color:#8892a8;line-height:1.5;padding:1px 0;">{{ r }}</div>
+                        </div>
+                    </template>
                 </div>
             </div>
-            <div v-else class="empty-state">暂无月度报告数据</div>
+        </div>
+
+        <!-- 历史选股记录（按选定年/月） -->
+        <div class="card">
+            <div class="card-title">
+                历史选股记录（{{ histRecords.length }} 条 · {{ histScopeLabel }}）
+            </div>
+            <div style="max-height:600px;overflow-y:auto;">
+                <table v-if="histRecords.length" class="hist-table">
+                    <thead>
+                        <tr>
+                            <th>日期</th><th>代码</th><th>名称</th><th>连板</th>
+                            <th>开盘价</th><th>竞价涨幅</th>
+                            <th>收盘价</th><th>收盘涨幅</th><th>次日竞价</th><th>次日收盘涨幅</th>
+                            <th>10日涨幅</th><th>周期股</th><th>周期计数</th>
+                            <th>胜负</th><th>备注</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template v-for="(group, date) in histGroupedRecords" :key="date">
+                            <tr>
+                                <td colspan="15" class="date-group">
+                                    {{ date }}（{{ group.length }} 只）
+                                    <span v-if="dailyEnv(group)" style="margin-left:16px;font-weight:400;font-size:12px;color:#a0aec0;">
+                                        <template v-if="dailyEnv(group).market_limit_down !== null && dailyEnv(group).market_limit_down !== undefined">
+                                            · 跌停
+                                            <b :style="{color: (dailyEnv(group).market_limit_down > 9 ? '#10b981' : '#ef4444')}">{{ dailyEnv(group).market_limit_down }}</b>
+                                        </template>
+                                        <template v-if="dailyEnv(group).weighted_auction_gain !== null && dailyEnv(group).weighted_auction_gain !== undefined">
+                                            · 加权竞价
+                                            <b :class="numClass(dailyEnv(group).weighted_auction_gain)">{{ fmtPct(dailyEnv(group).weighted_auction_gain) }}</b>
+                                        </template>
+                                        <template v-if="dailyEnv(group).yesterday_lianban_today_avg !== null && dailyEnv(group).yesterday_lianban_today_avg !== undefined">
+                                            · 昨日连板今日均价
+                                            <b :class="numClass(dailyEnv(group).yesterday_lianban_today_avg)">{{ fmtPct(dailyEnv(group).yesterday_lianban_today_avg) }}</b>
+                                        </template>
+                                    </span>
+                                </td>
+                            </tr>
+                            <tr v-for="r in group" :key="r.code + r.date">
+                                <td>{{ r.date }}</td>
+                                <td>{{ r.code }}</td>
+                                <td>{{ r.name }}</td>
+                                <td>{{ r.continuous_limit_up }}板</td>
+                                <td>{{ r.open_price || '-' }}</td>
+                                <td :class="numClass(r.auction_gain)">{{ fmtPct(r.auction_gain) }}</td>
+                                <td>{{ r.close_price || '-' }}</td>
+                                <td :class="numClass(r.day_change)">{{ fmtPct(r.day_change) }}</td>
+                                <td :class="numClass(r.next_day_auction_gain)">{{ fmtPct(r.next_day_auction_gain) }}</td>
+                                <td :class="numClass(r.next_day_close_gain)">{{ fmtPct(r.next_day_close_gain) }}</td>
+                                <td :class="(r.gain_10d||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                                    {{ r.gain_10d ? (r.gain_10d > 0 ? '+' : '') + r.gain_10d + '%' : '-' }}
+                                </td>
+                                <td>
+                                    <span v-if="r.is_cycle_stock === true" class="tag" style="background:#3b0a0a;color:#ef4444;">是</span>
+                                    <span v-else-if="r.is_cycle_stock === false" class="tag" style="background:#0a2a1a;color:#10b981;">否</span>
+                                    <span v-else class="tag" style="background:#1a1a2e;color:#6b7280;">-</span>
+                                </td>
+                                <td>
+                                    <span v-if="r.top30_streak" style="color:#fbbf24;font-weight:600;">{{ r.top30_streak }}天</span>
+                                    <span v-else style="color:#4b5563;">-</span>
+                                </td>
+                                <td>
+                                    <span v-if="r.is_win === true" class="tag" style="background:#3b0a0a;color:#ef4444;">盈</span>
+                                    <span v-else-if="r.is_win === false" class="tag" style="background:#0a2a1a;color:#10b981;">亏</span>
+                                    <span v-else class="tag" style="background:#1a1a2e;color:#6b7280;">待定</span>
+                                    <span v-if="r.is_zhaban" class="tag" style="background:#78350f;color:#fbbf24;margin-left:2px;">炸</span>
+                                </td>
+                                <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">
+                                    <span v-if="r.sanbanzhu" style="color:#ef4444;font-weight:600;" :title="r.sanbanzhu_detail">⚠️三板组</span>
+                                    <span v-if="r.board_label" style="color:#6b7280;">{{ r.board_label }}</span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <div v-else-if="!histLoaded" class="empty-state">加载中…</div>
+                <div v-else class="empty-state">该周期暂无选股记录</div>
+            </div>
         </div>
 
         </div><!-- end v-show monthly -->
@@ -519,6 +756,29 @@
 .sb-val { font-size:18px;font-weight:700;color:#e0e6ed;margin-top:2px; }
 .tag-win { background: #3b0a0a; color: #ef4444; display:inline-block; padding:1px 6px; border-radius:4px; font-size:11px; }
 .tag-lose { background: #0a2a1a; color: #10b981; display:inline-block; padding:1px 6px; border-radius:4px; font-size:11px; }
+
+/* 月度复盘 — 4 张胜率卡 */
+.hist-stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.hist-stat-card { background:#0d1220; border:1px solid #1e2a45; border-radius:10px; padding:14px; text-align:center; }
+.hsc-label { font-size:12px; color:#8892a8; margin-bottom:6px; }
+.hsc-rate { font-size:28px; font-weight:700; }
+.hsc-detail { font-size:11px; color:#6b7280; margin-top:2px; }
+/* 中国市场习惯：高胜率→红，低胜率→绿 */
+.hsc-rate.rate-high { color:#ef4444; }
+.hsc-rate.rate-mid  { color:#fbbf24; }
+.hsc-rate.rate-low  { color:#10b981; }
+
+/* 月度复盘 — 历史选股记录表 */
+.hist-table { width:100%; border-collapse:collapse; }
+.hist-table th { text-align:left; padding:8px 10px; font-size:12px; color:#6b7280; border-bottom:1px solid #1e2a45; font-weight:500; position:sticky; top:0; background:#111827; z-index:2; }
+.hist-table td { padding:8px 10px; font-size:13px; border-bottom:1px solid #0d1220; }
+.hist-table tr:hover td { background:#0d1220; }
+.hist-table .date-group { background:#0d1220; padding:6px 12px; font-size:12px; color:#60a5fa; font-weight:600; border-left:3px solid #3b82f6; }
+.tag { display:inline-block; padding:1px 6px; border-radius:4px; font-size:11px; }
+
+@media (max-width: 768px) {
+    .hist-stats-row { grid-template-columns: repeat(2, 1fr); }
+}
 </style>
 
 <script>
@@ -526,10 +786,82 @@ const { createApp, ref, computed, onMounted } = Vue
 createApp({
     setup() {
         const review = ref({})
-        const report = ref({})
         const activeTab = ref('daily')
         const insight = ref({})
         const showFailed = ref(false)
+        const ladderOpen = ref(false)   // 连板天梯默认折叠
+        const sectorOpen = ref(false)   // 板块涨停分布默认折叠
+
+        // 月度复盘（基于选股记录·每日盘后更新）
+        const histRecords = ref([])
+        const histStats = ref({
+            total: { trades: 0, wins: 0, win_rate: 0 },
+            weekly: { trades: 0, wins: 0, win_rate: 0 },
+            monthly: { trades: 0, wins: 0, win_rate: 0 },
+            yearly: { trades: 0, wins: 0, win_rate: 0 },
+            by_board: {}, by_emotion: {}, by_outcome: {}, by_cycle_stock: {},
+        })
+        const histPeriods = ref([])  // [{year, month}]
+        const histYear = ref('')
+        const histMonth = ref('')
+        const histLoading = ref(false)
+        const histLoaded = ref(false)   // 首次加载完成标记，未完成前不显示「无数据」
+
+        const histAvailableYears = computed(() => {
+            const ys = new Set()
+            for (const it of histPeriods.value) ys.add(it.year)
+            return Array.from(ys).sort((a, b) => b - a)
+        })
+        function histMonthsForYear(year) {
+            if (!year) return []
+            const ms = histPeriods.value.filter(it => it.year === Number(year)).map(it => it.month)
+            return ms.sort((a, b) => b - a)
+        }
+        const histGroupedRecords = computed(() => {
+            const groups = {}
+            for (const r of histRecords.value) {
+                const d = r.date || 'unknown'
+                if (!groups[d]) groups[d] = []
+                groups[d].push(r)
+            }
+            return groups
+        })
+        const histScopeLabel = computed(() => {
+            if (histYear.value && histMonth.value) return `${histYear.value}年${histMonth.value}月`
+            if (histYear.value) return `${histYear.value}年`
+            return '全部历史'
+        })
+        const histAllLink = computed(() => {
+            const params = []
+            if (histYear.value) params.push('year=' + histYear.value)
+            if (histMonth.value) params.push('month=' + histMonth.value)
+            return '/history' + (params.length ? '?' + params.join('&') : '')
+        })
+
+        function statRate(s)   { return s && s.trades > 0 ? s.win_rate : 0 }
+        function statDetail(s) { return s ? `${s.wins||0}/${s.trades||0} 笔` : '0/0 笔' }
+        function rateClass(s) {
+            if (!s || s.trades === 0) return ''
+            if (s.win_rate >= 60) return 'rate-high'
+            if (s.win_rate >= 40) return 'rate-mid'
+            return 'rate-low'
+        }
+        function rateBarColor(wr) {
+            if (wr >= 60) return '#ef4444'
+            if (wr >= 40) return '#fbbf24'
+            return '#10b981'
+        }
+        function dailyEnv(group) {
+            if (!group || !group.length) return null
+            const r = group[0]
+            const has = r.market_limit_down != null || r.weighted_auction_gain != null || r.yesterday_lianban_today_avg != null
+            if (!has) return null
+            return {
+                market_limit_down: r.market_limit_down,
+                weighted_auction_gain: r.weighted_auction_gain,
+                yesterday_lianban_today_avg: r.yesterday_lianban_today_avg,
+            }
+        }
 
         // 市场洞察 helpers
         const waveClass = computed(() => {
@@ -584,6 +916,17 @@ createApp({
 
         // 板块涨停统计 + 龙头
         const sectorStats = computed(() => review.value.sector_zt_stats || [])
+        // 仅 ≥2 只的板块（按用户要求）
+        const sectorStatsFiltered = computed(() => sectorStats.value.filter(s => (s.count || 0) >= 2))
+        // 区域 D：次日观察池
+        const watchPool = computed(() => review.value.watch_pool || [])
+        // 区域 B：连板梯队分布转数组（按板数降序）
+        const ladderArr = computed(() => {
+            const dist = (review.value.relay_env || {}).ladder_distribution || {}
+            return Object.entries(dist)
+                .map(([b, n]) => ({ b: Number(b), n }))
+                .sort((a, b) => b.b - a.b)
+        })
         const sectorLeaderSet = computed(() => {
             const set = new Set()
             for (const s of sectorStats.value) {
@@ -595,20 +938,58 @@ createApp({
             return sectorLeaderSet.value.has(String(code))
         }
 
-        async function loadData() {
-            const [revRes, insightRes, repRes, missRes] = await Promise.all([
+        async function loadDaily() {
+            const [revRes, insightRes] = await Promise.all([
                 fetch('/api/review').then(r => r.json()),
                 fetch('/api/market-insight').then(r => r.json()),
-                fetch('/api/monthly-report').then(r => r.json()).catch(() => ({})),
             ])
             review.value = revRes || {}
             insight.value = insightRes || {}
-            report.value = repRes || {}
         }
 
-        async function loadReport() {
-            const res = await fetch('/api/monthly-report').then(r => r.json())
-            report.value = res || {}
+        async function loadHistory() {
+            histLoading.value = true
+            try {
+                const params = []
+                if (histYear.value)  params.push('year='  + histYear.value)
+                if (histMonth.value) params.push('month=' + histMonth.value)
+                const url = '/api/screener-history' + (params.length ? '?' + params.join('&') : '')
+                const res = await fetch(url).then(r => r.json())
+                histRecords.value = res.records || []
+                histStats.value = res.stats || histStats.value
+                histPeriods.value = res.available_periods || []
+            } catch (e) {
+                console.error('加载选股记录失败:', e)
+            } finally {
+                histLoading.value = false
+                histLoaded.value = true
+            }
+        }
+
+        function onHistYearChange() {
+            // 切年：清空月（让月下拉的可选项重算）；空年=查看全部
+            // 不自动选月：用户若想锁定到某月，自己挑；想看年视图就保持月空
+            histMonth.value = ''
+            loadHistory()
+        }
+        function onHistMonthChange() {
+            loadHistory()
+        }
+
+        async function loadData() {
+            await Promise.all([loadDaily(), loadHistoryInitial()])
+        }
+
+        // 首次挂载：先无参拉一次拿到 available_periods，再默认选「最新年+月」
+        // 后续 loadHistory 不再越权改用户的选择
+        async function loadHistoryInitial() {
+            await loadHistory()
+            if (histPeriods.value.length && !histYear.value && !histMonth.value) {
+                const top = histPeriods.value[0]
+                histYear.value = top.year
+                histMonth.value = top.month
+                await loadHistory()
+            }
         }
 
         async function runReview() {
@@ -618,12 +999,19 @@ createApp({
 
         onMounted(loadData)
         return {
-            review, insight, report, activeTab,
+            review, insight, activeTab,
+            ladderOpen, sectorOpen,
+            sectorStatsFiltered, watchPool, ladderArr,
+            histRecords, histStats, histPeriods, histLoading, histLoaded,
+            histYear, histMonth, histAvailableYears, histMonthsForYear,
+            histGroupedRecords, histScopeLabel, histAllLink,
+            statRate, statDetail, rateClass, rateBarColor, dailyEnv,
+            onHistYearChange, onHistMonthChange, loadHistory,
             showFailed,
             boardGroups, todayCount, totalFailed,
             boardCls, failedColor,
             sectorStats, isSectorLeader,
-            runReview, loadReport,
+            runReview,
             waveClass, waveColor, capitalHighlights,
             ciTagClass, ciTagLabel, fmtPct, numClass,
         }

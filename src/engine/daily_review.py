@@ -56,23 +56,52 @@ class DailyReview:
     # 市场情绪小结
     market_summary: str = ""
 
+    # ========== 接力专项（针对2板以上接力策略）==========
+    # 区域 A：接力环境评分卡 + 一句话决策
+    # {
+    #   "indicators": [{label, today, target, score, raw_today}, ...5 项],
+    #   "total_score": 0..5,
+    #   "decision": "重仓"/"正常"/"试错"/"空仓",
+    #   "decision_color": "...",
+    #   "headline": "一句话决策建议 ..."
+    # }
+    scorecard: dict = field(default_factory=dict)
+    # 区域 B：资金接力情绪
+    # { space_board: {...}, prev_space_board_today: ±%, ladder_distribution: {2:N,3:N,...},
+    #   accelerating_count, decelerating_count, yesterday_zb_today_avg_pct }
+    relay_env: dict = field(default_factory=dict)
+    # 区域 C：晋级矩阵摘要
+    # [{label:"1进2", success, total, success_rate, fail_avg_pct}, ...]
+    promotion_summary: list = field(default_factory=list)
+
 
 _SPOT_CACHE = {"df": None, "ts": 0}
 
 
 def _get_spot_cached(max_age_sec: int = 600):
-    """daily_review 内部各子函数共享一份 sina spot 快照，避免重复拉取（~15s/次）"""
+    """daily_review 内部各子函数共享一份 spot 快照（走 fetcher 多源兜底）"""
     import time
     now = time.time()
-    if _SPOT_CACHE["df"] is None or (now - _SPOT_CACHE["ts"]) > max_age_sec:
+    if _SPOT_CACHE["df"] is not None and (now - _SPOT_CACHE["ts"]) <= max_age_sec:
+        return _SPOT_CACHE["df"]
+    df = None
+    try:
+        from src.data.fetcher import fetch_realtime_spot
+        df = fetch_realtime_spot()
+    except Exception as e:
+        print(f"[复盘] fetcher.fetch_realtime_spot 失败: {e}")
+    if df is None or df.empty or len(df) < 100:
+        # 降级：直接走新浪
         try:
             from src.data.sina_spot_api import fetch_a_share_list_sina
-            df = fetch_a_share_list_sina()
-            if df is not None and not df.empty:
-                _SPOT_CACHE["df"] = df
-                _SPOT_CACHE["ts"] = now
+            sina_df = fetch_a_share_list_sina()
+            if sina_df is not None and not sina_df.empty and (df is None or df.empty or len(sina_df) > len(df)):
+                df = sina_df
         except Exception as e:
-            print(f"[复盘] spot 缓存拉取失败: {e}")
+            print(f"[复盘] 新浪 spot 兜底失败: {e}")
+    if df is not None and not df.empty:
+        _SPOT_CACHE["df"] = df
+        _SPOT_CACHE["ts"] = now
     return _SPOT_CACHE["df"]
 
 
@@ -144,7 +173,15 @@ def run_daily_review() -> Optional[DailyReview]:
     # 兼容字段：扁平化失败列表
     review.failed_promotion_list = _get_failed_promotion_list(limit_up_data)
 
-    # 5. 生成次日观察池
+    # 4.7 接力专项数据（区域 B/C/A 顺序计算：B 依赖梯队、C 依赖矩阵、A 综合）
+    review.relay_env = _build_relay_env(review, review.prev_board_groups, lianban_data)
+    review.promotion_summary = _build_promotion_summary(review.prev_board_groups)
+    review.scorecard = _build_scorecard(
+        review.prev_board_groups, review.relay_env,
+        review.sector_zt_stats, review.limit_up_count,
+    )
+
+    # 5. 生成次日观察池（严格 3 条件）
     review.watch_pool = _generate_watch_pool(lianban_data, ranking_data, review)
 
     # 6. 市场情绪小结
@@ -308,6 +345,20 @@ def _build_prev_board_groups(today_limit_up: list[dict], lianban_data: list[dict
             pass
         return 0.0, 0.0
 
+    def _today_open_pct(code: str) -> float:
+        """今日开盘相对昨收的涨跌幅 — 用于"红盘晋级"判定（高开=主动晋级）"""
+        row = spot_map.get(code)
+        if row is None:
+            return 0.0
+        try:
+            op = float(row.get("open", 0) or 0)
+            pre = float(row.get("pre_close", 0) or 0)
+            if op > 0 and pre > 0:
+                return round((op / pre - 1) * 100, 2)
+        except (ValueError, TypeError):
+            pass
+        return 0.0
+
     # ---- 组装：晋级 vs 失败，按昨日板数分组 ----
     groups_by_prev: dict = {}
 
@@ -326,6 +377,7 @@ def _build_prev_board_groups(today_limit_up: list[dict], lianban_data: list[dict
                 "name": name,
                 "today_board": today_info.get("board_count", prev_b + 1),
                 "today_pct": today_info.get("change_pct", 0),
+                "today_open_pct": _today_open_pct(code),
                 "industry": ind,
                 "is_main_board": is_main,
                 "lbt": today_info.get("lbt", ""),
@@ -354,6 +406,7 @@ def _build_prev_board_groups(today_limit_up: list[dict], lianban_data: list[dict
             "name": info.get("name", ""),
             "today_board": 1,
             "today_pct": info.get("change_pct", 0),
+            "today_open_pct": _today_open_pct(code),
             "industry": industry_map.get(code, "-"),
             "is_main_board": _is_main(code),
             "lbt": info.get("lbt", ""),
@@ -612,8 +665,16 @@ def _generate_watch_pool(
     ranking: dict,
     review: DailyReview,
 ) -> list[dict]:
-    """生成次日观察池（最多3只主板2连板以上 · 流通市值<100亿）"""
-    # 筛选：主板、2连板以上
+    """次日观察池（针对2板以上接力 · 严格 3 条件 · 最多 3 只）
+
+    条件（必须全部满足）：
+    1. 所属板块今日集中度 ≥25%（板块涨停数 / 今日涨停总数）
+    2. 今日涨停时间在 14:00 之后（lbt >= 14:00:00）
+    3. 流通市值 30~150 亿（主板接力舒适区）
+
+    并要求：主板 + 连板数 ≥2（接力对象）
+    """
+    # 1) 主板 + 2连板以上
     main_board_lianban = [
         s for s in lianban
         if s.get("is_main_board") and s.get("board_count", 0) >= 2
@@ -621,7 +682,15 @@ def _generate_watch_pool(
     if not main_board_lianban:
         return []
 
-    # 给所有候选补齐 market_cap：先用 ranking 的字段，缺失再用腾讯接口批量拉
+    # 2) 板块集中度（按 today 数据）
+    today_total = review.limit_up_count or 0
+    sector_share: dict[str, float] = {}
+    for s in (review.sector_zt_stats or []):
+        ind = s.get("industry", "")
+        cnt = s.get("count", 0) or 0
+        sector_share[ind] = (cnt / today_total * 100) if today_total else 0
+
+    # 3) 补市值/收盘价（先 ranking，缺再腾讯）
     pool_by_code = {s["code"]: dict(s) for s in main_board_lianban}
     missing_mc = []
     for code, s in pool_by_code.items():
@@ -630,8 +699,7 @@ def _generate_watch_pool(
         if mc and mc > 0:
             s["_market_cap_yi"] = mc
             s["_close"] = r.get("close", 0)
-            s["_industry"] = r.get("industry", "未知")
-            s["_gain_10d"] = r.get("gain_10d", 0)
+            s["_industry"] = r.get("industry") or s.get("industry", "未知")
         else:
             missing_mc.append(code)
 
@@ -647,37 +715,61 @@ def _generate_watch_pool(
                         pool_by_code[code]["_market_cap_yi"] = float(row.get("market_cap_yi", 0) or 0)
                         pool_by_code[code]["_close"] = float(row.get("close", 0) or 0)
                         pool_by_code[code].setdefault("_industry", "未知")
-                        pool_by_code[code].setdefault("_gain_10d", 0)
         except Exception as e:
-            print(f"[复盘] 鱼塘市值补齐失败（保留有数据的候选）: {e}")
+            print(f"[复盘] 鱼塘市值补齐失败: {e}")
 
-    # 严格过滤：必须有市值 且 < 100亿
-    filtered = [
-        s for s in pool_by_code.values()
-        if s.get("_market_cap_yi", 0) > 0 and s["_market_cap_yi"] < 100
-    ]
+    # 4) 严格 3 条件过滤
+    qualified = []
+    for s in pool_by_code.values():
+        mc = s.get("_market_cap_yi", 0)
+        if not (30 <= mc <= 150):
+            continue
+        ind = s.get("_industry") or s.get("industry", "")
+        share = sector_share.get(ind, 0)
+        if share < 25:
+            continue
+        lbt = (s.get("lbt") or "").strip()
+        if not lbt or lbt < "14:00:00":
+            continue
+        qualified.append(s)
 
-    # 维持原排序：按连板数 desc + change_pct desc
-    filtered.sort(
-        key=lambda s: (-s.get("board_count", 0), -s.get("change_pct", 0))
+    # 5) 排序：板数 desc → 涨停时间 desc（越晚封板越强，符合接力逻辑）
+    qualified.sort(
+        key=lambda s: (-s.get("board_count", 0), -_lbt_to_sec(s.get("lbt", ""))),
     )
 
-    candidates = []
-    for s in filtered[:5]:
-        candidates.append(asdict(WatchCandidate(
+    out = []
+    for s in qualified[:3]:
+        ind = s.get("_industry") or s.get("industry", "未知")
+        out.append(asdict(WatchCandidate(
             code=s["code"],
             name=s["name"],
-            board_count=s["board_count"],
-            industry=s.get("_industry", "未知"),
+            board_count=s.get("board_count", 0),
+            industry=ind,
             close=s.get("_close", 0),
             market_cap_yi=s.get("_market_cap_yi", 0),
-            total_gain_pct=s.get("_gain_10d", 0),
-            reason=_generate_reason(s, review),
-            watch_points=_generate_watch_points(s, review),
+            total_gain_pct=0,
+            reason=(
+                f"{s.get('board_count')}连板·{ind}板块占今日涨停 "
+                f"{sector_share.get(ind, 0):.0f}%·{s.get('lbt','')} 封板"
+            ),
+            watch_points="竞价 4~7.5% 介入；竞价回落破开盘价不接；同板块跟风缩量则减仓",
             auction_range=_calc_auction_range(s.get("_close", 0)),
         )))
+    return out
 
-    return candidates[:3]
+
+def _lbt_to_sec(lbt: str) -> int:
+    """HH:MM:SS → 秒；空串/格式不对返回 0"""
+    try:
+        parts = lbt.strip().split(":")
+        if len(parts) >= 2:
+            h, m = int(parts[0]), int(parts[1])
+            s = int(parts[2]) if len(parts) >= 3 else 0
+            return h * 3600 + m * 60 + s
+    except (ValueError, AttributeError):
+        pass
+    return 0
 
 
 def _generate_reason(stock: dict, review: DailyReview) -> str:
@@ -754,6 +846,310 @@ def _generate_summary(review: DailyReview) -> str:
         parts.append("连板高度低，短线谨慎")
 
     return "。".join(parts) + "。"
+
+
+def _build_promotion_summary(prev_board_groups: list[dict]) -> list[dict]:
+    """晋级矩阵摘要（区域 C）：每一档 N→N+1 的成功率 + 失败票今日均价。"""
+    summary = []
+    for g in prev_board_groups:
+        pb = g.get("prev_board", 0)
+        if pb == 0:
+            continue  # 新进首板不算晋级
+        promoted = g.get("promoted") or []
+        failed = g.get("failed") or []
+        total = len(promoted) + len(failed)
+        if total == 0:
+            continue
+        rate = round(len(promoted) / total * 100, 1)
+        fail_avg = (
+            round(sum(float(s.get("today_pct", 0) or 0) for s in failed) / len(failed), 2)
+            if failed else 0.0
+        )
+        # 失败票均跌幅 < -3% 或 success_rate < 40 → warn
+        warn = (pb == 2 and rate < 40) or fail_avg < -3.0
+        summary.append({
+            "label": f"{pb}进{pb+1}",
+            "success": len(promoted),
+            "total": total,
+            "success_rate": rate,
+            "fail_avg_pct": fail_avg,
+            "warn": warn,
+        })
+    return summary
+
+
+def _build_relay_env(
+    review: DailyReview,
+    prev_board_groups: list[dict],
+    lianban_data: list[dict],
+) -> dict:
+    """资金接力情绪（区域 B）"""
+    # 1. 今日空间板（最高连板，多只取涨幅最高的）
+    space_board = None
+    if lianban_data:
+        top_b = max((s.get("board_count", 0) for s in lianban_data), default=0)
+        candidates = [s for s in lianban_data if s.get("board_count", 0) == top_b]
+        if candidates:
+            best = max(candidates, key=lambda s: s.get("change_pct", 0) or 0)
+            space_board = {
+                "code": best["code"], "name": best["name"],
+                "board_count": top_b, "change_pct": best.get("change_pct", 0),
+                "industry": best.get("industry", "-"),
+            }
+
+    # 2. 昨日空间板今日表现 — 从 review_history 取昨日 highest_board 那只
+    prev_space = None
+    try:
+        hist_file = DATA_DIR / "review_history.json"
+        if hist_file.exists():
+            history = json.loads(hist_file.read_text())
+            today = now_cn().strftime("%Y-%m-%d")
+            past = [h for h in history if h.get("date") and h["date"] != today]
+            if past:
+                yhist = sorted(past, key=lambda h: h["date"])[-1]
+                ylb = yhist.get("lianban_ladder") or []
+                ymax = yhist.get("highest_board", 0)
+                ytop = [s for s in ylb if s.get("board_count", 0) == ymax]
+                if ytop:
+                    ybest = max(ytop, key=lambda s: s.get("change_pct", 0) or 0)
+                    yc = str(ybest.get("code", ""))
+                    yn = ybest.get("name", "")
+                    # 1) spot 算今日涨跌（精确）
+                    today_pct = None
+                    today_zt = False
+                    try:
+                        spot = _get_spot_cached()
+                        if spot is not None and not spot.empty:
+                            row = spot[spot["code"].astype(str) == yc]
+                            if not row.empty:
+                                close = float(row.iloc[0].get("close", 0) or 0)
+                                pre = float(row.iloc[0].get("pre_close", 0) or 0)
+                                if close > 0 and pre > 0:
+                                    today_pct = round((close / pre - 1) * 100, 2)
+                                    is_main = not yc.startswith(("300", "301", "688", "8", "4"))
+                                    thr = 9.7 if is_main else 19.4
+                                    today_zt = today_pct >= thr
+                    except Exception:
+                        pass
+                    # 2) spot 拿不到 → 回退到 limit_up_cache 判断今日是否仍涨停
+                    if today_pct is None:
+                        try:
+                            cf = DATA_DIR / "limit_up_cache.json"
+                            if cf.exists():
+                                cache = json.loads(cf.read_text())
+                                today_str = now_cn().strftime("%Y%m%d")
+                                if today_str in cache:
+                                    today_codes_set = {str(r.get("code", "")) for r in cache[today_str]}
+                                    if yc in today_codes_set:
+                                        today_zt = True
+                                        today_pct = 9.99  # 占位（涨停）
+                        except Exception:
+                            pass
+                    prev_space = {
+                        "code": yc, "name": yn,
+                        "yesterday_board": ymax,
+                        "today_pct": today_pct,
+                        "today_held": today_zt,
+                    }
+    except Exception as e:
+        print(f"[复盘] 昨日空间板取数失败: {e}")
+
+    # 3. 连板梯队完整性（按板数分布）
+    ladder_dist = {}
+    for s in lianban_data:
+        bc = s.get("board_count", 1)
+        if bc >= 2:
+            ladder_dist[bc] = ladder_dist.get(bc, 0) + 1
+
+    # 4. 加速/减速 — 来自 latest_insight.json
+    acc, dec = 0, 0
+    try:
+        insight_file = DATA_DIR / "latest_insight.json"
+        if insight_file.exists():
+            ins = json.loads(insight_file.read_text())
+            acc = int(ins.get("accelerating_count", 0) or 0)
+            dec = int(ins.get("decelerating_count", 0) or 0)
+    except Exception:
+        pass
+
+    # 5. 昨日炸板今日均价 — 来自 latest_leader.yesterday_zb_today_auction.avg_change_pct
+    zb_avg = None
+    try:
+        leader_file = DATA_DIR / "latest_leader.json"
+        if leader_file.exists():
+            ld = json.loads(leader_file.read_text())
+            zb = ld.get("yesterday_zb_today_auction") or {}
+            v = zb.get("avg_change_pct")
+            if v is not None:
+                zb_avg = round(float(v), 2)
+    except Exception:
+        pass
+
+    return {
+        "space_board": space_board,
+        "prev_space_board_today": prev_space,
+        "ladder_distribution": ladder_dist,
+        "accelerating_count": acc,
+        "decelerating_count": dec,
+        "yesterday_zb_today_avg_pct": zb_avg,
+    }
+
+
+def _build_scorecard(
+    prev_board_groups: list[dict],
+    relay_env: dict,
+    sector_zt_stats: list[dict],
+    limit_up_count: int,
+) -> dict:
+    """接力环境评分卡（区域 A）"""
+    # === 指标 1: 1进2 成功率 ≥30% ===
+    g1 = next((g for g in prev_board_groups if g.get("prev_board") == 1), None)
+    if g1:
+        b1_promoted = len(g1.get("promoted") or [])
+        b1_total = b1_promoted + len(g1.get("failed") or [])
+        b1_rate = round(b1_promoted / b1_total * 100, 1) if b1_total else 0.0
+    else:
+        b1_promoted, b1_total, b1_rate = 0, 0, 0.0
+    score_1 = 1 if b1_rate >= 30 else 0
+
+    # === 指标 2: 2进3 红盘晋级（today_open_pct >= 0）≥3 只 ===
+    g2 = next((g for g in prev_board_groups if g.get("prev_board") == 2), None)
+    if g2:
+        promoted2 = g2.get("promoted") or []
+        red_count = sum(
+            1 for s in promoted2
+            if (s.get("today_open_pct") is not None and s.get("today_open_pct") >= 0)
+        )
+        b2_total = len(promoted2) + len(g2.get("failed") or [])
+        b2_promoted = len(promoted2)
+    else:
+        red_count, b2_total, b2_promoted = 0, 0, 0
+    score_2 = 1 if red_count >= 3 else 0
+
+    # === 指标 3: 板块集中度（前3板块涨停数占比）≥50% ===
+    if sector_zt_stats and limit_up_count > 0:
+        top3_count = sum(s.get("count", 0) for s in sector_zt_stats[:3])
+        sec_concentration = round(top3_count / limit_up_count * 100, 1)
+    else:
+        sec_concentration = 0.0
+    score_3 = 1 if sec_concentration >= 50 else 0
+
+    # === 指标 4: 空间板未断板 ===
+    prev_space = relay_env.get("prev_space_board_today") or {}
+    space_held = bool(prev_space.get("today_held"))
+    score_4 = 1 if space_held else 0
+    space_status_text = "未断板" if space_held else ("断板" if prev_space else "无昨日数据")
+
+    # === 指标 5: 昨日连板指数今日涨跌幅 >0% ===
+    # 昨日 ≥2 连板今日表现：取 prev_board_groups 中 prev_board >= 2 的 promoted+failed 的 today_pct 均值
+    pcts = []
+    for g in prev_board_groups:
+        if g.get("prev_board", 0) >= 2:
+            for s in (g.get("promoted") or []):
+                pcts.append(float(s.get("today_pct", 0) or 0))
+            for s in (g.get("failed") or []):
+                pcts.append(float(s.get("today_pct", 0) or 0))
+    lianban_index_pct = round(sum(pcts) / len(pcts), 2) if pcts else 0.0
+    score_5 = 1 if lianban_index_pct > 0 else 0
+
+    indicators = [
+        {"label": "1进2成功率",   "today": f"{b1_rate}%",          "target": "≥30%", "score": score_1, "raw": b1_rate, "detail": f"{b1_promoted}/{b1_total}"},
+        {"label": "2进3红盘晋级", "today": f"{red_count}/{b2_promoted}", "target": "≥3只", "score": score_2, "raw": red_count, "detail": f"晋级{b2_promoted}只"},
+        {"label": "板块集中度",   "today": f"{sec_concentration}%",     "target": "≥50%", "score": score_3, "raw": sec_concentration, "detail": "前3板块涨停占比"},
+        {"label": "空间板",       "today": space_status_text,           "target": "未断板", "score": score_4, "raw": int(space_held), "detail": (f"昨{prev_space.get('yesterday_board')}板{prev_space.get('name','')}" if prev_space else "—")},
+        {"label": "昨日连板指数", "today": f"{lianban_index_pct:+.2f}%",  "target": ">0%", "score": score_5, "raw": lianban_index_pct, "detail": f"昨≥2板共{len(pcts)}只今日均值"},
+    ]
+    total_score = sum(ind["score"] for ind in indicators)
+    if total_score >= 5:
+        decision, color = "重仓", "#ef4444"   # 红：满血
+    elif total_score == 4:
+        decision, color = "正常", "#10b981"   # 绿：可做
+    elif total_score == 3:
+        decision, color = "试错", "#fbbf24"   # 黄：浅尝
+    else:
+        decision, color = "空仓", "#6b7280"   # 灰：撤退
+
+    headline = _build_decision_headline(
+        total_score, decision, indicators, prev_board_groups,
+        sec_concentration=sec_concentration,
+    )
+
+    return {
+        "indicators": indicators,
+        "total_score": total_score,
+        "decision": decision,
+        "decision_color": color,
+        "headline": headline,
+    }
+
+
+def _build_decision_headline(
+    total: int, decision: str, indicators: list[dict],
+    prev_board_groups: list[dict], sec_concentration: float,
+) -> str:
+    """生成顶部一句话决策建议（按用户给的模板）"""
+    # 找最差项（score=0 中 raw 最差的）
+    zeros = [i for i in indicators if i["score"] == 0]
+    worst_label = zeros[0]["label"] if zeros else "无明显短板"
+    worst_today = zeros[0]["today"] if zeros else ""
+
+    # 中位股断层：3板及以上 ≤ 1 只
+    mid_count = 0
+    for g in prev_board_groups:
+        if g.get("prev_board", 0) == 0:
+            continue
+        for s in (g.get("promoted") or []):
+            if s.get("today_board", 0) >= 3:
+                mid_count += 1
+    mid_break = mid_count <= 1
+
+    # 2进3 红盘晋级数 / 总晋级
+    g2 = next((g for g in prev_board_groups if g.get("prev_board") == 2), None)
+    promoted2 = (g2 or {}).get("promoted") or []
+    g2_total = len(promoted2)
+    g2_red = sum(1 for s in promoted2 if (s.get("today_open_pct") or 0) >= 0)
+    g2_green = g2_total - g2_red
+
+    # 1进2 成功率
+    b1_ind = next((i for i in indicators if i["label"] == "1进2成功率"), {})
+    b1_rate_str = b1_ind.get("today", "")
+
+    if total <= 2:
+        if mid_break:
+            return (
+                f"空仓。最大风险：中位股断层+无主线。今日 2进3 晋级 {g2_total} 只"
+                f"但红盘开仅 {g2_red} 只（绿盘开 {g2_green} 只），"
+                f"被动晋级为主，次日大概率补跌。"
+                f"除非明日竞价板块集中度>40% 且 1进2 成功率>30%，否则不开仓。"
+            )
+        return (
+            f"空仓。最大风险：{worst_label}（{worst_today}）。"
+            f"今日 1进2 仅 {b1_rate_str}、板块集中度 {sec_concentration}%，"
+            f"接力生态恶化。除非明日板块集中度>40% 且空间板未断板，否则不开仓。"
+        )
+    if total == 3:
+        space_ok = next((i for i in indicators if i["label"] == "空间板"), {}).get("score", 0) == 1
+        if space_ok:
+            return (
+                f"试错。最大风险：{worst_label}（{worst_today}）。"
+                f"空间板未断但其他维度偏弱，仅做最强主线方向、仓位 ≤20%。"
+            )
+        return (
+            f"试错。最大风险：{worst_label}（{worst_today}）。"
+            f"接力生态半生不熟，仓位严格控制在 1/4 以下，破信号位坚决出。"
+        )
+    if total == 4:
+        return (
+            f"正常出击。主线相对清晰（板块集中度 {sec_concentration}%），晋级率健康。"
+            f"重点做 2进3 / 3进4 换手板。唯一风险：{worst_label}（{worst_today}），"
+            f"一旦恶化立即收手。"
+        )
+    # total == 5
+    return (
+        f"重仓出击。接力生态满血（板块集中度 {sec_concentration}%、1进2 {b1_rate_str}）。"
+        f"重点做 2进3 / 3进4 / 4进5 换手板，仓位可上 70%。"
+        f"唯一风险：空间板一旦断板立即减仓。"
+    )
 
 
 def _save_review(review: DailyReview):

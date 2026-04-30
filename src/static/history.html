@@ -42,9 +42,10 @@
         .stat-card .label { font-size: 13px; color: #8892a8; margin-bottom: 8px; }
         .stat-card .rate { font-size: 32px; font-weight: 700; }
         .stat-card .detail { font-size: 12px; color: #6b7280; margin-top: 4px; }
-        .rate-high { color: #10b981; }
+        /* 中国市场习惯：涨=红=好，跌=绿=差。胜率高→红，胜率低→绿 */
+        .rate-high { color: #ef4444; }
         .rate-mid { color: #fbbf24; }
-        .rate-low { color: #ef4444; }
+        .rate-low { color: #10b981; }
 
         /* 记录表 */
         .card {
@@ -75,6 +76,28 @@
             background: #0d1220; padding: 6px 12px; font-size: 12px; color: #60a5fa;
             font-weight: 600; border-left: 3px solid #3b82f6;
         }
+
+        /* 日期筛选 + 分页器 */
+        .date-input {
+            background:#0d1220; color:#e0e6ed;
+            border:1px solid #2a3050; border-radius:4px;
+            padding:3px 6px; font-size:12px;
+            font-family: inherit;
+            color-scheme: dark;
+        }
+        .btn-mini {
+            background:#1a2040; color:#a0aec0;
+            border:1px solid #3a4568; border-radius:4px;
+            padding:3px 10px; font-size:12px; cursor:pointer;
+        }
+        .btn-mini:hover:not(:disabled) { border-color:#60a5fa; color:#60a5fa; }
+        .btn-mini:disabled { opacity:0.4; cursor:not-allowed; }
+        .pager {
+            display:flex; align-items:center; gap:8px;
+            justify-content:center; padding:14px 0 4px; margin-top:10px;
+            border-top:1px dashed #1e2a45;
+        }
+        .pager-info { font-size:12px; color:#8892a8; padding:0 6px; }
 
         @media (max-width: 768px) {
             .stats-row { grid-template-columns: repeat(2, 1fr); }
@@ -134,7 +157,7 @@
                     <div v-for="(s, label) in stats.by_board" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
                         <span style="width:50px;color:#a0aec0;">{{ label }}</span>
                         <div style="flex:1;height:16px;background:#1a2040;border-radius:4px;overflow:hidden;">
-                            <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: s.win_rate >= 60 ? '#10b981' : s.win_rate >= 40 ? '#fbbf24' : '#ef4444', display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
+                            <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: rateBarColor(s.win_rate), display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
                                 {{ s.win_rate }}%
                             </div>
                         </div>
@@ -147,7 +170,20 @@
                     <div v-for="(s, label) in stats.by_emotion" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
                         <span style="width:100px;color:#a0aec0;font-size:11px;">{{ label }}</span>
                         <div style="flex:1;height:16px;background:#1a2040;border-radius:4px;overflow:hidden;">
-                            <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: s.win_rate >= 60 ? '#10b981' : s.win_rate >= 40 ? '#fbbf24' : '#ef4444', display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
+                            <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: rateBarColor(s.win_rate), display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
+                                {{ s.win_rate }}%
+                            </div>
+                        </div>
+                        <span style="width:40px;color:#6b7280;font-size:11px;">{{ s.wins }}/{{ s.trades }}</span>
+                    </div>
+                </div>
+                <!-- 按是否周期股 -->
+                <div style="flex:1;min-width:200px;" v-if="stats.by_cycle_stock && Object.keys(stats.by_cycle_stock).length">
+                    <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">按是否周期股</div>
+                    <div v-for="(s, label) in stats.by_cycle_stock" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
+                        <span style="width:70px;color:#a0aec0;">{{ label }}</span>
+                        <div style="flex:1;height:16px;background:#1a2040;border-radius:4px;overflow:hidden;">
+                            <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: rateBarColor(s.win_rate), display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
                                 {{ s.win_rate }}%
                             </div>
                         </div>
@@ -164,26 +200,62 @@
                     </div>
                 </div>
             </div>
+            <!-- 开仓指导（资深龙头选手视角） -->
+            <div v-if="stats.suggestion" style="margin-top:14px;padding:14px 16px;background:#0d1220;border-left:4px solid #fbbf24;border-radius:6px;">
+                <div style="font-size:11px;color:#fbbf24;margin-bottom:8px;font-weight:600;letter-spacing:0.5px;">📌 开仓指导 · 龙头视角</div>
+                <div v-if="typeof stats.suggestion === 'string'" style="font-size:13px;color:#e0e6ed;line-height:1.6;">{{ stats.suggestion }}</div>
+                <template v-else>
+                    <div v-if="stats.suggestion.headline" style="font-size:14px;color:#e0e6ed;line-height:1.5;font-weight:600;margin-bottom:8px;">
+                        {{ stats.suggestion.headline }}
+                    </div>
+                    <div v-if="stats.suggestion.rules && stats.suggestion.rules.length" style="margin-bottom:6px;">
+                        <div style="font-size:11px;color:#34d399;font-weight:600;margin-bottom:3px;">✓ 执行规则</div>
+                        <div v-for="r in stats.suggestion.rules" :key="r"
+                             style="font-size:12px;color:#c9d1d9;line-height:1.6;padding:2px 0;">• {{ r }}</div>
+                    </div>
+                    <div v-if="stats.suggestion.risks && stats.suggestion.risks.length" style="margin-bottom:6px;">
+                        <div style="font-size:11px;color:#ef4444;font-weight:600;margin-bottom:3px;">⚠ 风险/规避</div>
+                        <div v-for="r in stats.suggestion.risks" :key="r"
+                             style="font-size:12px;color:#c9d1d9;line-height:1.6;padding:2px 0;">• {{ r }}</div>
+                    </div>
+                    <div v-if="stats.suggestion.notes && stats.suggestion.notes.length"
+                         style="margin-top:8px;padding-top:6px;border-top:1px dashed #2a3050;">
+                        <div v-for="r in stats.suggestion.notes" :key="r"
+                             style="font-size:11px;color:#8892a8;line-height:1.5;padding:1px 0;">{{ r }}</div>
+                    </div>
+                </template>
+            </div>
         </div>
 
         <!-- 记录表 -->
         <div class="card">
-            <div class="card-title">历史选股记录（{{ records.length }} 条）</div>
+            <div class="card-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;">
+                <span>历史选股记录（共 {{ filteredRecords.length }} 条<span v-if="filteredRecords.length !== records.length"> · 全量 {{ records.length }}</span>）</span>
+                <div style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px;color:#a0aec0;flex-wrap:wrap;">
+                    <span>起始</span>
+                    <input type="date" v-model="startDate" @change="onFilterChange" :max="endDate || undefined" class="date-input">
+                    <span>结束</span>
+                    <input type="date" v-model="endDate" @change="onFilterChange" :min="startDate || undefined" class="date-input">
+                    <button class="btn-mini" @click="clearFilter" v-if="startDate || endDate">清除</button>
+                </div>
+            </div>
             <div style="max-height:600px;overflow-y:auto">
-                <table v-if="records.length">
+                <table v-if="pagedRecords.length">
                     <thead>
                         <tr>
                             <th>日期</th>
                             <th>代码</th>
                             <th>名称</th>
                             <th>连板</th>
-                            <th>10日涨幅</th>
                             <th>开盘价</th>
                             <th>竞价涨幅</th>
                             <th>收盘价</th>
                             <th>收盘涨幅</th>
                             <th>次日竞价</th>
                             <th>次日收盘涨幅</th>
+                            <th>10日涨幅</th>
+                            <th>周期股</th>
+                            <th>周期计数</th>
                             <th>胜负</th>
                             <th>备注</th>
                         </tr>
@@ -191,7 +263,7 @@
                     <tbody>
                         <template v-for="(group, date) in groupedRecords" :key="date">
                             <tr>
-                                <td colspan="13" class="date-group">
+                                <td colspan="15" class="date-group">
                                     {{ date }}（{{ group.length }} 只）
                                     <span v-if="dailyEnv(group)" style="margin-left:16px;font-weight:400;font-size:12px;color:#a0aec0;">
                                         <template v-if="dailyEnv(group).market_limit_down !== null && dailyEnv(group).market_limit_down !== undefined">
@@ -214,15 +286,24 @@
                                 <td>{{ r.code }}</td>
                                 <td>{{ r.name }}</td>
                                 <td>{{ r.continuous_limit_up }}板</td>
-                                <td :class="(r.gain_10d||0) >= 0 ? 'gain-pos' : 'gain-neg'">
-                                    {{ r.gain_10d ? (r.gain_10d > 0 ? '+' : '') + r.gain_10d + '%' : '-' }}
-                                </td>
                                 <td>{{ r.open_price || '-' }}</td>
                                 <td :class="numClass(r.auction_gain)">{{ fmtPct(r.auction_gain) }}</td>
                                 <td>{{ r.close_price || '-' }}</td>
                                 <td :class="numClass(r.day_change)">{{ fmtPct(r.day_change) }}</td>
                                 <td :class="numClass(r.next_day_auction_gain)">{{ fmtPct(r.next_day_auction_gain) }}</td>
                                 <td :class="numClass(r.next_day_close_gain)">{{ fmtPct(r.next_day_close_gain) }}</td>
+                                <td :class="(r.gain_10d||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                                    {{ r.gain_10d ? (r.gain_10d > 0 ? '+' : '') + r.gain_10d + '%' : '-' }}
+                                </td>
+                                <td>
+                                    <span v-if="r.is_cycle_stock === true" class="tag" style="background:#3b0a0a;color:#ef4444;">是</span>
+                                    <span v-else-if="r.is_cycle_stock === false" class="tag" style="background:#0a2a1a;color:#10b981;">否</span>
+                                    <span v-else class="tag tag-pending">-</span>
+                                </td>
+                                <td>
+                                    <span v-if="r.top30_streak" style="color:#fbbf24;font-weight:600;">{{ r.top30_streak }}天</span>
+                                    <span v-else style="color:#4b5563;">-</span>
+                                </td>
                                 <td>
                                     <span v-if="r.is_win === true" class="tag tag-win">盈</span>
                                     <span v-else-if="r.is_win === false" class="tag tag-lose">亏</span>
@@ -237,7 +318,15 @@
                         </template>
                     </tbody>
                 </table>
-                <div v-else class="empty-state">暂无选股记录</div>
+                <div v-else class="empty-state">{{ records.length ? '当前筛选无匹配记录' : '暂无选股记录' }}</div>
+            </div>
+            <!-- 分页器 -->
+            <div v-if="totalPages > 1" class="pager">
+                <button class="btn-mini" :disabled="page <= 1" @click="page = 1">«</button>
+                <button class="btn-mini" :disabled="page <= 1" @click="page--">‹</button>
+                <span class="pager-info">第 {{ page }} / {{ totalPages }} 页 · 每页 {{ pageSize }} 条</span>
+                <button class="btn-mini" :disabled="page >= totalPages" @click="page++">›</button>
+                <button class="btn-mini" :disabled="page >= totalPages" @click="page = totalPages">»</button>
             </div>
         </div>
     </div>
@@ -256,9 +345,61 @@ createApp({
             yearly: { trades: 0, wins: 0, win_rate: 0 },
         })
 
+        // 日期区间筛选 + 分页
+        const startDate = ref('')   // YYYY-MM-DD
+        const endDate = ref('')
+        const page = ref(1)
+        const pageSize = 20
+
+        // URL 参数预填筛选区间（review 页"查看所有"按钮带 year/month 跳过来）
+        function ymToRange(year, month) {
+            const y = parseInt(year, 10)
+            if (!y) return null
+            if (month) {
+                const m = parseInt(month, 10)
+                const start = `${y}-${String(m).padStart(2, '0')}-01`
+                const lastDay = new Date(y, m, 0).getDate()  // m 不-1：传 m 则得到 m 月最后一天
+                const end = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+                return { start, end }
+            }
+            return { start: `${y}-01-01`, end: `${y}-12-31` }
+        }
+        function applyUrlFilter() {
+            try {
+                const u = new URL(window.location.href)
+                const y = u.searchParams.get('year')
+                const m = u.searchParams.get('month')
+                const s = u.searchParams.get('start')
+                const e = u.searchParams.get('end')
+                if (s) startDate.value = s
+                if (e) endDate.value = e
+                if (!s && !e && y) {
+                    const r = ymToRange(y, m)
+                    if (r) { startDate.value = r.start; endDate.value = r.end }
+                }
+            } catch (_) {}
+        }
+
+        // records 已按日期降序；筛选只看 date 字符串前缀比较
+        const filteredRecords = computed(() => {
+            const all = records.value
+            if (!startDate.value && !endDate.value) return all
+            return all.filter(r => {
+                const d = String(r.date || '')
+                if (startDate.value && d < startDate.value) return false
+                if (endDate.value && d > endDate.value) return false
+                return true
+            })
+        })
+        const totalPages = computed(() => Math.max(1, Math.ceil(filteredRecords.value.length / pageSize)))
+        const pagedRecords = computed(() => {
+            const start = (page.value - 1) * pageSize
+            return filteredRecords.value.slice(start, start + pageSize)
+        })
+        // 分页后的当页 records 再做日期分组（保持与原视图一致）
         const groupedRecords = computed(() => {
             const groups = {}
-            for (const r of records.value) {
+            for (const r of pagedRecords.value) {
                 const d = r.date || 'unknown'
                 if (!groups[d]) groups[d] = []
                 groups[d].push(r)
@@ -266,11 +407,24 @@ createApp({
             return groups
         })
 
+        function onFilterChange() { page.value = 1 }
+        function clearFilter() {
+            startDate.value = ''
+            endDate.value = ''
+            page.value = 1
+        }
+
         function rateClass(s) {
             if (!s || s.trades === 0) return ''
-            if (s.win_rate >= 60) return 'rate-high'
-            if (s.win_rate >= 40) return 'rate-mid'
-            return 'rate-low'
+            if (s.win_rate >= 60) return 'rate-high'   // 高胜率→红
+            if (s.win_rate >= 40) return 'rate-mid'    // 中等→黄
+            return 'rate-low'                           // 低胜率→绿
+        }
+        // 进度条颜色（与 rateClass 同向：高胜率红，低胜率绿）
+        function rateBarColor(wr) {
+            if (wr >= 60) return '#ef4444'
+            if (wr >= 40) return '#fbbf24'
+            return '#10b981'
         }
 
         function numClass(v) {
@@ -303,14 +457,24 @@ createApp({
                 const res = await fetch('/api/screener-history').then(r => r.json())
                 records.value = res.records || []
                 stats.value = res.stats || stats.value
+                page.value = 1
             } catch (e) {
                 console.error('加载选股记录失败:', e)
             }
         }
 
-        onMounted(loadData)
+        onMounted(() => {
+            applyUrlFilter()
+            loadData()
+        })
 
-        return { records, stats, groupedRecords, rateClass, numClass, fmtPct, dailyEnv }
+        return {
+            records, stats, groupedRecords,
+            startDate, endDate, page, pageSize,
+            filteredRecords, pagedRecords, totalPages,
+            onFilterChange, clearFilter,
+            rateClass, rateBarColor, numClass, fmtPct, dailyEnv,
+        }
     }
 }).mount('#app')
 </script>

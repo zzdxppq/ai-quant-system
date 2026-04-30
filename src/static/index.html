@@ -618,8 +618,8 @@
                     <th>市值</th>
                     <th>板块</th>
                     <th>连板</th>
-                    <th>竞价形态</th>
-                    <th>10日%</th>
+                    <th>10日涨幅</th>
+                    <th>周期股</th>
                     <th>决策</th>
                 </tr></thead>
                 <tbody>
@@ -638,37 +638,12 @@
                         <td>{{ hit.market_cap }}亿</td>
                         <td style="font-size:12px;color:#a0aec0;">{{ hitLive(hit.code).industry || industryOf(hit.code) || '-' }}</td>
                         <td><b>{{ hit.continuous_limit_up }}板</b></td>
-                        <td>
-                            <!-- mini 竞价形态图：点击放大 -->
-                            <svg class="auction-mini" width="140" height="40" viewBox="0 0 140 40"
-                                 style="cursor:pointer;"
-                                 @click="showAuction(hit.code, hit.name)">
-                                <rect x="0" y="22" width="140" height="14" fill="#0a0e1a"/>
-                                <rect x="0" y="0" width="140" height="22" fill="#0a0e1a"/>
-                                <template v-if="miniTicksOf(hit.code).length">
-                                    <line x1="0" :y1="miniPreCloseY(hit)" x2="140" :y2="miniPreCloseY(hit)"
-                                          stroke="#4b5563" stroke-dasharray="2,2"/>
-                                    <polyline :points="miniPricePath(hit)"
-                                              fill="none" stroke="#60a5fa" stroke-width="1.2"/>
-                                    <rect v-for="(b, idx) in miniVolBars(hit)" :key="idx"
-                                          :x="b.x" :y="b.y" :width="b.w" :height="b.h" :fill="b.color"/>
-                                    <circle v-if="miniOpenPoint(hit)"
-                                            :cx="miniOpenPoint(hit).x" :cy="miniOpenPoint(hit).y"
-                                            r="2.5" fill="#fbbf24"/>
-                                </template>
-                                <template v-else>
-                                    <line x1="70" y1="0" x2="70" y2="22" stroke="#4b5563" stroke-dasharray="2,2"/>
-                                    <line :x1="auctionX(hit.auction_gain)*140/120" y1="2"
-                                          :x2="auctionX(hit.auction_gain)*140/120" y2="20"
-                                          :stroke="auctionColor(hit.auction_gain)" stroke-width="1.2"/>
-                                    <circle :cx="auctionX(hit.auction_gain)*140/120" cy="11" r="3"
-                                            :fill="auctionColor(hit.auction_gain)"/>
-                                </template>
-                                <title>点击查看竞价形态详情 · 竞价{{ hit.auction_gain }}% · 量比{{ hit.auction_volume_ratio || '-' }}</title>
-                            </svg>
-                        </td>
                         <td :class="(hitLive(hit.code).gain_10d ?? hit.gain_10d ?? 0) >= 0 ? 'gain-pos' : 'gain-neg'">
                             <b>{{ fmtPct(hitLive(hit.code).gain_10d ?? hit.gain_10d) }}</b>
+                        </td>
+                        <td>
+                            <span v-if="isCycleStock(hit.code)" class="tag tag-rep" style="background:#3b0a0a;color:#ef4444;padding:1px 6px;border-radius:4px;font-size:11px;">是</span>
+                            <span v-else class="tag" style="background:#0a2a1a;color:#10b981;padding:1px 6px;border-radius:4px;font-size:11px;">否</span>
                         </td>
                         <td>
                             <div class="decision-cell" :class="dailyAdvice.cls" style="padding:4px 8px;border-radius:6px;">
@@ -1503,6 +1478,10 @@ createApp({
             const r = (ranking.value || []).find(x => String(x.code) === String(code))
             return r?.industry || '-'
         }
+        // 周期股判定：在最新 TOP30 涨幅榜内 = 周期股（与选股记录的 is_cycle_stock 同源）
+        function isCycleStock(code) {
+            return (ranking.value || []).some(x => String(x.code) === String(code))
+        }
         function signalOf(code) {
             return (signals.value || []).find(s => String(s.code) === String(code)) || {}
         }
@@ -1882,7 +1861,7 @@ createApp({
             auctionChart,
             miniTicksOf, miniPreCloseY, miniPricePath, miniVolBars, miniOpenPoint,
             today, phaseClass, phaseColor, progressPct, progressClass,
-            industryOf, signalOf, scoreOf, decisionLevelClass, decisionIcon,
+            industryOf, isCycleStock, signalOf, scoreOf, decisionLevelClass, decisionIcon,
             leaderClass, leaderIcon, leaderBadgeClass,
             getLeaderClass, getLeaderIcon, getLeaderBadgeClass,
             sentimentClass, sentimentIcon, marketClass, marketIcon,
