@@ -1258,16 +1258,16 @@ createApp({
             const hasCycleMatch = (screenerHits.value || []).some(h => h.matched_cycle)
             let basePosition = consecutiveGood ? 4 : 3
             let posNote = consecutiveGood ? '连续情绪良好' : '标准仓位'
-            if (hasCycleMatch) {
-                basePosition = Math.min(basePosition + 0.5, 4.5)
-                posNote += ' + 周期股加仓'
+            if (!hasCycleMatch) {
+                basePosition = Math.max(basePosition - 1, 2)
+                posNote += '，非周期股降1层'
             }
 
             return {
                 cls: 'advice-go',
                 text: '✅ 可参与',
                 suggestedPosition: `${basePosition}层（${posNote}）`,
-                reason: (consecutiveGood ? '连续2日情绪良好。' : '') + (hasCycleMatch ? '选股标的匹配周期代表股，+10%仓位。' : '')
+                reason: (consecutiveGood ? '连续2日情绪良好。' : '') + (!hasCycleMatch ? '选股标的未匹配周期代表股，降1层仓位。' : '')
             }
         })
 
