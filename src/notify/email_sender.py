@@ -270,13 +270,44 @@ def _build_html(
 
     # === 选股表（精简列：代码/名称/价格/竞价%/市值/板块/连板/10日%/决策） ===
     if hits:
-        # 板块查表（来自 ranking_data）
+        # 板块查表（ranking_data + industry_cache 兜底）
         industry_map = {}
+        try:
+            ic = DATA_DIR / "industry_cache.json"
+            if ic.exists():
+                industry_map = json.loads(ic.read_text())
+        except Exception:
+            pass
         if ranking_data:
             for r in (ranking_data.get("ranking") or []):
                 code = str(r.get("code", ""))
                 if code and r.get("industry"):
                     industry_map[code] = r["industry"]
+
+        # 10日涨幅兜底（不在排行中的标的用K线计算）
+        gain_10d_map = {}
+        if ranking_data:
+            for r in (ranking_data.get("ranking") or []):
+                code = str(r.get("code", ""))
+                if code:
+                    gain_10d_map[code] = r.get("gain_10d")
+        hit_codes_missing_10d = [
+            str(h.get("code", "")) for h in hits
+            if str(h.get("code", "")) not in gain_10d_map and not h.get("gain_10d")
+        ]
+        if hit_codes_missing_10d:
+            try:
+                from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
+                for c in hit_codes_missing_10d:
+                    df = fetch_kline(c, SCALE_DAILY, datalen=12)
+                    if df is not None and len(df) >= 2:
+                        close_now = float(df.iloc[-1]["close"])
+                        idx = max(0, len(df) - 11)
+                        base = float(df.iloc[idx]["close"])
+                        if base > 0:
+                            gain_10d_map[c] = round((close_now / base - 1) * 100, 2)
+            except Exception:
+                pass
 
         signal_map = {str(s.get("code", "")): s for s in (signals or [])}
 
@@ -298,7 +329,7 @@ def _build_html(
                 f'</div>'
             ) if sig else '<span style="color:#6b7280;">—</span>'
 
-            gain_10d = h.get("gain_10d")
+            gain_10d = h.get("gain_10d") or gain_10d_map.get(code)
             gain_10d_html = '—' if gain_10d is None else (
                 f'<b style="color:{"#ef4444" if gain_10d >= 0 else "#10b981"};">'
                 f'{("+" if gain_10d > 0 else "")}{gain_10d}%</b>'

@@ -10,6 +10,7 @@
   总分 + 仓位建议（满仓/半仓/不开仓） + 止损位 + 否决项
 """
 import json
+from collections import Counter
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 
