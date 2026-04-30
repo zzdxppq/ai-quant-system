@@ -21,31 +21,38 @@ static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
+# 禁缓存响应头：避免浏览器缓存旧版 HTML 导致前端逻辑过期
+_NOCACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
+def _serve_html(filename: str, fallback: str) -> HTMLResponse:
+    """统一读取静态 HTML 文件并附加禁缓存头"""
+    html_path = static_dir / filename
+    if html_path.exists():
+        return HTMLResponse(html_path.read_text(encoding="utf-8"), headers=_NOCACHE_HEADERS)
+    return HTMLResponse(fallback, headers=_NOCACHE_HEADERS)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     """看板主页"""
-    html_path = static_dir / "index.html"
-    if html_path.exists():
-        return html_path.read_text(encoding="utf-8")
-    return "<h1>AI量化���期看板</h1>"
+    return _serve_html("index.html", "<h1>AI量化周期看板</h1>")
 
 
 @app.get("/history", response_class=HTMLResponse)
 async def history_page():
     """选股记录页"""
-    html_path = static_dir / "history.html"
-    if html_path.exists():
-        return html_path.read_text(encoding="utf-8")
-    return "<h1>AI量化周期看板</h1><p>前端文件未找到</p>"
+    return _serve_html("history.html", "<h1>AI量化周期看板</h1><p>前端文件未找到</p>")
 
 
 @app.get("/ranking", response_class=HTMLResponse)
 async def ranking_page():
     """10日涨幅榜独立页"""
-    html_path = static_dir / "ranking.html"
-    if html_path.exists():
-        return html_path.read_text(encoding="utf-8")
-    return "<h1>AI量化周期看板</h1><p>前端文件未找到</p>"
+    return _serve_html("ranking.html", "<h1>AI量化周期看板</h1><p>前端文件未找到</p>")
 
 
 @app.get("/api/cycle")
@@ -241,10 +248,7 @@ async def get_deviation():
 @app.get("/review", response_class=HTMLResponse)
 async def review_page():
     """复盘页面"""
-    html_path = static_dir / "review.html"
-    if html_path.exists():
-        return html_path.read_text(encoding="utf-8")
-    return "<h1>复盘</h1>"
+    return _serve_html("review.html", "<h1>复盘</h1>")
 
 
 @app.get("/api/review")

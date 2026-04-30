@@ -958,8 +958,13 @@ createApp({
                 histRecords.value = res.records || []
                 histStats.value = res.stats || histStats.value
                 histPeriods.value = res.available_periods || []
+                console.debug('[月度复盘] loadHistory 完成', {
+                    url, records: histRecords.value.length,
+                    periods: histPeriods.value.length,
+                    year: histYear.value, month: histMonth.value,
+                })
             } catch (e) {
-                console.error('加载选股记录失败:', e)
+                console.error('[月度复盘] 加载选股记录失败:', e)
             } finally {
                 histLoading.value = false
                 histLoaded.value = true
