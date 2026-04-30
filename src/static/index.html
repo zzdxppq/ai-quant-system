@@ -673,9 +673,17 @@
                                 <div class="dc-action" style="font-size:12px;font-weight:600;">
                                     {{ dailyAdvice.text }}
                                 </div>
-                                <div style="font-size:11px;color:#a0aec0;margin-top:2px;">
-                                    {{ dailyAdvice.suggestedPosition }}
-                                    <span v-if="hit.matched_cycle" style="color:#60a5fa;">🎯+周期</span>
+                                <div style="font-size:11px;margin-top:2px;"
+                                     :style="{color: hit.matched_cycle ? '#60a5fa' : '#a0aec0'}">
+                                    <template v-if="dailyAdvice.cls === 'advice-go'">
+                                        {{ hit.matched_cycle ? '3层（🎯周期股）' : '2层（非周期降1层）' }}
+                                    </template>
+                                    <template v-else-if="dailyAdvice.cls === 'advice-warn'">
+                                        1.5层（谨慎）
+                                    </template>
+                                    <template v-else>
+                                        0层
+                                    </template>
                                 </div>
                             </div>
                         </td>
@@ -1254,20 +1262,11 @@ createApp({
             const prevGood = prevWavg != null && prevWavg >= 0 && prevLD != null && prevLD <= 5
             const consecutiveGood = todayGood && prevGood
 
-            // 检查选股标的是否有周期匹配
-            const hasCycleMatch = (screenerHits.value || []).some(h => h.matched_cycle)
-            let basePosition = consecutiveGood ? 4 : 3
-            let posNote = consecutiveGood ? '连续情绪良好' : '标准仓位'
-            if (!hasCycleMatch) {
-                basePosition = Math.max(basePosition - 1, 2)
-                posNote += '，非周期股降1层'
-            }
-
             return {
                 cls: 'advice-go',
                 text: '✅ 可参与',
-                suggestedPosition: `${basePosition}层（${posNote}）`,
-                reason: (consecutiveGood ? '连续2日情绪良好。' : '') + (!hasCycleMatch ? '选股标的未匹配周期代表股，降1层仓位。' : '')
+                suggestedPosition: consecutiveGood ? '4层（连续情绪良好）' : '3层（标准仓位）',
+                reason: consecutiveGood ? '连续2日情绪良好（跌停≤5+加权竞价≥0），建议加至4层' : ''
             }
         })
 
