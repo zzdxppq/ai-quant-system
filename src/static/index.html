@@ -594,45 +594,7 @@
                 💡 {{ dailyAdvice.reason }}
             </div>
 
-            <!-- D1-D4打分明细 -->
-            <div v-if="auctionScores && auctionScores.length" style="margin-top:10px;">
-                <div v-for="sc in auctionScores" :key="sc.code"
-                     style="background:rgba(0,0,0,0.2);border-radius:8px;padding:10px 14px;margin-bottom:6px;">
-                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">
-                        <b style="font-size:14px;">{{ sc.name }}（{{ sc.code }}）</b>
-                        <span style="font-size:18px;font-weight:700;" :style="{color: sc.total_score >= 75 ? '#10b981' : sc.total_score >= 55 ? '#fbbf24' : '#ef4444'}">
-                            {{ sc.total_score }}分
-                        </span>
-                        <span style="font-size:13px;color:#a0aec0;">→ {{ sc.action }} · {{ sc.position }}</span>
-                        <span v-if="sc.stop_loss" style="font-size:12px;color:#6b7280;">止损:{{ sc.stop_loss }}</span>
-                    </div>
-                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
-                        <div style="background:#111827;padding:4px 8px;border-radius:4px;font-size:11px;">
-                            <span style="color:#6b7280;">D1 自身竞价</span>
-                            <b style="float:right;" :style="{color: sc.d1_self >= 30 ? '#10b981' : sc.d1_self >= 20 ? '#fbbf24' : '#ef4444'}">{{ sc.d1_self }}/40</b>
-                            <div style="color:#8892a8;margin-top:2px;font-size:10px;">{{ sc.d1_detail }}</div>
-                        </div>
-                        <div style="background:#111827;padding:4px 8px;border-radius:4px;font-size:11px;">
-                            <span style="color:#6b7280;">D2 情绪锚</span>
-                            <b style="float:right;" :style="{color: sc.d2_leader >= 18 ? '#10b981' : sc.d2_leader >= 12 ? '#fbbf24' : '#ef4444'}">{{ sc.d2_leader }}/25</b>
-                            <div style="color:#8892a8;margin-top:2px;font-size:10px;">{{ sc.d2_detail }}</div>
-                        </div>
-                        <div style="background:#111827;padding:4px 8px;border-radius:4px;font-size:11px;">
-                            <span style="color:#6b7280;">D3 涨幅榜</span>
-                            <b style="float:right;" :style="{color: sc.d3_ranking >= 14 ? '#10b981' : sc.d3_ranking >= 10 ? '#fbbf24' : '#ef4444'}">{{ sc.d3_ranking }}/20</b>
-                            <div style="color:#8892a8;margin-top:2px;font-size:10px;">{{ sc.d3_detail }}</div>
-                        </div>
-                        <div style="background:#111827;padding:4px 8px;border-radius:4px;font-size:11px;">
-                            <span style="color:#6b7280;">D4 板块效应</span>
-                            <b style="float:right;" :style="{color: sc.d4_sector >= 10 ? '#10b981' : sc.d4_sector >= 7 ? '#fbbf24' : '#ef4444'}">{{ sc.d4_sector }}/15</b>
-                            <div style="color:#8892a8;margin-top:2px;font-size:10px;">{{ sc.d4_detail }}</div>
-                        </div>
-                    </div>
-                    <div v-if="sc.vetoes && sc.vetoes.length" style="margin-top:4px;">
-                        <span v-for="v in sc.vetoes" :key="v" style="background:#450a0a;color:#ef4444;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:4px;">⚠ {{ v }}</span>
-                    </div>
-                </div>
-            </div>
+            <!-- D1-D4打分已移除，决策统一用三维联动 -->
         </div>
 
         <!-- 选股结果 -->
@@ -707,16 +669,13 @@
                             <b>{{ fmtPct(hitLive(hit.code).gain_10d ?? hit.gain_10d) }}</b>
                         </td>
                         <td>
-                            <div class="decision-cell" :class="decisionLevelClass(hit.code)"
-                                 :title="signalOf(hit.code).reason || ''">
-                                <div class="dc-action">
-                                    {{ decisionIcon(hit.code) }} {{ signalOf(hit.code).suggested_position || '—' }}
+                            <div class="decision-cell" :class="dailyAdvice.cls" style="padding:4px 8px;border-radius:6px;">
+                                <div class="dc-action" style="font-size:12px;font-weight:600;">
+                                    {{ dailyAdvice.text }}
                                 </div>
-                                <div class="dc-detail" v-if="scoreOf(hit.code)">
-                                    四维评分 {{ scoreOf(hit.code).total_score }}
-                                    <template v-if="scoreOf(hit.code).action">
-                                        · {{ scoreOf(hit.code).action }}
-                                    </template>
+                                <div style="font-size:11px;color:#a0aec0;margin-top:2px;">
+                                    {{ dailyAdvice.suggestedPosition }}
+                                    <span v-if="hit.matched_cycle" style="color:#60a5fa;">🎯+周期</span>
                                 </div>
                             </div>
                         </td>
@@ -865,44 +824,7 @@
             </div>
         </details>
 
-        <!-- 折叠：四维评分决策卡 -->
-        <details class="details-card full-width" v-if="auctionScores.length">
-            <summary>🎯 四维评分决策卡（点击展开 · {{ auctionScores.length }} 只）</summary>
-            <div class="details-body">
-                <div v-for="sc in auctionScores" :key="sc.code" style="margin-bottom:20px;">
-                    <div style="display:flex;gap:16px;align-items:flex-start;">
-                        <div style="flex:1;">
-                            <h3 style="margin-bottom:10px;">{{ sc.name }}（{{ sc.code }}）{{ sc.total_score }}分</h3>
-                            <div class="score-bar"><span class="sb-label">自身竞价(40)</span>
-                                <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d1_self/40*100)+'%', background: barColor(sc.d1_self, 40)}">{{ sc.d1_self }}</div></div></div>
-                            <div class="score-bar"><span class="sb-label">情绪锚(25)</span>
-                                <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d2_leader/25*100)+'%', background: barColor(sc.d2_leader, 25)}">{{ sc.d2_leader }}</div></div></div>
-                            <div class="score-bar"><span class="sb-label">涨幅榜方向(20)</span>
-                                <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d3_ranking/20*100)+'%', background: barColor(sc.d3_ranking, 20)}">{{ sc.d3_ranking }}</div></div></div>
-                            <div class="score-bar"><span class="sb-label">板块效应(15)</span>
-                                <div class="sb-track"><div class="sb-fill" :style="{width:(sc.d4_sector/15*100)+'%', background: barColor(sc.d4_sector, 15)}">{{ sc.d4_sector }}</div></div></div>
-                            <div style="font-size:12px;color:#8892a8;margin-top:8px;">
-                                <div>D1: {{ sc.d1_detail }}</div>
-                                <div>D2: {{ sc.d2_detail }}</div>
-                                <div>D3: {{ sc.d3_detail }}</div>
-                                <div>D4: {{ sc.d4_detail }}</div>
-                            </div>
-                            <div v-if="sc.vetoes && sc.vetoes.length" style="margin-top:8px;">
-                                <span v-for="v in sc.vetoes" :key="v" class="tag tag-veto" style="margin-right:6px;">⚠️ {{ v }}</span>
-                            </div>
-                        </div>
-                        <div style="min-width:180px;">
-                            <div class="decision-box" :class="decisionClass(sc.action)">
-                                <div class="db-action">{{ sc.action }}</div>
-                                <div class="db-detail">{{ sc.position }}</div>
-                                <div class="db-detail" v-if="sc.stop_loss">止损: {{ sc.stop_loss }} ({{ sc.stop_loss_pct }}%)</div>
-                            </div>
-                            <div style="font-size:11px;color:#6b7280;margin-top:6px;text-align:center;">{{ sc.reason }}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </details>
+        <!-- 四维决策卡已移除，统一用三维联动决策 -->
 
         <!-- 折叠：回测统计 -->
         <details class="details-card full-width" v-if="btResult">
@@ -1332,11 +1254,20 @@ createApp({
             const prevGood = prevWavg != null && prevWavg >= 0 && prevLD != null && prevLD <= 5
             const consecutiveGood = todayGood && prevGood
 
+            // 检查选股标的是否有周期匹配
+            const hasCycleMatch = (screenerHits.value || []).some(h => h.matched_cycle)
+            let basePosition = consecutiveGood ? 4 : 3
+            let posNote = consecutiveGood ? '连续情绪良好' : '标准仓位'
+            if (hasCycleMatch) {
+                basePosition = Math.min(basePosition + 0.5, 4.5)
+                posNote += ' + 周期股加仓'
+            }
+
             return {
                 cls: 'advice-go',
                 text: '✅ 可参与',
-                suggestedPosition: consecutiveGood ? '4层（连续情绪良好，可加仓）' : '3层（标准仓位）',
-                reason: consecutiveGood ? '连续2日情绪良好（跌停≤5+加权竞价≥0），建议加至4层' : ''
+                suggestedPosition: `${basePosition}层（${posNote}）`,
+                reason: (consecutiveGood ? '连续2日情绪良好。' : '') + (hasCycleMatch ? '选股标的匹配周期代表股，+10%仓位。' : '')
             }
         })
 
