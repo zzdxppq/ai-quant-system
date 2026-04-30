@@ -22,6 +22,16 @@
         .btn { padding: 6px 14px; border: 1px solid #3a4568; border-radius: 6px; background: #1a2040; color: #a0aec0; cursor: pointer; font-size: 13px; }
         .btn:hover { border-color: #60a5fa; color: #60a5fa; }
 
+        /* Tab 样式 */
+        .tabs { display: flex; gap: 0; border-bottom: 2px solid #1e2a45; margin-bottom: 16px; }
+        .tab-btn {
+            padding: 10px 24px; font-size: 14px; font-weight: 600; color: #6b7280;
+            cursor: pointer; border: none; background: none;
+            border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s;
+        }
+        .tab-btn:hover { color: #a0aec0; }
+        .tab-btn.active { color: #60a5fa; border-bottom-color: #60a5fa; }
+
         /* 市场洞察四维面板 */
         .insight-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
         .insight-box { background: #0d1220; border-radius: 10px; padding: 14px 16px; border: 1px solid #1e2a45; }
@@ -112,10 +122,12 @@
             max-width: 110px;
         }
         .ls-pill.ls-gem { border-color: #5b21b6; }
-        .ls-pill.ls-failed {
-            background: #161e30;
-            border-style: dashed; opacity: 0.85;
-        }
+        .ls-pill.ls-failed { border-style: dashed; }
+        .ls-pill.ls-failed.ls-f-跌停 { background: #2a0a0a; border-color: #ef4444; }
+        .ls-pill.ls-failed.ls-f-深水 { background: #2a1a0a; border-color: #f59e0b; }
+        .ls-pill.ls-failed.ls-f-绿盘 { background: #0a2a1a; border-color: #10b981; }
+        .ls-pill.ls-failed.ls-f-平开 { background: #1a1a2a; border-color: #4b5563; }
+        .ls-pill.ls-failed.ls-f-炸板 { background: #2a2a0a; border-color: #fbbf24; }
         .ls-pill.ls-failed .ls-row2 .ls-name {
             color: #a0aec0; text-decoration: line-through; text-decoration-color: #4b5563;
         }
@@ -222,6 +234,13 @@
     </div>
 
     <div class="container">
+        <!-- Tab 切换 -->
+        <div class="tabs">
+            <button class="tab-btn" :class="{active: activeTab === 'daily'}" @click="activeTab = 'daily'">今日复盘</button>
+            <button class="tab-btn" :class="{active: activeTab === 'monthly'}" @click="activeTab = 'monthly'">月度策略报告</button>
+        </div>
+
+        <div v-show="activeTab === 'daily'">
         <!-- 市场广度（上证指数 + 涨跌家数）-->
         <div v-if="insight.breadth" class="breadth-bar">
             <div class="breadth-cell">
@@ -420,7 +439,7 @@
                     <!-- 晋级失败（开关控制） -->
                     <template v-if="showFailed">
                         <span v-for="s in grp.failed" :key="s.code"
-                              class="ls-pill ls-failed" :class="{'ls-gem': !s.is_main_board}"
+                              class="ls-pill ls-failed" :class="['ls-f-' + s.status, {'ls-gem': !s.is_main_board}]"
                               :title="`昨${grp.prev_board}板 · 今日 ${s.status}，收 ${s.today_close}`">
                             <span class="ls-row1 row1-fail" :class="'fs-' + s.status">
                                 {{ s.status }} {{ s.today_pct >= 0 ? '+' : '' }}{{ s.today_pct }}%
@@ -454,6 +473,9 @@
                 </div>
             </div>
         </div>
+        </div><!-- end v-show daily -->
+
+        <div v-show="activeTab === 'monthly'">
         <!-- 月度报告 -->
         <div class="card">
             <div class="card-title">📊 月度策略报告
@@ -487,35 +509,7 @@
             <div v-else class="empty-state">暂无月度报告数据</div>
         </div>
 
-        <!-- 踏空追踪 -->
-        <div class="card">
-            <div class="card-title">👀 踏空追踪（系统选出但未参与）</div>
-            <table v-if="missed.length">
-                <thead><tr>
-                    <th>日期</th><th>代码</th><th>名称</th><th>连板</th><th>竞价涨幅</th><th>系统建议</th><th>你的操作</th><th>当日涨停</th><th>次日涨幅</th>
-                </tr></thead>
-                <tbody>
-                    <tr v-for="m in missed" :key="m.date+m.code">
-                        <td>{{ m.date }}</td>
-                        <td>{{ m.code }}</td>
-                        <td>{{ m.name }}</td>
-                        <td>{{ m.board_label }}</td>
-                        <td :class="(m.auction_gain||0) >= 0 ? 'gain-pos' : 'gain-neg'">{{ m.auction_gain ? (m.auction_gain > 0 ? '+' : '') + m.auction_gain + '%' : '-' }}</td>
-                        <td>{{ m.system_action || '-' }}</td>
-                        <td style="color:#6b7280;">{{ m.user_action }}</td>
-                        <td>
-                            <span v-if="m.is_limit_up === true" class="tag tag-win">涨停</span>
-                            <span v-else-if="m.is_limit_up === false" class="tag tag-lose">未涨停</span>
-                            <span v-else>-</span>
-                        </td>
-                        <td :class="(m.next_day_gain||0) >= 0 ? 'gain-pos' : 'gain-neg'">
-                            {{ m.next_day_gain != null ? (m.next_day_gain > 0 ? '+' : '') + m.next_day_gain + '%' : '-' }}
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-            <div v-else class="empty-state">暂无踏空数据（在决策追踪中记录"放弃"后自动追踪）</div>
-        </div>
+        </div><!-- end v-show monthly -->
     </div>
 </div>
 
@@ -533,7 +527,7 @@ createApp({
     setup() {
         const review = ref({})
         const report = ref({})
-        const missed = ref([])
+        const activeTab = ref('daily')
         const insight = ref({})
         const showFailed = ref(false)
 
@@ -606,12 +600,10 @@ createApp({
                 fetch('/api/review').then(r => r.json()),
                 fetch('/api/market-insight').then(r => r.json()),
                 fetch('/api/monthly-report').then(r => r.json()).catch(() => ({})),
-                fetch('/api/missed-trades').then(r => r.json()).catch(() => ({records:[]})),
             ])
             review.value = revRes || {}
             insight.value = insightRes || {}
             report.value = repRes || {}
-            missed.value = missRes.records || []
         }
 
         async function loadReport() {
@@ -626,7 +618,7 @@ createApp({
 
         onMounted(loadData)
         return {
-            review, insight, report, missed,
+            review, insight, report, activeTab,
             showFailed,
             boardGroups, todayCount, totalFailed,
             boardCls, failedColor,
