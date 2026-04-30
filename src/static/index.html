@@ -609,6 +609,7 @@
                     <th>代码</th>
                     <th>名称</th>
                     <th>价格</th>
+                    <th>涨幅</th>
                     <th>竞价涨幅</th>
                     <th>市值</th>
                     <th>板块</th>
@@ -625,10 +626,13 @@
                             <span v-if="hit.matched_cycle" class="tag tag-rep">🎯</span>
                             <span v-if="hit.sanbanzhu" class="tag tag-warn" title="三板组席位">⚠️三板组</span>
                         </td>
-                        <td>{{ hit.open_price || '-' }}</td>
+                        <td>{{ hitLive(hit.code).price || hit.open_price || '-' }}</td>
+                        <td :class="(hitLive(hit.code).pct||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                            {{ hitLive(hit.code).pct != null ? ((hitLive(hit.code).pct >= 0 ? '+' : '') + hitLive(hit.code).pct + '%') : '-' }}
+                        </td>
                         <td class="gain-pos"><b>{{ hit.auction_gain }}%</b></td>
                         <td>{{ hit.market_cap }}亿</td>
-                        <td style="font-size:12px;color:#a0aec0;">{{ industryOf(hit.code) }}</td>
+                        <td style="font-size:12px;color:#a0aec0;">{{ hitLive(hit.code).industry || industryOf(hit.code) || '-' }}</td>
                         <td><b>{{ hit.continuous_limit_up }}板</b></td>
                         <td>
                             <!-- mini 竞价形态图：点击放大 -->
@@ -659,8 +663,8 @@
                                 <title>点击查看竞价形态详情 · 竞价{{ hit.auction_gain }}% · 量比{{ hit.auction_volume_ratio || '-' }}</title>
                             </svg>
                         </td>
-                        <td :class="(hit.gain_10d||0) >= 0 ? 'gain-pos' : 'gain-neg'">
-                            <b>{{ hit.gain_10d ? (hit.gain_10d > 0 ? '+' : '') + hit.gain_10d + '%' : '-' }}</b>
+                        <td :class="(hitLive(hit.code).gain_10d ?? hit.gain_10d ?? 0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                            <b>{{ fmtPct(hitLive(hit.code).gain_10d ?? hit.gain_10d) }}</b>
                         </td>
                         <td>
                             <div class="decision-cell" :class="decisionLevelClass(hit.code)"
@@ -1640,6 +1644,22 @@ createApp({
         startLivePolling()
         setInterval(startLivePolling, 60000)
 
+        // 选股标的实时行情（价格+涨幅每3秒刷新）
+        const hitLiveData = ref({})
+        function hitLive(code) { return hitLiveData.value[code] || {} }
+
+        async function refreshHitLive() {
+            if (!screenerHits.value || !screenerHits.value.length) return
+            const codes = screenerHits.value.map(h => h.code).join(',')
+            if (!codes) return
+            try {
+                const res = await fetch(`/api/hit-live?codes=${codes}`).then(r => r.json())
+                if (res && typeof res === 'object') hitLiveData.value = res
+            } catch (e) {}
+        }
+        // 3秒刷新
+        setInterval(refreshHitLive, 3000)
+
         const auctionModal = ref(false)
         const auctionData = ref({})
         // 选股表 mini 图用的 tick 缓存，code → 该股 9:25-9:35 ticks
@@ -1885,7 +1905,7 @@ createApp({
             isRepresentative, isCandidate, isLimitUp, levelIcon, getDeviation,
             fmtNum, fmtPct, numClass,
             refreshCycle, refreshScreener, runBacktest,
-            auctionModal, auctionData, showAuction,
+            auctionModal, auctionData, showAuction, hitLive,
         }
     }
 }).mount('#app')

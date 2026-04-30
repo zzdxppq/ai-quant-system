@@ -332,20 +332,25 @@ def _make_decision(result: AuctionScore, hit: dict):
 
     score = result.total_score
 
+    # 判断情绪连续性（连续多日情绪好→可加仓）
+    consecutive_good = _check_consecutive_good_emotion()
+
     if score >= 75:
         result.action = "果断开仓"
-        result.position = "标准仓位（3成）"
-        result.reason = f"总分{score}，自身竞价+情绪+板块三重共振"
-        # 止损：开盘价下方5%
+        if consecutive_good >= 2:
+            result.position = "加仓4层（连续{0}日情绪良好）".format(consecutive_good)
+            result.reason = f"总分{score}，三重共振+连续{consecutive_good}日情绪好，仓位加至4层"
+        else:
+            result.position = "标准仓位3层"
+            result.reason = f"总分{score}，自身竞价+情绪+板块三重共振"
         if open_price > 0:
             result.stop_loss = round(open_price * 0.95, 2)
             result.stop_loss_pct = -5.0
 
     elif score >= 55:
         result.action = "小仓试错"
-        result.position = "半仓（1.5成）"
+        result.position = "半仓1.5层"
         result.reason = f"总分{score}，有亮点但有瑕疵，控制仓位"
-        # 止损：开盘价下方3%（更紧）
         if open_price > 0:
             result.stop_loss = round(open_price * 0.97, 2)
             result.stop_loss_pct = -3.0
@@ -378,6 +383,39 @@ def score_all_hits(hits: list[dict]) -> list[dict]:
     )
 
     return results
+
+
+def _check_consecutive_good_emotion() -> int:
+    """检查连续多少天情绪良好（跌停<=5 且 加权竞价>=0）
+
+    从 sentiment_history.json 回溯
+    Returns:
+        连续天数（0=今天不好或无数据，1=仅今天好，2+=连续好）
+    """
+    try:
+        history_file = DATA_DIR / "sentiment_history.json"
+        if not history_file.exists():
+            return 0
+        history = json.loads(history_file.read_text())
+        if not history:
+            return 0
+
+        # 按日期降序
+        history.sort(key=lambda h: h.get("date", ""), reverse=True)
+
+        count = 0
+        for h in history:
+            ld = h.get("limit_down", 0) or 0
+            wavg = h.get("weighted_auction_gain")
+            # 情绪好的标准：跌停<=5 且 加权竞价>=0
+            if ld <= 5 and wavg is not None and wavg >= 0:
+                count += 1
+            else:
+                break
+
+        return count
+    except Exception:
+        return 0
 
 
 def _get_market_highest_board() -> int:

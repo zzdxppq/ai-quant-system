@@ -392,6 +392,69 @@ async def get_monthly_report(year: int = 0, month: int = 0):
         return JSONResponse({"error": str(e)})
 
 
+@app.get("/api/hit-live")
+async def get_hit_live(codes: str = ""):
+    """选股标的实时行情（价格+涨幅+板块+10日涨幅），3秒轮询"""
+    if not codes:
+        return JSONResponse({})
+
+    code_list = [c.strip() for c in codes.split(",") if c.strip()]
+    if not code_list:
+        return JSONResponse({})
+
+    result = {}
+    try:
+        from src.data.sina_api import fetch_realtime_batch
+        df = fetch_realtime_batch(code_list)
+        if df is not None and not df.empty:
+            for _, row in df.iterrows():
+                code = str(row.get("code", ""))
+                pre = float(row.get("pre_close", 0))
+                close = float(row.get("close", 0))
+                pct = round((close / pre - 1) * 100, 2) if pre > 0 and close > 0 else None
+                result[code] = {
+                    "price": round(close, 2) if close > 0 else None,
+                    "pct": pct,
+                }
+    except Exception:
+        pass
+
+    # 补充板块和10日涨幅（从排行数据）
+    try:
+        ranking_file = DATA_DIR / "latest_ranking.json"
+        if ranking_file.exists():
+            rd = json.loads(ranking_file.read_text())
+            rank_map = {str(r["code"]): r for r in rd.get("ranking", [])}
+            for code in code_list:
+                if code in result:
+                    r = rank_map.get(code, {})
+                    result[code]["industry"] = r.get("industry", "")
+                    result[code]["gain_10d"] = r.get("gain_10d")
+                elif code in rank_map:
+                    r = rank_map[code]
+                    result[code] = {
+                        "price": r.get("close"),
+                        "pct": r.get("change_pct"),
+                        "industry": r.get("industry", ""),
+                        "gain_10d": r.get("gain_10d"),
+                    }
+    except Exception:
+        pass
+
+    # 板块兜底（industry_cache）
+    try:
+        ic = DATA_DIR / "industry_cache.json"
+        if ic.exists():
+            ind_map = json.loads(ic.read_text())
+            for code in code_list:
+                if code in result and not result[code].get("industry"):
+                    result[code]["industry"] = ind_map.get(code, "")
+    except Exception:
+        pass
+
+    return JSONResponse(result)
+
+
 @app.get("/api/missed-trades")
 async def get_missed_trades():
     """获取踏空追踪（系统选出但未参与的标的）"""
