@@ -131,6 +131,24 @@ def _lookup_industry(code: str) -> str:
     return ""
 
 
+def _calc_gain_10d(code: str) -> float:
+    """用K线算10日涨幅（选股标的可能不在排行榜中）"""
+    try:
+        from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
+        df = fetch_kline(code, SCALE_DAILY, datalen=12)
+        if df is not None and len(df) >= 2:
+            today_str = now_cn().strftime("%Y-%m-%d")
+            last_date = str(df.iloc[-1]["date"])[:10]
+            idx = max(0, len(df) - 11) if last_date == today_str else max(0, len(df) - 10)
+            close_now = float(df.iloc[-1]["close"])
+            base = float(df.iloc[idx]["close"])
+            if base > 0:
+                return round((close_now / base - 1) * 100, 2)
+    except Exception:
+        pass
+    return 0
+
+
 def archive_today_hits(hits: list[dict], spot_df=None):
     """9:27选股后归档当日结果
 
@@ -181,6 +199,7 @@ def archive_today_hits(hits: list[dict], spot_df=None):
             "pre_close": pre_close_map.get(code, 0),
             "auction_gain": h.get("auction_gain", 0),
             "market_cap": h.get("market_cap", 0),
+            "gain_10d": h.get("gain_10d", 0) or _calc_gain_10d(code),
             "industry": industry,
             "market_highest_board": highest_board,
             "close_price": None,

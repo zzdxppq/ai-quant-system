@@ -177,6 +177,7 @@
                             <th>代码</th>
                             <th>名称</th>
                             <th>连板</th>
+                            <th>10日涨幅</th>
                             <th>开盘价</th>
                             <th>竞价涨幅</th>
                             <th>收盘价</th>
@@ -190,7 +191,7 @@
                     <tbody>
                         <template v-for="(group, date) in groupedRecords" :key="date">
                             <tr>
-                                <td colspan="12" class="date-group">
+                                <td colspan="13" class="date-group">
                                     {{ date }}（{{ group.length }} 只）
                                     <span v-if="dailyEnv(group)" style="margin-left:16px;font-weight:400;font-size:12px;color:#a0aec0;">
                                         <template v-if="dailyEnv(group).market_limit_down !== null && dailyEnv(group).market_limit_down !== undefined">
@@ -213,6 +214,9 @@
                                 <td>{{ r.code }}</td>
                                 <td>{{ r.name }}</td>
                                 <td>{{ r.continuous_limit_up }}板</td>
+                                <td :class="(r.gain_10d||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                                    {{ r.gain_10d ? (r.gain_10d > 0 ? '+' : '') + r.gain_10d + '%' : '-' }}
+                                </td>
                                 <td>{{ r.open_price || '-' }}</td>
                                 <td :class="numClass(r.auction_gain)">{{ fmtPct(r.auction_gain) }}</td>
                                 <td>{{ r.close_price || '-' }}</td>
