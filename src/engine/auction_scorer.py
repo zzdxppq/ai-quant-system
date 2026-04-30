@@ -92,26 +92,19 @@ def score_auction(
     result.d4_sector = d4
     result.d4_detail = d4_detail
 
-    # ═══ 高度压制调整 ═══
-    height_penalty = 0
+    # ═══ 高度压制提醒（不扣分，仅标注） ═══
     highest_board = _get_market_highest_board()
     target_board = hit.get("continuous_limit_up", 0)
 
     if highest_board >= 9:
-        height_penalty = -15
-        result.vetoes.append(f"市场{highest_board}板极高压制，建议空仓")
-    elif highest_board >= 7 and target_board < 4:
-        height_penalty = -8
+        # 极高位只提醒，不否决（高标跌停已在D2中否决）
+        result.d2_detail += f"；⚠市场已{highest_board}板极高位，注意周期末端风险"
     elif highest_board >= 7:
-        height_penalty = -5
+        result.d2_detail += f"；市场{highest_board}板高位，关注高标能否晋级"
 
     # ═══ 汇总 ═══
-    raw_score = d1 + d2 + d3 + d4 + height_penalty
-    result.total_score = round(max(0, raw_score), 1)
+    result.total_score = round(max(0, d1 + d2 + d3 + d4), 1)
     result.has_veto = len(result.vetoes) > 0
-
-    if height_penalty != 0:
-        result.d2_detail += f"；高度压制({highest_board}板){height_penalty:+}分"
 
     # ═══ 决策 ═══
     _make_decision(result, hit)
