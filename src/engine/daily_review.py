@@ -669,7 +669,7 @@ def _generate_watch_pool(
 
     条件（必须全部满足）：
     1. 所属板块今日集中度 ≥25%（板块涨停数 / 今日涨停总数）
-    2. 今日涨停时间在 14:00 之后（lbt >= 14:00:00）
+    2. 今日涨停时间在 14:00 之前（lbt < 14:00:00 — 早封板=资金抢筹强）
     3. 流通市值 30~150 亿（主板接力舒适区）
 
     并要求：主板 + 连板数 ≥2（接力对象）
@@ -729,13 +729,13 @@ def _generate_watch_pool(
         if share < 25:
             continue
         lbt = (s.get("lbt") or "").strip()
-        if not lbt or lbt < "14:00:00":
+        if not lbt or lbt >= "14:00:00":
             continue
         qualified.append(s)
 
-    # 5) 排序：板数 desc → 涨停时间 desc（越晚封板越强，符合接力逻辑）
+    # 5) 排序：板数 desc → 涨停时间 asc（越早封板越强，主动抢筹）
     qualified.sort(
-        key=lambda s: (-s.get("board_count", 0), -_lbt_to_sec(s.get("lbt", ""))),
+        key=lambda s: (-s.get("board_count", 0), _lbt_to_sec(s.get("lbt", "23:59:59"))),
     )
 
     out = []
