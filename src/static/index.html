@@ -511,9 +511,11 @@
                 <div class="hero-divider"></div>
                 <div class="hero-metrics">
                     <div class="hm-cell hm-primary">
-                        <div class="hm-label">竞价跌停 (&gt;5⚠)</div>
-                        <div class="hm-value" :class="(market?.limit_down||0) > 5 ? 'hm-bad' : 'hm-ok'">
-                            {{ market?.limit_down ?? '—' }}
+                        <div class="hm-label">竞价跌停 (&gt;5⚠) / 跌&gt;9% (&gt;9⚠)</div>
+                        <div class="hm-value">
+                            <span :class="(market?.limit_down||0) > 5 ? 'hm-bad' : 'hm-ok'">{{ market?.limit_down ?? '—' }}</span>
+                            <span style="color:#4b5563;margin:0 4px;">/</span>
+                            <span :class="(market?.drop_over_9pct||0) > 9 ? 'hm-bad' : 'hm-ok'">{{ market?.drop_over_9pct ?? '—' }}</span>
                             <span v-if="market?.prev_day_limit_down != null && market?.limit_down != null"
                                   style="font-size:14px;margin-left:4px;"
                                   :style="{color: market.limit_down > market.prev_day_limit_down ? '#ef4444' : market.limit_down < market.prev_day_limit_down ? '#10b981' : '#6b7280'}">
@@ -521,7 +523,7 @@
                             </span>
                         </div>
                         <div class="mb-sub" v-if="market?.prev_day_limit_down != null">
-                            昨日 {{ market.prev_day_limit_down }}
+                            昨日跌停 {{ market.prev_day_limit_down }}
                             <span v-if="market?.limit_down != null">
                                 （{{ market.limit_down > market.prev_day_limit_down ? '+' : '' }}{{ market.limit_down - market.prev_day_limit_down }}）
                             </span>
@@ -1222,10 +1224,14 @@ createApp({
 
             const ldBad = hasLD && limitDown > 5
             const wAvgBad = hasWAvg && wAvg < 0
+            // 第四维：跌幅>9%个股数 > 9只
+            const dropOver9 = Number(market.value?.drop_over_9pct ?? 0)
+            const dropBad = dropOver9 > 9
 
             // 收集警戒明细
             const warnings = []
             if (ldBad) warnings.push(`市场竞价跌停 ${limitDown} 只（>5 警戒线）`)
+            if (dropBad) warnings.push(`跌幅>9%个股 ${dropOver9} 只（>9 警戒线）`)
             if (wAvgBad) warnings.push(`梯队加权竞价 ${wAvg >= 0 ? '+' : ''}${wAvg}% 偏弱（<0）`)
             if (lbBad) {
                 const desc = lbBadList.map(x =>
@@ -1241,7 +1247,7 @@ createApp({
                     cls: 'advice-stop',
                     text: '🛑 今日不操作',
                     suggestedPosition: '0层（空仓避险）',
-                    reason: warnings.join('；') + '。三维警戒中已 ' + badCount + ' 项触发，避免开仓。'
+                    reason: warnings.join('；') + '。四维警戒中已 ' + badCount + ' 项触发，避免开仓。'
                 }
             }
             if (badCount === 1) {
