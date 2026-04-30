@@ -452,6 +452,43 @@ async def get_hit_live(codes: str = ""):
     except Exception:
         pass
 
+    # 不在排行榜的标的：用腾讯补板块市值，用K线算10日涨幅
+    missing_10d = [c for c in code_list if c in result and result[c].get("gain_10d") is None]
+    if missing_10d:
+        # 腾讯补板块
+        try:
+            from src.data.tencent_api import fetch_stock_details
+            tx = fetch_stock_details(missing_10d)
+            if tx is not None and not tx.empty:
+                for _, row in tx.iterrows():
+                    c = str(row["code"])
+                    if c in result:
+                        if not result[c].get("industry"):
+                            # 腾讯没有板块，跳过
+                            pass
+                        result[c]["market_cap_yi"] = float(row.get("market_cap_yi", 0))
+        except Exception:
+            pass
+
+        # K线算10日涨幅
+        try:
+            from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
+            from src.config import now_cn as _now
+            today_str = _now().strftime("%Y-%m-%d")
+            for c in missing_10d:
+                if result[c].get("gain_10d") is not None:
+                    continue
+                df = fetch_kline(c, SCALE_DAILY, datalen=12)
+                if df is not None and len(df) >= 2:
+                    close_now = float(result[c].get("price", 0)) or float(df.iloc[-1]["close"])
+                    last_date = str(df.iloc[-1]["date"])[:10]
+                    idx = max(0, len(df) - 11) if last_date == today_str else max(0, len(df) - 10)
+                    base = float(df.iloc[idx]["close"])
+                    if base > 0:
+                        result[c]["gain_10d"] = round((close_now / base - 1) * 100, 2)
+        except Exception:
+            pass
+
     return JSONResponse(result)
 
 

@@ -1270,7 +1270,7 @@ createApp({
                 return {
                     cls: 'advice-stop',
                     text: '🛑 今日不操作',
-                    suggestedPosition: '0 层（空仓避险）',
+                    suggestedPosition: '0层（空仓避险）',
                     reason: warnings.join('；') + '。三维警戒中已 ' + badCount + ' 项触发，避免开仓。'
                 }
             }
@@ -1278,15 +1278,25 @@ createApp({
                 return {
                     cls: 'advice-warn',
                     text: '⚠️ 谨慎参与',
-                    suggestedPosition: '1-2 层（小仓试错）',
+                    suggestedPosition: '1.5层（小仓试错）',
                     reason: warnings[0] + '。仅一项警戒，可小仓试错或观望。'
                 }
             }
+            // 检查连续情绪好的天数（从sentiment历史判断）
+            const prevWavg = sentiment.value?.prev_day_weighted_auction_gain
+            const todayWavg = wAvg
+            const prevLD = market.value?.prev_day_limit_down
+            const todayLD = limitDown
+            // 连续2日+都好（跌停<=5且加权竞价>=0）→ 4层
+            const todayGood = hasLD && todayLD <= 5 && hasWAvg && todayWavg >= 0
+            const prevGood = prevWavg != null && prevWavg >= 0 && prevLD != null && prevLD <= 5
+            const consecutiveGood = todayGood && prevGood
+
             return {
                 cls: 'advice-go',
                 text: '✅ 可参与',
-                suggestedPosition: '3-6 层（标准仓位）',
-                reason: ''
+                suggestedPosition: consecutiveGood ? '4层（连续情绪良好，可加仓）' : '3层（标准仓位）',
+                reason: consecutiveGood ? '连续2日情绪良好（跌停≤5+加权竞价≥0），建议加至4层' : ''
             }
         })
 
