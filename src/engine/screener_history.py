@@ -849,16 +849,21 @@ def get_history(limit: int = 200, year: int = None, month: int = None) -> list[d
 
 
 def list_available_periods() -> list[dict]:
-    """历史选股记录中出现过的 (年, 月) 组合，按年月降序"""
+    """历史选股记录中出现过的 (年, 月) 组合 + 当前自然月，按年月降序
+
+    保证当前月即使无选股命中也可被下拉选中（月初进入新月时本月直接可见）。
+    """
+    from src.config import now_cn
     records = _load()
-    seen = set()
+    seen: set[tuple[int, int]] = set()
     for r in records:
         d = str(r.get("date", ""))
         if len(d) >= 7:
             try:
-                y = int(d[:4])
-                m = int(d[5:7])
-                seen.add((y, m))
+                seen.add((int(d[:4]), int(d[5:7])))
             except ValueError:
                 continue
+    # 当前自然月强制纳入
+    n = now_cn()
+    seen.add((n.year, n.month))
     return [{"year": y, "month": m} for (y, m) in sorted(seen, reverse=True)]
