@@ -347,10 +347,10 @@
                 <tbody>
                     <tr v-for="ind in review.scorecard.indicators" :key="ind.label">
                         <td><b>{{ ind.label }}</b></td>
-                        <td :style="{color: ind.score === 1 ? '#10b981' : '#ef4444', fontWeight: 600}">{{ ind.today }}</td>
+                        <td :style="{color: ind.score === 1 ? '#ef4444' : '#10b981', fontWeight: 600}">{{ ind.today }}</td>
                         <td style="color:#a0aec0;">{{ ind.target }}</td>
                         <td>
-                            <span :style="{color: ind.score === 1 ? '#10b981' : '#6b7280', fontWeight: 700}">
+                            <span :style="{color: ind.score === 1 ? '#ef4444' : '#6b7280', fontWeight: 700}">
                                 {{ ind.score }}
                             </span>
                         </td>
@@ -390,7 +390,7 @@
                             <span :class="numClass(review.relay_env.prev_space_board_today.today_pct)" style="margin-left:8px;font-weight:700;">
                                 {{ fmtPct(review.relay_env.prev_space_board_today.today_pct) }}
                             </span>
-                            <span :style="{color: review.relay_env.prev_space_board_today.today_held ? '#10b981' : '#ef4444', marginLeft:'8px', fontSize:'12px', fontWeight:600}">
+                            <span :style="{color: review.relay_env.prev_space_board_today.today_held ? '#ef4444' : '#10b981', marginLeft:'8px', fontSize:'12px', fontWeight:600}">
                                 {{ review.relay_env.prev_space_board_today.today_held ? '✓ 未断板' : '✗ 已断板' }}
                             </span>
                         </td>
@@ -435,7 +435,7 @@
                     <tr v-for="row in review.promotion_summary" :key="row.label" :class="{'row-warn': row.warn}">
                         <td><b>{{ row.label }}</b></td>
                         <td>{{ row.success }}/{{ row.total }}</td>
-                        <td :style="{color: row.success_rate >= 50 ? '#10b981' : row.success_rate >= 30 ? '#fbbf24' : '#ef4444', fontWeight:700}">
+                        <td :style="{color: row.success_rate >= 50 ? '#ef4444' : row.success_rate >= 30 ? '#fbbf24' : '#10b981', fontWeight:700}">
                             {{ row.success_rate }}%
                         </td>
                         <td :class="numClass(row.fail_avg_pct)">{{ fmtPct(row.fail_avg_pct) }}</td>
@@ -602,32 +602,6 @@
             </div>
         </div>
 
-        <!-- 板块涨停分布 — 默认折叠 + 仅 ≥2 只 -->
-        <div class="card" v-if="sectorStatsFiltered.length">
-            <div class="card-title" @click="sectorOpen = !sectorOpen" style="cursor:pointer;user-select:none;">
-                <span style="margin-right:6px;">{{ sectorOpen ? '▾' : '▸' }}</span>
-                📦 板块涨停分布
-                <span style="font-weight:400;font-size:13px;color:#a0aec0;margin-left:6px;">
-                    · {{ sectorStatsFiltered.length }} 个板块 ≥2只 · 龙头加 ⭐
-                </span>
-            </div>
-            <div v-show="sectorOpen">
-                <div v-for="grp in sectorStatsFiltered" :key="grp.industry" class="sector-row">
-                    <span class="sr-name">{{ grp.industry }}</span>
-                    <span class="sr-count">{{ grp.count }}只</span>
-                    <span class="sr-leader">
-                        ⭐ <b>{{ grp.leader.name }}</b>
-                        <span style="color:#6b7280;">{{ grp.leader.code }}</span>
-                        <span v-if="grp.leader.board_count >= 2" style="color:#fbbf24;font-weight:700;">
-                            {{ grp.leader.board_count }}板
-                        </span>
-                        <span :class="grp.leader.change_pct >= 0 ? 'gain-pos' : 'gain-neg'">
-                            {{ grp.leader.change_pct >= 0 ? '+' : '' }}{{ grp.leader.change_pct }}%
-                        </span>
-                    </span>
-                </div>
-            </div>
-        </div>
         </div><!-- end v-show daily -->
 
         <div v-show="activeTab === 'monthly'">

@@ -1,9 +1,10 @@
 """TOP30 周期计数
 
-为 10 日涨幅榜 TOP30 中的每只个股记录"连续在榜天数"。
-- 首次进入：1
-- 连续在榜：每个新交易日 +1
-- 离开后再次进入：从 1 重新计数
+为 10 日涨幅榜 TOP30 中【且 gain_10d ≥ 45%】的每只个股记录"连续在榜天数"。
+- 首次进入并 ≥45%：1
+- 连续满足条件：每个新交易日 +1
+- 离开 top30 或 gain_10d < 45%：streak=0（重置）
+- 重新进入并 ≥45%：从 1 重新计数
 
 状态文件 data/top30_streak_state.json：
 {
@@ -37,11 +38,16 @@ def _save_state(state: dict) -> None:
         pass
 
 
+_GAIN_THRESHOLD = 45.0  # gain_10d 阈值：低于此值视为不满足条件，streak 重置
+
+
 def stamp_streak(records: Iterable[dict]) -> None:
     """给每条 ranking 记录写入 top30_streak 字段（原地修改）。
 
-    同一交易日内多次调用幂等：已计数的个股直接读取缓存值；新进入的个股
-    基于上一交易日 prev_by_code 加 1 计数（不在则为 1）。
+    入榜条件：在 top30 + gain_10d ≥ 45%。
+    - 满足条件：在前一日基础上 +1
+    - 不满足条件（gain_10d < 45%）：streak=0
+    同一交易日内多次调用幂等：已计数的个股直接读取缓存值。
     跨交易日时，自动将昨日的 today_by_code 轮转为 prev_by_code。
     """
     state = _load_state()
@@ -60,7 +66,16 @@ def stamp_streak(records: Iterable[dict]) -> None:
         code = str(r.get("code", "") or "")
         if not code:
             continue
-        if code in today_map:
+        try:
+            gain = float(r.get("gain_10d") or 0)
+        except (TypeError, ValueError):
+            gain = 0.0
+
+        # gain 检查优先于 cache —— 即便今日已计数过，若当前 gain 跌破阈值也要归零
+        if gain < _GAIN_THRESHOLD:
+            streak = 0
+            today_map[code] = streak
+        elif code in today_map:
             streak = today_map[code]
         else:
             streak = int(prev_map.get(code, 0)) + 1

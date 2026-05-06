@@ -745,96 +745,58 @@ def _generate_watch_pool(
     ranking: dict,
     review: DailyReview,
 ) -> list[dict]:
-    """次日观察池（针对2板以上接力 · 严格 3 条件 · 最多 3 只）
+    """次日观察池（从10日涨幅榜 top30 中筛主板高位连板）
 
     条件（必须全部满足）：
-    1. 所属板块今日集中度 ≥25%（板块涨停数 / 今日涨停总数）
-    2. 今日涨停时间在 14:00 之前（lbt < 14:00:00 — 早封板=资金抢筹强）
-    3. 流通市值 30~150 亿（主板接力舒适区）
+    1. 当前在 10日涨幅榜 top30 中
+    2. gain_10d >= 45%
+    3. continuous_limit_up >= 2（连续两日及以上涨停）
+    4. is_main_board（主板）
 
-    并要求：主板 + 连板数 ≥2（接力对象）
+    Args:
+        ranking: {code: ranking_row}，包含 gain_10d / continuous_limit_up /
+                 is_main_board / market_cap_yi / industry / concepts 等字段
     """
-    # 1) 主板 + 2连板以上
-    main_board_lianban = [
-        s for s in lianban
-        if s.get("is_main_board") and s.get("board_count", 0) >= 2
-    ]
-    if not main_board_lianban:
+    if not ranking:
         return []
 
-    # 2) 板块集中度（按 today 数据）
-    today_total = review.limit_up_count or 0
-    sector_share: dict[str, float] = {}
-    for s in (review.sector_zt_stats or []):
-        ind = s.get("industry", "")
-        cnt = s.get("count", 0) or 0
-        sector_share[ind] = (cnt / today_total * 100) if today_total else 0
-
-    # 3) 补市值/收盘价（先 ranking，缺再腾讯）
-    pool_by_code = {s["code"]: dict(s) for s in main_board_lianban}
-    missing_mc = []
-    for code, s in pool_by_code.items():
-        r = ranking.get(code, {})
-        mc = r.get("market_cap_yi", 0)
-        if mc and mc > 0:
-            s["_market_cap_yi"] = mc
-            s["_close"] = r.get("close", 0)
-            s["_industry"] = r.get("industry") or s.get("industry", "未知")
-        else:
-            missing_mc.append(code)
-
-    if missing_mc:
-        try:
-            from src.data.tencent_api import fetch_stock_details
-            df = fetch_stock_details(missing_mc)
-            if df is not None and not df.empty:
-                df["code"] = df["code"].astype(str)
-                for _, row in df.iterrows():
-                    code = str(row["code"])
-                    if code in pool_by_code:
-                        pool_by_code[code]["_market_cap_yi"] = float(row.get("market_cap_yi", 0) or 0)
-                        pool_by_code[code]["_close"] = float(row.get("close", 0) or 0)
-                        pool_by_code[code].setdefault("_industry", "未知")
-        except Exception as e:
-            print(f"[复盘] 鱼塘市值补齐失败: {e}")
-
-    # 4) 严格 3 条件过滤
-    qualified = []
-    for s in pool_by_code.values():
-        mc = s.get("_market_cap_yi", 0)
-        if not (30 <= mc <= 150):
+    qualified: list[dict] = []
+    for code, r in ranking.items():
+        gain = float(r.get("gain_10d") or 0)
+        clu = int(r.get("continuous_limit_up") or 0)
+        is_main = bool(r.get("is_main_board"))
+        if gain < 45 or clu < 2 or not is_main:
             continue
-        ind = s.get("_industry") or s.get("industry", "")
-        share = sector_share.get(ind, 0)
-        if share < 25:
-            continue
-        lbt = (s.get("lbt") or "").strip()
-        if not lbt or lbt >= "14:00:00":
-            continue
-        qualified.append(s)
+        qualified.append(dict(r))
 
-    # 5) 排序：板数 desc → 涨停时间 asc（越早封板越强，主动抢筹）
+    if not qualified:
+        return []
+
+    # 排序：连板数 desc → 10日涨幅 desc
     qualified.sort(
-        key=lambda s: (-s.get("board_count", 0), _lbt_to_sec(s.get("lbt", "23:59:59"))),
+        key=lambda s: (
+            -int(s.get("continuous_limit_up") or 0),
+            -float(s.get("gain_10d") or 0),
+        ),
     )
 
-    out = []
-    for s in qualified[:3]:
-        ind = s.get("_industry") or s.get("industry", "未知")
+    out: list[dict] = []
+    for s in qualified:
+        ind = s.get("industry") or "未知"
         out.append(asdict(WatchCandidate(
-            code=s["code"],
-            name=s["name"],
-            board_count=s.get("board_count", 0),
+            code=str(s.get("code", "")),
+            name=s.get("name", ""),
+            board_count=int(s.get("continuous_limit_up") or 0),
             industry=ind,
-            close=s.get("_close", 0),
-            market_cap_yi=s.get("_market_cap_yi", 0),
-            total_gain_pct=0,
+            close=float(s.get("close") or 0),
+            market_cap_yi=float(s.get("market_cap_yi") or 0),
+            total_gain_pct=float(s.get("gain_10d") or 0),
             reason=(
-                f"{s.get('board_count')}连板·{ind}板块占今日涨停 "
-                f"{sector_share.get(ind, 0):.0f}%·{s.get('lbt','')} 封板"
+                f"{s.get('continuous_limit_up')}连板·10日涨幅 "
+                f"{s.get('gain_10d')}%·主板"
             ),
             watch_points="竞价 4~7.5% 介入；竞价回落破开盘价不接；同板块跟风缩量则减仓",
-            auction_range=_calc_auction_range(s.get("_close", 0)),
+            auction_range=_calc_auction_range(float(s.get("close") or 0)),
         )))
     return out
 
