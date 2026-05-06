@@ -94,27 +94,69 @@ def fetch_kline_batch(
 NEW_STOCK_MIN_TRADING_DAYS = 60  # 新股过滤阈值：上市不足60个交易日直接剔除
 
 
+# 大盘交易日历缓存：用 600519 茅台（永不停牌的高流动性蓝筹）K线推导，每日刷一次
+_CALENDAR_CACHE: dict = {"dates": [], "fetched_for": ""}
+
+
+def _get_trading_calendar() -> list[str]:
+    """返回近期交易日列表（升序），日级 cache。
+
+    用于停牌股票的"近10个交易日"基准日定位 — 自身 K线 bar 数会忽略停牌期，
+    导致基准日错位（典型表现：同花顺与本系统口径不一致）。
+    """
+    from src.config import now_cn
+    today_str = now_cn().strftime("%Y-%m-%d")
+    if _CALENDAR_CACHE["fetched_for"] == today_str and _CALENDAR_CACHE["dates"]:
+        return _CALENDAR_CACHE["dates"]
+
+    try:
+        df = fetch_kline("600519", SCALE_DAILY, datalen=60)
+        if df is None or df.empty:
+            return _CALENDAR_CACHE["dates"]  # 拉失败用旧 cache
+        dates = sorted({str(d)[:10] for d in df["date"].tolist()})
+        if dates:
+            _CALENDAR_CACHE["dates"] = dates
+            _CALENDAR_CACHE["fetched_for"] = today_str
+        return dates
+    except Exception:
+        return _CALENDAR_CACHE["dates"]
+
+
+def _find_close_at_or_before(df: pd.DataFrame, target_date: str) -> float | None:
+    """在 K线中找 date <= target_date 的最近一根 close（处理停牌期）"""
+    for i in range(len(df) - 1, -1, -1):
+        try:
+            d = str(df.iloc[i]["date"])[:10]
+            if d <= target_date:
+                v = float(df.iloc[i]["close"])
+                return v if v > 0 else None
+        except (KeyError, ValueError):
+            continue
+    return None
+
+
 def calc_10d_gain_from_kline(
     df: pd.DataFrame,
     realtime_close: float = 0.0,
     today_str: str | None = None,
 ) -> float | None:
-    """从日K + 实时价计算"近10日涨幅"，对齐同花顺/通达信 REF(C,10) 语义。
+    """从日K + 实时价计算"近10日涨幅"，对齐同花顺。
 
-    三种场景区分：
-      1. K线已含今日 (盘后)：close_now = realtime|K线末根, 基准 idx=-11 (10个交易日前)
-      2. K线还是昨日 + 实时价 ≠ 末根 (盘中)：close_now = realtime, 基准 idx=-10
-         （实时价是虚拟末根，K线末根=昨日，相对今天的虚拟 idx 算 10 天前）
-      3. K线还是昨日 + 实时价 ≈ 末根 (盘前/非交易日)：close_now = K线末根,
-         基准 idx=-11（"今日"实质等于K线末根，相对它 10 天前）
+    核心：用【大盘交易日历】定位 D-10（10个交易日前），而不是该股自身的 K线 bar 数。
+    若该股 D-10 当天停牌没 close，往前找最近一根 K线 close 作为基准。
+
+    场景区分:
+      1. K线已含今日 (盘后)：close_now=realtime|末根, D0=today
+      2. 实时价显著偏离末根 (盘中)：close_now=realtime, D0=today (虚拟末根)
+      3. 实时价≈末根 (盘前/非交易日)：close_now=末根, D0=K线末根日
 
     Args:
         df: 日K DataFrame，最少 2 根
-        realtime_close: spot.close（盘中实时价或盘前=昨收）
-        today_str: 形如 "YYYY-MM-DD"，None 时取北京时间 now
+        realtime_close: spot.close
+        today_str: "YYYY-MM-DD"
 
     Returns:
-        gain_10d (%)；K线长度不足或基准无效返回 None
+        gain_10d (%)；历史不足或基准无效返回 None
     """
     if df is None or df.empty or len(df) < 2:
         return None
@@ -127,28 +169,52 @@ def calc_10d_gain_from_kline(
         from src.config import now_cn
         today_str = now_cn().strftime("%Y-%m-%d")
 
+    # 1. 决定 close_now 与 D0 (today_effective)
     if last_kline_date == today_str:
-        # 盘后：K线已下发今日
         close_now = realtime_close if realtime_close > 0 else last_close
-        base_idx = max(0, len(df) - 11)
+        today_effective = today_str
     elif (
-        realtime_close > 0
-        and last_close > 0
+        realtime_close > 0 and last_close > 0
         and abs(realtime_close - last_close) / last_close > 0.005
     ):
-        # 盘中：实时价显著偏离昨收，按虚拟末根 = 实时
         close_now = realtime_close
-        base_idx = max(0, len(df) - 10)
+        today_effective = today_str
     else:
-        # 盘前/非交易日：spot 实质等于 K线末根
         close_now = last_close
-        base_idx = max(0, len(df) - 11)
+        today_effective = last_kline_date
 
-    try:
-        close_base = float(df.iloc[base_idx]["close"])
-    except (KeyError, IndexError, ValueError):
-        return None
-    if close_base <= 0:
+    # 2. 用大盘交易日历定位 D-10
+    calendar = _get_trading_calendar()
+    target_date: str | None = None
+    if calendar:
+        # today_effective 在 calendar 中的位置（不在则视为虚拟末根=len）
+        if today_effective in calendar:
+            cal_idx = calendar.index(today_effective)
+        else:
+            # 找 calendar 中最后一个 <= today_effective 的位置 +1（虚拟）
+            cal_idx = len(calendar)
+            for i in range(len(calendar) - 1, -1, -1):
+                if calendar[i] <= today_effective:
+                    cal_idx = i + 1
+                    break
+        target_idx = cal_idx - 10
+        if target_idx >= 0:
+            target_date = calendar[target_idx]
+
+    # 3. 找该股在 target_date 时的 close（停牌期间 fallback 到之前最近 close）
+    close_base: float | None = None
+    if target_date:
+        close_base = _find_close_at_or_before(df, target_date)
+    # calendar 不可用时回退到原 K线 bar 数法（idx -11）
+    if close_base is None:
+        try:
+            base_idx = max(0, len(df) - 11)
+            v = float(df.iloc[base_idx]["close"])
+            close_base = v if v > 0 else None
+        except (KeyError, IndexError, ValueError):
+            close_base = None
+
+    if close_base is None or close_base <= 0:
         return None
     return round((close_now / close_base - 1) * 100, 2)
 
