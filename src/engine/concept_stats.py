@@ -19,6 +19,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 
+from src.engine.concept_blacklist import is_meta_concept
+
 
 @dataclass
 class ConceptHeat:
@@ -61,7 +63,7 @@ def aggregate_concept_limit_ups(
             or []
         )
         for c in concepts:
-            if c:
+            if c and not is_meta_concept(c):
                 by_concept[c].append(rec)
 
     out: list[ConceptHeat] = []
@@ -130,7 +132,7 @@ def aggregate_concept_ranking(
             or []
         )
         for c in concepts:
-            if c:
+            if c and not is_meta_concept(c):
                 by_concept[c].append(item)
 
     total = len(ranking)

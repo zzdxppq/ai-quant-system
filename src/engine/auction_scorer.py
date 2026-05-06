@@ -224,12 +224,13 @@ def _score_d3_ranking(ranking_data: list, sentiment_data: dict) -> tuple[float, 
         return score, "无排行数据"
 
     # 分析排行榜竞价方向一致性 — 检查涨幅榜前10的概念集中度
-    # 一股多概念时全部计入计数，取热度最高的概念
+    # 一股多概念时全部计入计数，取热度最高的概念（元标签过滤）
+    from src.engine.concept_blacklist import is_meta_concept
     top10 = ranking_data[:10]
     concept_counter: Counter = Counter()
     for r in top10:
         for c in (r.get("concepts") or []):
-            if c:
+            if c and not is_meta_concept(c):
                 concept_counter[c] += 1
     if concept_counter:
         top_concept, top_count = concept_counter.most_common(1)[0]
@@ -320,20 +321,28 @@ def _score_d4_sector(hit: dict, limit_up_data: list, ranking_data: list) -> tupl
         )
         return _d4_score_from_counts(score, target_industry, sector_lu_count, sector_in_top)
 
-    # 2. 概念路径：聚合同概念涨停家数（取所属概念中最大值）
+    # 2. 概念路径：聚合同概念涨停家数（取所属概念中最大值，元标签过滤）
     from collections import defaultdict
+    from src.engine.concept_blacklist import is_meta_concept
     concept_lu_count: dict[str, int] = defaultdict(int)
     for s in (limit_up_data or []):
         for c in (s.get("concepts") or []):
-            concept_lu_count[c] += 1
+            if c and not is_meta_concept(c):
+                concept_lu_count[c] += 1
     concept_top_count: dict[str, int] = defaultdict(int)
     for r in (ranking_data or [])[:20]:
         for c in (r.get("concepts") or []):
-            concept_top_count[c] += 1
+            if c and not is_meta_concept(c):
+                concept_top_count[c] += 1
+
+    # 候选概念也过滤元标签
+    target_concepts_real = [c for c in target_concepts if not is_meta_concept(c)]
+    if not target_concepts_real:
+        return score, "概念全为元标签，已忽略"
 
     # 选概念：优先以"同概念涨停数最大"那个概念作为加分来源
     best_concept = max(
-        target_concepts,
+        target_concepts_real,
         key=lambda c: (concept_lu_count.get(c, 0), concept_top_count.get(c, 0)),
         default="",
     )
