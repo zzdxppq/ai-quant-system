@@ -223,22 +223,40 @@ def _score_d3_ranking(ranking_data: list, sentiment_data: dict) -> tuple[float, 
     if not ranking_data:
         return score, "无排行数据"
 
-    # 分析排行榜竞价方向一致性
-    # 检查涨幅榜前10的板块集中度
+    # 分析排行榜竞价方向一致性 — 检查涨幅榜前10的概念集中度
+    # 一股多概念时全部计入计数，取热度最高的概念
     top10 = ranking_data[:10]
-    industries = [r.get("industry", "") for r in top10 if r.get("industry")]
-    if industries:
-        counter = Counter(industries)
-        top_industry, top_count = counter.most_common(1)[0]
+    concept_counter: Counter = Counter()
+    for r in top10:
+        for c in (r.get("concepts") or []):
+            if c:
+                concept_counter[c] += 1
+    if concept_counter:
+        top_concept, top_count = concept_counter.most_common(1)[0]
         if top_count >= 4:
             score += 6
-            details.append(f"涨幅榜集中在{top_industry}（{top_count}/10），主线明确")
+            details.append(f"涨幅榜集中在{top_concept}（{top_count}/10），主线明确")
         elif top_count >= 3:
             score += 3
-            details.append(f"涨幅榜有{top_industry}方向（{top_count}/10）")
+            details.append(f"涨幅榜有{top_concept}方向（{top_count}/10）")
         else:
             score -= 2
-            details.append("涨幅榜板块杂乱，无核心方向")
+            details.append("涨幅榜概念杂乱，无核心方向")
+    else:
+        # 无概念数据兜底：旧 industry 路径
+        industries = [r.get("industry", "") for r in top10 if r.get("industry")]
+        if industries:
+            counter = Counter(industries)
+            top_industry, top_count = counter.most_common(1)[0]
+            if top_count >= 4:
+                score += 6
+                details.append(f"涨幅榜集中在{top_industry}（{top_count}/10），主线明确")
+            elif top_count >= 3:
+                score += 3
+                details.append(f"涨幅榜有{top_industry}方向（{top_count}/10）")
+            else:
+                score -= 2
+                details.append("涨幅榜板块杂乱，无核心方向")
 
     # 梯队情绪
     if sentiment_data:
@@ -259,53 +277,93 @@ def _score_d3_ranking(ranking_data: list, sentiment_data: dict) -> tuple[float, 
 
 
 def _score_d4_sector(hit: dict, limit_up_data: list, ranking_data: list) -> tuple[float, str]:
-    """D4: 板块效应 (15分)"""
+    """D4: 概念效应 (15分) — 同概念涨停家数 + 同概念上榜数
+
+    一股多概念时取该股所有概念中【最高】的同概念涨停家数（max-over-concepts）。
+    阈值不变（>=3 / >=2 / =1 / =0）。
+    """
     score = 7.5  # 中性
     details = []
 
-    # 找目标股所在板块
-    code = hit.get("code", "")
-    target_industry = ""
-    if ranking_data:
-        for r in ranking_data:
+    code = str(hit.get("code", ""))
+
+    # 1. 解析目标股所属概念（优先 ranking → fallback concept_cache）
+    target_concepts: list[str] = []
+    for r in ranking_data or []:
+        if str(r.get("code", "")) == code:
+            target_concepts = list(r.get("concepts") or [])
+            break
+    if not target_concepts:
+        try:
+            from src.data.concept_fetcher import load_stock_to_concepts
+            target_concepts = list(load_stock_to_concepts().get(code) or [])
+        except Exception:
+            target_concepts = []
+
+    if not target_concepts:
+        # 无概念数据：用行业兜底（旧路径）
+        target_industry = ""
+        for r in ranking_data or []:
             if str(r.get("code", "")) == code:
                 target_industry = r.get("industry", "")
                 break
+        if not target_industry:
+            return score, "概念/板块信息缺失"
+        # 旧 industry 逻辑回退
+        sector_lu_count = sum(
+            1 for s in (limit_up_data or [])
+            if s.get("industry", "") == target_industry
+        )
+        sector_in_top = sum(
+            1 for r in (ranking_data or [])[:20]
+            if r.get("industry", "") == target_industry
+        )
+        return _d4_score_from_counts(score, target_industry, sector_lu_count, sector_in_top)
 
-    if not target_industry:
-        return score, "板块信息缺失"
+    # 2. 概念路径：聚合同概念涨停家数（取所属概念中最大值）
+    from collections import defaultdict
+    concept_lu_count: dict[str, int] = defaultdict(int)
+    for s in (limit_up_data or []):
+        for c in (s.get("concepts") or []):
+            concept_lu_count[c] += 1
+    concept_top_count: dict[str, int] = defaultdict(int)
+    for r in (ranking_data or [])[:20]:
+        for c in (r.get("concepts") or []):
+            concept_top_count[c] += 1
 
-    # 同板块涨停数
-    sector_lu_count = 0
-    if limit_up_data:
-        for s in limit_up_data:
-            if s.get("industry", "") == target_industry:
-                sector_lu_count += 1
+    # 选概念：优先以"同概念涨停数最大"那个概念作为加分来源
+    best_concept = max(
+        target_concepts,
+        key=lambda c: (concept_lu_count.get(c, 0), concept_top_count.get(c, 0)),
+        default="",
+    )
+    sector_lu_count = concept_lu_count.get(best_concept, 0)
+    sector_in_top = concept_top_count.get(best_concept, 0)
 
-    # 同板块在涨幅榜的数量
-    sector_in_top = 0
-    if ranking_data:
-        for r in ranking_data[:20]:
-            if r.get("industry", "") == target_industry:
-                sector_in_top += 1
+    return _d4_score_from_counts(score, best_concept, sector_lu_count, sector_in_top)
 
-    if sector_lu_count >= 3:
+
+def _d4_score_from_counts(
+    base: float, label: str, lu_count: int, in_top: int,
+) -> tuple[float, str]:
+    """D4 计分通用规则（行业 / 概念两条路径共用）"""
+    score = base
+    details: list[str] = []
+    if lu_count >= 3:
         score += 5
-        details.append(f"{target_industry}板块{sector_lu_count}只涨停，梯队完整")
-    elif sector_lu_count >= 2:
+        details.append(f"{label} {lu_count}只涨停，梯队完整")
+    elif lu_count >= 2:
         score += 3
-        details.append(f"{target_industry}板块{sector_lu_count}只涨停，有助攻")
-    elif sector_lu_count == 1:
+        details.append(f"{label} {lu_count}只涨停，有助攻")
+    elif lu_count == 1:
         score -= 2
-        details.append(f"{target_industry}板块仅1只涨停，孤军奋战")
+        details.append(f"{label} 仅1只涨停，孤军奋战")
     else:
         score -= 4
-        details.append(f"{target_industry}板块无其他涨停，独木难支")
-
-    if sector_in_top >= 3:
+        details.append(f"{label} 无其他涨停，独木难支")
+    if in_top >= 3:
         score += 2
-        details.append(f"涨幅榜有{sector_in_top}只同板块")
-
+        details.append(f"涨幅榜有{in_top}只同向")
     score = min(15, max(0, score))
     return score, "；".join(details) if details else "无数据"
 
@@ -450,8 +508,20 @@ def _load_json(filename: str) -> Optional[dict]:
 
 
 def _get_limit_up_with_industry(ranking_list: list) -> list[dict]:
-    """从涨停缓存+排行数据构建带板块信息的涨停列表"""
+    """从涨停缓存+排行数据构建带板块/概念信息的涨停列表"""
     industry_map = {str(r["code"]): r.get("industry", "") for r in ranking_list}
+    ranking_concepts = {
+        str(r["code"]): list(r.get("concepts") or [])
+        for r in ranking_list
+    }
+
+    # 全市场概念映射（覆盖非 top30 的涨停股）
+    concept_cache: dict[str, list[str]] = {}
+    try:
+        from src.data.concept_fetcher import load_stock_to_concepts
+        concept_cache = load_stock_to_concepts() or {}
+    except Exception:
+        pass
 
     cache_file = DATA_DIR / "limit_up_cache.json"
     if not cache_file.exists():
@@ -464,11 +534,18 @@ def _get_limit_up_with_industry(ranking_list: list) -> list[dict]:
             return []
         result = []
         for r in cache[latest]:
-            code = r.get("code", "")
+            code = str(r.get("code", ""))
+            concepts = (
+                ranking_concepts.get(code)
+                or concept_cache.get(code)
+                or []
+            )
             result.append({
                 "code": code,
                 "name": r.get("name", ""),
                 "industry": industry_map.get(code, ""),
+                "concepts": list(concepts),
+                "change_pct": r.get("change_pct", 0),
             })
         return result
     except Exception:

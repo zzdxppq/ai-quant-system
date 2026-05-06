@@ -49,6 +49,9 @@ class DailyReview:
     prev_board_groups: list = field(default_factory=list)
     # 板块涨停统计 [{industry, count, leader: {code, name, board_count, change_pct}}]
     sector_zt_stats: list = field(default_factory=list)
+    # 概念涨停统计（一对多聚合，一股可同时支撑多个题材）
+    # [{name, limit_up_count, max_board, top_stock_name, ladder:{board:count}, ...}]
+    concept_zt_stats: list = field(default_factory=list)
     # 兼容字段：晋级失败扁平化列表
     failed_promotion_list: list = field(default_factory=list)
     # 次日观察池
@@ -170,6 +173,8 @@ def run_daily_review() -> Optional[DailyReview]:
     review.prev_board_groups = _build_prev_board_groups(limit_up_data, lianban_data)
     # 4.6 板块涨停统计 + 龙头
     review.sector_zt_stats = _build_sector_zt_stats(lianban_data)
+    # 4.6b 概念涨停统计（一对多聚合，最强概念梯队展示）
+    review.concept_zt_stats = _build_concept_zt_stats(lianban_data)
     # 兼容字段：扁平化失败列表
     review.failed_promotion_list = _get_failed_promotion_list(limit_up_data)
 
@@ -246,6 +251,24 @@ def _build_sector_zt_stats(lianban_data: list[dict]) -> list[dict]:
     # 按涨停数降序，相同时按龙头板数
     result.sort(key=lambda r: (-r["count"], -r["leader"]["board_count"]))
     return result
+
+
+def _build_concept_zt_stats(lianban_data: list[dict]) -> list[dict]:
+    """按概念聚合今日涨停 — 一对多映射，一股贡献给所有所属概念
+
+    Returns: 按 (limit_up_count desc, max_board desc) 排序的概念热度列表
+        每项: {name, limit_up_count, max_board, top_stock_code, top_stock_name,
+               ladder:{board:count}, limit_up_codes/names, avg_change_pct}
+    """
+    if not lianban_data:
+        return []
+    try:
+        from src.engine.concept_stats import aggregate_concept_limit_ups, serialize_heat
+        heats = aggregate_concept_limit_ups(lianban_data)
+        return [serialize_heat(h) for h in heats]
+    except Exception as e:
+        print(f"[复盘] 概念涨停聚合失败: {e}")
+        return []
 
 
 def _build_prev_board_groups(today_limit_up: list[dict], lianban_data: list[dict]) -> list[dict]:
@@ -553,7 +576,7 @@ def _get_failed_promotion_list(today_limit_up: list[dict]) -> list[dict]:
 
 
 def _get_lianban_ladder() -> list[dict]:
-    """获取连板梯队（含 industry 板块 + 封板时间 + 一字标记）"""
+    """获取连板梯队（含 industry 板块 + concepts 概念 + 封板时间 + 一字标记）"""
     cache_file = DATA_DIR / "limit_up_cache.json"
     if not cache_file.exists():
         return []
@@ -564,6 +587,14 @@ def _get_lianban_ladder() -> list[dict]:
         ic = DATA_DIR / "industry_cache.json"
         if ic.exists():
             industry_map = json.loads(ic.read_text())
+    except Exception:
+        pass
+
+    # 概念映射（一对多）
+    concept_map: dict[str, list[str]] = {}
+    try:
+        from src.data.concept_fetcher import load_stock_to_concepts
+        concept_map = load_stock_to_concepts() or {}
     except Exception:
         pass
 
@@ -628,6 +659,7 @@ def _get_lianban_ladder() -> list[dict]:
                 "is_main_board": is_main,
                 "change_pct": info.get("change_pct", 0),
                 "industry": industry_map.get(code, "-"),
+                "concepts": list(concept_map.get(code) or []),
                 "lbt": zt_info.get("lbt", ""),       # 最后封板时间 HH:MM:SS
                 "is_flat": _is_flat(code, is_main),  # 一字板
             })

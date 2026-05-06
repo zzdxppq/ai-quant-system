@@ -95,46 +95,55 @@ class MarketInsight:
 
 
 # ── 板块集中度 ────────────────────────────────────────────────────────
+# 由 industry 聚合改为概念聚合（一股多概念，全部计入）
+# 集中度口径：前 3 概念覆盖的【独立】入榜股数 / 总入榜数
 
 def _analyze_sectors(ranking: list[dict]) -> tuple[list[SectorHeat], float, str]:
-    """分析板块集中度"""
-    by_industry: dict[str, list[dict]] = defaultdict(list)
-    for item in ranking:
-        ind = item.get("industry", "").strip()
-        if not ind:
-            ind = "未分类"
-        by_industry[ind].append(item)
+    """分析概念集中度（沿用 SectorHeat 结构，industry 字段实际填的是概念名）
+
+    一股多概念时全部计入：
+      - 各概念分别计数（同一只股可同时支撑多个题材）
+      - 集中度统计【独立股票数】，避免一股多概念造成的累加超过 100%
+    """
+    from src.engine.concept_stats import aggregate_concept_ranking
+
+    raw = aggregate_concept_ranking(ranking)
+
+    # 转换为 SectorHeat（industry 字段填概念名 — 老消费方读到的"板块"即"概念"）
+    heats = [
+        SectorHeat(
+            industry=h["name"],
+            count=h["count"],
+            codes=h["codes"],
+            names=h["names"],
+            avg_gain_10d=h["avg_gain_10d"],
+            max_gain_10d=h["max_gain_10d"],
+            top_stock=h["top_stock"],
+            weight=h["weight"],
+        )
+        for h in raw
+    ]
 
     total = len(ranking)
-    heats = []
-    for ind, stocks in by_industry.items():
-        gains = [s.get("gain_10d", 0) for s in stocks]
-        top = max(stocks, key=lambda s: s.get("gain_10d", 0))
-        heats.append(SectorHeat(
-            industry=ind,
-            count=len(stocks),
-            codes=[s["code"] for s in stocks],
-            names=[s["name"] for s in stocks],
-            avg_gain_10d=round(sum(gains) / len(gains), 2),
-            max_gain_10d=round(max(gains), 2),
-            top_stock=top.get("name", ""),
-            weight=round(len(stocks) / total * 100, 1) if total > 0 else 0,
-        ))
+    if total == 0 or not heats:
+        return heats, 0.0, "无数据"
 
-    heats.sort(key=lambda h: h.count, reverse=True)
+    # 集中度：前 3 概念覆盖的【独立】股票数 / total
+    top3_codes: set[str] = set()
+    for h in heats[:3]:
+        top3_codes.update(str(c) for c in h.codes)
+    concentration = round(len(top3_codes) / total * 100, 1)
 
-    # 集中度 = 前3板块占榜比例
-    top3_count = sum(h.count for h in heats[:3])
-    concentration = round(top3_count / total * 100, 1) if total > 0 else 0
-
-    # 判定
     if concentration >= 50:
-        verdict = f"高度集中：前3板块({'/'.join(h.industry for h in heats[:3])})占据{concentration}%，主线清晰"
+        verdict = (
+            f"高度集中：前3概念({'/'.join(h.industry for h in heats[:3])})"
+            f"覆盖{concentration}%独立股，主线清晰"
+        )
     elif concentration >= 35:
-        top_ind = heats[0].industry if heats else "未知"
-        verdict = f"适度集中：{top_ind}领涨({heats[0].count}只)，有辨识度但非一枝独秀"
+        top_name = heats[0].industry
+        verdict = f"适度集中：{top_name}({heats[0].count}只)领跑，有辨识度但非一枝独秀"
     else:
-        verdict = f"高度分散：前3板块仅{concentration}%，无明确主线，题材轮动快"
+        verdict = f"高度分散：前3概念仅覆盖{concentration}%独立股，无明确主线，题材轮动快"
 
     return heats, concentration, verdict
 
