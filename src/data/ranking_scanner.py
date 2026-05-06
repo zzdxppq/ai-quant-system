@@ -272,7 +272,7 @@ def _enrich_concepts(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _enrich_zt_pool(df: pd.DataFrame) -> pd.DataFrame:
-    """为 top-N 补齐 连板数 + 最后封板时间"""
+    """为 top-N 补齐 连板数 + 最后封板时间 + 炸板次数"""
     try:
         from src.data.zt_pool_api import fetch_zt_pool
         pool = fetch_zt_pool()
@@ -287,6 +287,58 @@ def _enrich_zt_pool(df: pd.DataFrame) -> pd.DataFrame:
     df["last_limit_up_time"] = df["code"].map(
         lambda c: pool.get(str(c), {}).get("lbt", "")
     )
+    df["zhaban_count"] = df["code"].map(
+        lambda c: int(pool.get(str(c), {}).get("zbc", 0) or 0)
+    ).astype(int)
+    # 同步在 row 上保留 zt_info 引用，方便 active_attack 评估
+    df["_zt_info"] = df["code"].map(lambda c: pool.get(str(c), None))
+    return df
+
+
+def _enrich_active_attack(df: pd.DataFrame, max_workers: int = 8) -> pd.DataFrame:
+    """为 top-N 评估"当日主动攻击"属性
+
+    需要：今日 OHLC（K线末根）+ 过去 3/10 日 high + zt_info
+    数据来源：sina K线（含日 OHLC），并发拉取
+    """
+    if df.empty:
+        return df
+    from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
+    from src.engine.active_attack import evaluate_active_attack
+
+    def _task(row):
+        code = str(row["code"])
+        try:
+            kdf = fetch_kline(code, SCALE_DAILY, datalen=15)
+            if kdf is None or kdf.empty or len(kdf) < 4:
+                return code, None
+            today = kdf.iloc[-1]
+            today_ohlc = {
+                "open": float(today["open"]),
+                "high": float(today["high"]),
+                "low": float(today.get("low", today["open"])),
+                "close": float(today["close"]),
+            }
+            prev_3 = [float(kdf.iloc[-i]["high"]) for i in range(2, 5) if i <= len(kdf)]
+            prev_10 = [
+                float(kdf.iloc[-i]["high"])
+                for i in range(2, min(12, len(kdf) + 1))
+            ]
+            zt_info = row.get("_zt_info")
+            return code, evaluate_active_attack(today_ohlc, prev_3, prev_10, zt_info)
+        except Exception:
+            return code, None
+
+    rows = [r for _, r in df.iterrows()]
+    result_map: dict[str, dict | None] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = [ex.submit(_task, r) for r in rows]
+        for fut in as_completed(futs):
+            code, aa = fut.result()
+            result_map[code] = aa
+
+    df = df.copy()
+    df["active_attack"] = df["code"].astype(str).map(lambda c: result_map.get(c))
     return df
 
 
@@ -375,12 +427,16 @@ def scan_full_market_10d_ranking(top_n: int = 30) -> pd.DataFrame:
     )
     merged["rank"] = merged.index + 1
 
-    # 5. 富化：腾讯补市值 + 行业 + 概念 + 涨停板池 + 240 周线偏离度
+    # 5. 富化：腾讯补市值 + 行业 + 概念 + 涨停板池 + 240 周线偏离度 + 主动攻击
     merged = _enrich_market_cap(merged)
     merged = _enrich_industry(merged)
     merged = _enrich_concepts(merged)
     merged = _enrich_zt_pool(merged)
     merged = _enrich_deviation(merged)
+    merged = _enrich_active_attack(merged)
+    # 内部辅助列 _zt_info 不外露
+    if "_zt_info" in merged.columns:
+        merged = merged.drop(columns=["_zt_info"])
 
     # 6. 市值换算亿元
     merged["market_cap_yi"] = (
@@ -394,7 +450,8 @@ def scan_full_market_10d_ranking(top_n: int = 30) -> pd.DataFrame:
     keep = [
         "rank", "code", "name", "industry", "concepts", "close", "market_cap_yi",
         "change_pct", "auction_gain", "gain_10d", "continuous_limit_up",
-        "last_limit_up_time", "deviation_pct", "is_main_board",
+        "last_limit_up_time", "zhaban_count", "deviation_pct", "is_main_board",
+        "active_attack",
     ]
     return merged[[c for c in keep if c in merged.columns]]
 

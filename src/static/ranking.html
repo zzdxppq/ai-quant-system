@@ -166,7 +166,9 @@
                     <thead><tr>
                         <th>#</th><th>代码</th><th>名称</th><th>板块</th><th>最新价</th>
                         <th>市值(亿)</th><th>涨幅</th><th>竞价涨幅</th><th>10日涨幅</th>
-                        <th>连板</th><th>最后封板</th><th>偏离(%)</th><th>周期</th><th>标记</th>
+                        <th>连板</th><th>最后封板</th><th>偏离(%)</th><th>周期</th>
+                        <th title="阳线 + 创新高 + (无险或不破开盘)">主动攻击</th>
+                        <th>标记</th>
                     </tr></thead>
                     <tbody>
                         <tr v-for="(item, idx) in ranking" :key="item.code"
@@ -194,6 +196,19 @@
                                 {{ fmtNum(item.deviation_pct, 1) }}
                             </td>
                             <td>{{ item.top30_streak ? item.top30_streak + '天' : '-' }}</td>
+                            <td>
+                                <span v-if="(item.active_attack || {}).is_attack"
+                                      class="tag" style="background:#3b0a0a;color:#ef4444;font-weight:700;"
+                                      :title="attackTooltip(item.active_attack)">
+                                    ✓ 攻击
+                                </span>
+                                <span v-else-if="item.active_attack"
+                                      style="color:#6b7280;font-size:11px;"
+                                      :title="attackTooltip(item.active_attack)">
+                                    ×
+                                </span>
+                                <span v-else style="color:#6b7280;">-</span>
+                            </td>
                             <td>
                                 <span v-if="isRepresentative(item.code)" class="tag tag-rep">代表股</span>
                                 <span v-else-if="isCandidate(item.code)" class="tag tag-candidate">候选</span>
@@ -438,10 +453,22 @@ createApp({
         // 每分钟检测一次是否跨过交易时段边界，及时切换 polling 频率
         setInterval(startLivePolling, 60000)
 
+        function attackTooltip(aa) {
+            if (!aa) return ''
+            const lines = [
+                `1.阳线: ${aa.cond1_yang ? '✓' : '×'} ${aa.cond1_detail || ''}`,
+                `2.新高: ${aa.cond2_new_high ? '✓' : '×'}${aa.cond2_is_10d_high ? '(10日新高)' : ''} ${aa.cond2_detail || ''}`,
+                `3.分时: ${aa.cond3_intraday ? '✓' : '×'} ${aa.cond3_detail || ''}`,
+                `4.无险: ${aa.cond4_safe ? '✓' : '×'} ${aa.cond4_detail || ''}`,
+            ]
+            return lines.join('\n')
+        }
+
         return {
             snapshot, ranking, rankingUpdatedAt, rankingLive, sentiment, market, leader,
             top30Stats, top30Verdict, relayVerdict,
             fmtNum, fmtPct, numClass, isRepresentative, isCandidate, isLimitUp,
+            attackTooltip,
         }
     }
 }).mount('#app')

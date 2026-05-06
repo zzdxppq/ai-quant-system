@@ -74,6 +74,7 @@ def fetch_zt_pool(date: Optional[str] = None) -> dict:
             "name": item.get("n", ""),
             "lbc": int(item.get("lbc", 0) or 0),
             "lbt": _format_hhmmss(item.get("lbt")),
+            "zbc": int(item.get("zbc", 0) or 0),  # 炸板次数
         }
 
     print(f"涨停板池: {len(result)} 只 (date={date})")

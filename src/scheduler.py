@@ -78,16 +78,36 @@ def _find_leader_from_ranking(ranking_file: str, main_board_only: bool = False):
 
 
 def _run_market_insight(ranking_records: list[dict]) -> None:
-    """运行四维市场洞察分析"""
+    """运行四维市场洞察 + 主动攻击热度聚合"""
     try:
         from src.engine.market_insight import (
             analyze_market_insight, save_insight, load_prev_ranking,
         )
+        from src.engine.active_attack import aggregate_market_attack_phase
+        from dataclasses import asdict as _asdict
+        import json as _json
         prev = load_prev_ranking()
         insight = analyze_market_insight(ranking_records, prev)
+
+        # 主动攻击热度（个股 active_attack 已由 scanner 注入）
+        attack_phase = aggregate_market_attack_phase(
+            ranking_records, date_str=now_cn().strftime("%Y-%m-%d"),
+        )
+        # 保存：先写 dataclass insight，再 patch attack_phase
         save_insight(insight)
+        try:
+            from src.config import DATA_DIR as _DD
+            p = _DD / "latest_insight.json"
+            d = _json.loads(p.read_text())
+            d["attack_phase"] = attack_phase
+            p.write_text(_json.dumps(d, ensure_ascii=False, indent=2))
+        except Exception as _e:
+            print(f"[市场洞察] attack_phase 写入失败: {_e}")
+
         print(f"[市场洞察] 波形={insight.wave.wave_phase}({insight.wave.intensity:.0f}) · "
               f"板块集中度{insight.sector_concentration}% · {insight.capital_summary}")
+        print(f"[主动攻击] {attack_phase['phase']} · 攻击 {attack_phase['attack_count']}/30 · "
+              f"翻倍 {attack_phase['doubler_count']} · 仓位上限 {attack_phase['position_cap_pct']}%")
     except Exception as e:
         print(f"[市场洞察] 分析失败: {e}")
 
