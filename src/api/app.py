@@ -312,11 +312,13 @@ async def get_review():
         except Exception:
             pass
 
-    # scorecard 用当前代码重算（确保历史快照也用新公式 / 标签）
+    # scorecard / promotion_summary 用当前代码重算（确保历史快照也用新公式 / 标签）
     try:
-        from src.engine.daily_review import _build_scorecard
+        from src.engine.daily_review import _build_scorecard, _build_promotion_summary
+        prev_groups = review_data.get("prev_board_groups") or []
+        review_data["promotion_summary"] = _build_promotion_summary(prev_groups)
         review_data["scorecard"] = _build_scorecard(
-            review_data.get("prev_board_groups") or [],
+            prev_groups,
             review_data.get("relay_env") or {},
             review_data.get("sector_zt_stats") or [],
             int(review_data.get("limit_up_count") or 0),

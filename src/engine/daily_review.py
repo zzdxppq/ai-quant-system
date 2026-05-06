@@ -393,7 +393,9 @@ def _build_prev_board_groups(today_limit_up: list[dict], lianban_data: list[dict
     def _is_main(code: str) -> bool:
         return not str(code).startswith(("300", "301", "688", "8", "4"))
 
-    def _classify(pct: float) -> str:
+    def _classify(pct: float | None) -> str:
+        if pct is None:
+            return "数据缺失"
         if pct <= -9.5:
             return "跌停"
         if pct <= -5:
@@ -404,10 +406,11 @@ def _build_prev_board_groups(today_limit_up: list[dict], lianban_data: list[dict
             return "平开"
         return "炸板"
 
-    def _today_pct(code: str) -> tuple[float, float]:
+    def _today_pct(code: str) -> tuple[float | None, float | None]:
+        """缺数据时返回 (None, None)，区分真平开（0%）与缺失"""
         row = spot_map.get(code)
         if row is None:
-            return 0.0, 0.0
+            return None, None
         try:
             close = float(row.get("close", 0) or 0)
             pre = float(row.get("pre_close", 0) or 0)
@@ -415,13 +418,13 @@ def _build_prev_board_groups(today_limit_up: list[dict], lianban_data: list[dict
                 return round(close, 2), round((close / pre - 1) * 100, 2)
         except (ValueError, TypeError):
             pass
-        return 0.0, 0.0
+        return None, None
 
-    def _today_open_pct(code: str) -> float:
-        """今日开盘相对昨收的涨跌幅 — 用于"红盘晋级"判定（高开=主动晋级）"""
+    def _today_open_pct(code: str) -> float | None:
+        """今日开盘相对昨收的涨跌幅；缺数据返回 None，区分真平开"""
         row = spot_map.get(code)
         if row is None:
-            return 0.0
+            return None
         try:
             op = float(row.get("open", 0) or 0)
             pre = float(row.get("pre_close", 0) or 0)
@@ -429,7 +432,7 @@ def _build_prev_board_groups(today_limit_up: list[dict], lianban_data: list[dict
                 return round((op / pre - 1) * 100, 2)
         except (ValueError, TypeError):
             pass
-        return 0.0
+        return None
 
     # ---- 组装：晋级 vs 失败，按昨日板数分组 ----
     groups_by_prev: dict = {}
@@ -916,12 +919,23 @@ def _build_promotion_summary(prev_board_groups: list[dict]) -> list[dict]:
         if total == 0:
             continue
         rate = round(len(promoted) / total * 100, 1)
-        fail_avg = (
-            round(sum(float(s.get("today_pct", 0) or 0) for s in failed) / len(failed), 2)
-            if failed else 0.0
-        )
-        # 失败票均跌幅 < -3% 或 success_rate < 40 → warn
-        warn = (pb == 2 and rate < 40) or fail_avg < -3.0
+        # fail_avg：仅对有有效今日 close 的失败票求均值
+        # 历史快照可能把缺数据存为 today_pct=0.0 / today_close=0，过滤掉
+        valid_pcts: list[float] = []
+        for s in failed:
+            tp = s.get("today_pct")
+            tc = s.get("today_close")
+            if tp is None:
+                continue
+            if (tc is None) or (float(tc or 0) <= 0):
+                continue
+            try:
+                valid_pcts.append(float(tp))
+            except (TypeError, ValueError):
+                continue
+        fail_avg = round(sum(valid_pcts) / len(valid_pcts), 2) if valid_pcts else None
+        # 失败票均跌幅 < -3% 或 success_rate < 40 → warn（fail_avg 缺失则跳过）
+        warn = (pb == 2 and rate < 40) or (fail_avg is not None and fail_avg < -3.0)
         summary.append({
             "label": f"{pb}进{pb+1}",
             "success": len(promoted),
@@ -1068,19 +1082,17 @@ def _build_scorecard(
         b1_promoted, b1_total, b1_rate = 0, 0, 0.0
     score_1 = 1 if b1_rate >= 30 else 0
 
-    # === 指标 2: 2进3 红盘晋级（today_open_pct >= 0）≥3 只 ===
+    # === 指标 2: 2进3 成功率 ≥40% ===
+    # 阈值与 _build_promotion_summary 中 2进3 warn 阈值一致（< 40% 即视为接力恶化）
+    # 改用成功率而非"红盘晋级数"：避免 today_open_pct 数据质量影响判定
     g2 = next((g for g in prev_board_groups if g.get("prev_board") == 2), None)
     if g2:
-        promoted2 = g2.get("promoted") or []
-        red_count = sum(
-            1 for s in promoted2
-            if (s.get("today_open_pct") is not None and s.get("today_open_pct") >= 0)
-        )
-        b2_total = len(promoted2) + len(g2.get("failed") or [])
-        b2_promoted = len(promoted2)
+        b2_promoted = len(g2.get("promoted") or [])
+        b2_total = b2_promoted + len(g2.get("failed") or [])
+        b2_rate = round(b2_promoted / b2_total * 100, 1) if b2_total else 0.0
     else:
-        red_count, b2_total, b2_promoted = 0, 0, 0
-    score_2 = 1 if red_count >= 3 else 0
+        b2_promoted, b2_total, b2_rate = 0, 0, 0.0
+    score_2 = 1 if b2_rate >= 40 else 0
 
     # === 指标 3: 板块集中度（前3概念覆盖的【独立】涨停股 / 总涨停数）≥50% ===
     # 一股多概念时只计一次，避免累加超 100%
@@ -1118,7 +1130,7 @@ def _build_scorecard(
 
     indicators = [
         {"label": "1进2成功率",   "today": f"{b1_rate}%",          "target": "≥30%", "score": score_1, "raw": b1_rate, "detail": f"{b1_promoted}/{b1_total}"},
-        {"label": "2进3红盘晋级", "today": f"{red_count}/{b2_promoted}", "target": "≥3只", "score": score_2, "raw": red_count, "detail": f"晋级{b2_promoted}只"},
+        {"label": "2进3成功率", "today": f"{b2_rate}%", "target": "≥40%", "score": score_2, "raw": b2_rate, "detail": f"{b2_promoted}/{b2_total}"},
         {"label": "板块集中度",   "today": f"{sec_concentration}%",     "target": "≥50%", "score": score_3, "raw": sec_concentration, "detail": "前3概念涨停占比"},
         {"label": "空间板",       "today": space_status_text,           "target": "未断板", "score": score_4, "raw": int(space_held), "detail": (f"昨{prev_space.get('yesterday_board')}板{prev_space.get('name','')}" if prev_space else "—")},
         {"label": "昨日连板指数", "today": f"{lianban_index_pct:+.2f}%",  "target": ">0%", "score": score_5, "raw": lianban_index_pct, "detail": f"昨≥2板共{len(pcts)}只今日均值"},
