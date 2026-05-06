@@ -1227,7 +1227,8 @@ def _build_decision_headline(
     b1_ind = next((i for i in indicators if i["label"] == "1进2成功率"), {})
     b1_rate_str = b1_ind.get("today", "")
 
-    if total <= 2:
+    # 按 decision 选 headline（与 _build_scorecard 的阈值一致：≥5/≥4/≥3/<3）
+    if decision == "空仓":
         if mid_break:
             return (
                 f"空仓。最大风险：中位股断层+无主线。今日 2进3 晋级 {g2_total} 只"
@@ -1240,8 +1241,8 @@ def _build_decision_headline(
             f"今日 1进2 仅 {b1_rate_str}、板块集中度 {sec_concentration}%，"
             f"接力生态恶化。除非明日板块集中度>40% 且空间板未断板，否则不开仓。"
         )
-    if total == 3:
-        space_ok = next((i for i in indicators if i["label"] == "空间板"), {}).get("score", 0) == 1
+    if decision == "试错":
+        space_ok = next((i for i in indicators if i["label"] == "空间板"), {}).get("score", 0) >= 1
         if space_ok:
             return (
                 f"试错。最大风险：{worst_label}（{worst_today}）。"
@@ -1251,13 +1252,13 @@ def _build_decision_headline(
             f"试错。最大风险：{worst_label}（{worst_today}）。"
             f"接力生态半生不熟，仓位严格控制在 1/4 以下，破信号位坚决出。"
         )
-    if total == 4:
+    if decision == "正常":
         return (
             f"正常出击。主线相对清晰（板块集中度 {sec_concentration}%），晋级率健康。"
             f"重点做 2进3 / 3进4 换手板。唯一风险：{worst_label}（{worst_today}），"
             f"一旦恶化立即收手。"
         )
-    # total == 5
+    # decision == "重仓"
     return (
         f"重仓出击。接力生态满血（板块集中度 {sec_concentration}%、1进2 {b1_rate_str}）。"
         f"重点做 2进3 / 3进4 / 4进5 换手板，仓位可上 70%。"
