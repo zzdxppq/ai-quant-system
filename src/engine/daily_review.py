@@ -746,6 +746,11 @@ def _generate_watch_pool(
     ranking: dict,
     review: DailyReview,
 ) -> list[dict]:
+    """次日观察池入口（向后兼容包装）— 复用 build_watch_pool_from_ranking"""
+    return build_watch_pool_from_ranking(ranking)
+
+
+def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
     """次日观察池（从10日涨幅榜 top30 中筛主板高位连板）
 
     条件（必须全部满足）：
@@ -755,14 +760,17 @@ def _generate_watch_pool(
     4. is_main_board（主板）
 
     Args:
-        ranking: {code: ranking_row}，包含 gain_10d / continuous_limit_up /
-                 is_main_board / market_cap_yi / industry / concepts 等字段
+        ranking: {code: ranking_row} 或 [ranking_row, ...]
+                 row 含 gain_10d / continuous_limit_up / is_main_board /
+                       market_cap_yi / industry / concepts / close
     """
     if not ranking:
         return []
 
+    rows = ranking.values() if isinstance(ranking, dict) else ranking
+
     qualified: list[dict] = []
-    for code, r in ranking.items():
+    for r in rows:
         gain = float(r.get("gain_10d") or 0)
         clu = int(r.get("continuous_limit_up") or 0)
         is_main = bool(r.get("is_main_board"))
@@ -784,7 +792,7 @@ def _generate_watch_pool(
     out: list[dict] = []
     for s in qualified:
         ind = s.get("industry") or "未知"
-        out.append(asdict(WatchCandidate(
+        candidate = asdict(WatchCandidate(
             code=str(s.get("code", "")),
             name=s.get("name", ""),
             board_count=int(s.get("continuous_limit_up") or 0),
@@ -798,7 +806,11 @@ def _generate_watch_pool(
             ),
             watch_points="竞价 4~7.5% 介入；竞价回落破开盘价不接；同板块跟风缩量则减仓",
             auction_range=_calc_auction_range(float(s.get("close") or 0)),
-        )))
+        ))
+        # 透传 top_concepts / is_main_board 给前端展示
+        candidate["top_concepts"] = list(s.get("top_concepts") or [])
+        candidate["is_main_board"] = bool(s.get("is_main_board", True))
+        out.append(candidate)
     return out
 
 

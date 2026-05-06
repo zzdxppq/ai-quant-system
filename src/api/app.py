@@ -259,16 +259,21 @@ async def get_review():
     实现：
       · now < 15:00：从 review_history.json 取最近一条 date != today 的记录
       · now >= 15:00：返回 latest_review.json（今日 cron 在 15:45 跑完）
-                       若 latest_review 还停留在昨日，也照常返回
+    无论哪种情况，watch_pool（次日观察池）始终用 latest_ranking 重算 —
+    "次日观察池"是面向 next-day 的语义，应反映最新已知的 ranking 状态。
     """
     from src.config import now_cn
+    from src.engine.daily_review import build_watch_pool_from_ranking
 
     latest_file = DATA_DIR / "latest_review.json"
     history_file = DATA_DIR / "review_history.json"
+    ranking_file = DATA_DIR / "latest_ranking.json"
 
     n = now_cn()
     today_str = n.strftime("%Y-%m-%d")
     cutoff = n.replace(hour=15, minute=0, second=0, microsecond=0)
+
+    review_data: dict | None = None
 
     # 15:00 前 → 优先返回 history 中最近一条非今日的记录
     if n < cutoff and history_file.exists():
@@ -278,14 +283,32 @@ async def get_review():
                 for entry in reversed(hist):
                     d = str(entry.get("date") or "")[:10]
                     if d and d != today_str:
-                        return JSONResponse(entry)
+                        review_data = entry
+                        break
         except Exception:
             pass
 
     # 15:00 后 或 history 不可用 → latest_review.json
-    if latest_file.exists():
-        return JSONResponse(json.loads(latest_file.read_text()))
-    return JSONResponse({})
+    if review_data is None and latest_file.exists():
+        try:
+            review_data = json.loads(latest_file.read_text())
+        except Exception:
+            review_data = None
+
+    if review_data is None:
+        return JSONResponse({})
+
+    # watch_pool 始终用最新 ranking 重算（按当前规则：top30+45%+≥2连板+主板）
+    if ranking_file.exists():
+        try:
+            ranking_payload = json.loads(ranking_file.read_text())
+            ranking_rows = ranking_payload.get("ranking") or []
+            review_data = dict(review_data)  # 避免污染历史 entry
+            review_data["watch_pool"] = build_watch_pool_from_ranking(ranking_rows)
+        except Exception:
+            pass
+
+    return JSONResponse(review_data)
 
 
 @app.get("/api/auction-scores")
