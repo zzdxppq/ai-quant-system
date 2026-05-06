@@ -636,7 +636,15 @@
                         </td>
                         <td class="gain-pos"><b>{{ hit.auction_gain }}%</b></td>
                         <td>{{ hit.market_cap }}亿</td>
-                        <td style="font-size:12px;color:#a0aec0;">{{ hitLive(hit.code).industry || industryOf(hit.code) || '-' }}</td>
+                        <td style="font-size:12px;">
+                            <template v-if="topConceptsOf(hit.code).length">
+                                <span style="color:#ef4444;font-weight:600;">{{ topConceptsOf(hit.code).join('/') }}</span>
+                                <span style="color:#6b7280;font-size:11px;margin-left:3px;">({{ hitLive(hit.code).industry || industryOf(hit.code) || '-' }})</span>
+                            </template>
+                            <template v-else>
+                                <span style="color:#a0aec0;">{{ hitLive(hit.code).industry || industryOf(hit.code) || '-' }}</span>
+                            </template>
+                        </td>
                         <td><b>{{ hit.continuous_limit_up }}板</b></td>
                         <td :class="(hitLive(hit.code).gain_10d ?? hit.gain_10d ?? 0) >= 0 ? 'gain-pos' : 'gain-neg'">
                             <b>{{ fmtPct(hitLive(hit.code).gain_10d ?? hit.gain_10d) }}</b>
@@ -698,7 +706,15 @@
                             </td>
                             <td>{{ s.close || '—' }}</td>
                             <td>{{ s.market_cap_yi != null ? s.market_cap_yi : '—' }}</td>
-                            <td style="font-size:12px;color:#a0aec0;">{{ s.industry || '—' }}</td>
+                            <td style="font-size:12px;">
+                                <template v-if="(s.top_concepts || []).length">
+                                    <span style="color:#ef4444;font-weight:600;">{{ (s.top_concepts || []).join('/') }}</span>
+                                    <span style="color:#6b7280;font-size:11px;margin-left:3px;">({{ s.industry || '—' }})</span>
+                                </template>
+                                <template v-else>
+                                    <span style="color:#a0aec0;">{{ s.industry || '—' }}</span>
+                                </template>
+                            </td>
                             <td>
                                 <span v-if="s.is_main_board" class="tag tag-main">主板</span>
                                 <span v-else class="tag tag-gem">创/科</span>
@@ -1478,6 +1494,11 @@ createApp({
             const r = (ranking.value || []).find(x => String(x.code) === String(code))
             return r?.industry || '-'
         }
+        // 取该股的 top_concepts（涨停股最多的1-2个概念）
+        function topConceptsOf(code) {
+            const r = (ranking.value || []).find(x => String(x.code) === String(code))
+            return r?.top_concepts || []
+        }
         // 周期股判定：在最新 TOP30 涨幅榜内 = 周期股（与选股记录的 is_cycle_stock 同源）
         function isCycleStock(code) {
             return (ranking.value || []).some(x => String(x.code) === String(code))
@@ -1861,7 +1882,7 @@ createApp({
             auctionChart,
             miniTicksOf, miniPreCloseY, miniPricePath, miniVolBars, miniOpenPoint,
             today, phaseClass, phaseColor, progressPct, progressClass,
-            industryOf, isCycleStock, signalOf, scoreOf, decisionLevelClass, decisionIcon,
+            industryOf, topConceptsOf, isCycleStock, signalOf, scoreOf, decisionLevelClass, decisionIcon,
             leaderClass, leaderIcon, leaderBadgeClass,
             getLeaderClass, getLeaderIcon, getLeaderBadgeClass,
             sentimentClass, sentimentIcon, marketClass, marketIcon,

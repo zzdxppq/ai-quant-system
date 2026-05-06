@@ -190,6 +190,59 @@ def serialize_heat(h: ConceptHeat) -> dict:
     return asdict(h)
 
 
+def enrich_ranking_with_top_concepts(
+    ranking_records: list[dict],
+    top_n: int = 2,
+) -> list[dict]:
+    """为 ranking 每一行注入 top_concepts 字段（按全市场涨停热度排）
+
+    数据源：limit_up_cache.json 最新一天 + concept_cache.json
+    实现：先按概念聚合涨停股得到全局热度，再为每只股选 1~N 个最热概念
+
+    Args:
+        ranking_records: in-place 修改的 ranking 行（需有 code 字段，原 concepts 字段）
+        top_n: 每只股展示的概念数（默认 2）
+
+    Returns: 同入参（原地修改后返回）
+    """
+    if not ranking_records:
+        return ranking_records
+
+    # 1. 加载今日涨停 + 概念映射
+    try:
+        from src.config import DATA_DIR
+        import json as _json
+        cache_file = DATA_DIR / "limit_up_cache.json"
+        if not cache_file.exists():
+            return ranking_records
+        cache = _json.loads(cache_file.read_text())
+        latest = sorted(cache.keys())[-1] if cache else ""
+        if not latest:
+            return ranking_records
+        today_lu = cache.get(latest, []) or []
+    except Exception:
+        return ranking_records
+
+    try:
+        from src.data.concept_fetcher import load_stock_to_concepts
+        c_map = load_stock_to_concepts() or {}
+    except Exception:
+        c_map = {}
+
+    if not c_map:
+        return ranking_records
+
+    # 2. 全市场涨停按概念聚合（一股多概念全部计入）
+    heats = aggregate_concept_limit_ups(today_lu, c_map)
+
+    # 3. 每只 ranking 行选 top_n 个最热概念
+    for row in ranking_records:
+        cs = row.get("concepts") or []
+        row["top_concepts"] = top_concepts_for_stock(cs, heats, top_n=top_n)
+
+    return ranking_records
+
+
 def format_ladder_string(ladder: dict[int, int]) -> str:
     """{3:2, 2:4, 1:7} → "3板(2只), 2板(4只), 首板(7只)"
 

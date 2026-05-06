@@ -179,6 +179,17 @@ _LEVEL_META = {
 }
 
 
+def _render_concept_industry_cell(top_concepts: list, industry: str) -> str:
+    """渲染"概念A/概念B (行业)"单元格 — 概念红字、行业灰字"""
+    industry = industry or "-"
+    if top_concepts:
+        return (
+            f'<span style="color:#ef4444;font-weight:600;">{"/".join(top_concepts)}</span> '
+            f'<span style="color:#6b7280;font-size:11px;">({industry})</span>'
+        )
+    return f'<span style="color:#a0aec0;">{industry}</span>'
+
+
 def _build_html(
     cycle_phase: str, cycle_day: int,
     leader: dict | None, hits: list[dict], signals: list[dict],
@@ -284,6 +295,38 @@ def _build_html(
                 if code and r.get("industry"):
                     industry_map[code] = r["industry"]
 
+        # 概念 top_concepts：优先 ranking 已注入字段，缺失则按全市场涨停聚合补齐
+        top_concepts_map: dict[str, list[str]] = {}
+        if ranking_data:
+            for r in (ranking_data.get("ranking") or []):
+                code = str(r.get("code", ""))
+                if code and r.get("top_concepts"):
+                    top_concepts_map[code] = list(r["top_concepts"])
+        try:
+            from src.data.concept_fetcher import load_stock_to_concepts
+            from src.engine.concept_stats import (
+                aggregate_concept_limit_ups, top_concepts_for_stock,
+            )
+            c_map = load_stock_to_concepts() or {}
+            heats = []
+            try:
+                lu_file = DATA_DIR / "limit_up_cache.json"
+                if lu_file.exists():
+                    lu = json.loads(lu_file.read_text()) or {}
+                    if lu:
+                        latest = sorted(lu.keys())[-1]
+                        heats = aggregate_concept_limit_ups(lu.get(latest, []) or [], c_map)
+            except Exception:
+                pass
+            for h in hits:
+                code = str(h.get("code", ""))
+                if code and code not in top_concepts_map and code in c_map:
+                    top_concepts_map[code] = top_concepts_for_stock(
+                        list(c_map.get(code) or []), heats, top_n=2,
+                    )
+        except Exception:
+            pass
+
         # 10日涨幅兜底（不在排行中的标的用K线计算）
         gain_10d_map = {}
         if ranking_data:
@@ -346,8 +389,8 @@ def _build_html(
                 {h.get('auction_gain', '—')}%
               </td>
               <td style="padding:8px;border-bottom:1px solid #1e2a45;">{h.get('market_cap', '—')}亿</td>
-              <td style="padding:8px;border-bottom:1px solid #1e2a45;color:#a0aec0;font-size:12px;">
-                {industry_map.get(code, '-')}
+              <td style="padding:8px;border-bottom:1px solid #1e2a45;font-size:12px;">
+                {_render_concept_industry_cell(top_concepts_map.get(code) or [], industry_map.get(code, '-'))}
               </td>
               <td style="padding:8px;border-bottom:1px solid #1e2a45;font-weight:700;">
                 {h.get('continuous_limit_up', '')}板

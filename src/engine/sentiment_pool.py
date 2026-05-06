@@ -276,9 +276,10 @@ def compute_market_auction_stats(
             "auction_pct": round(float(row["auction_pct"]), 2),
             "is_main_board": bool(row["is_main_board"]),
             "close": round(float(row.get("close", 0) or 0), 2),
-            # 下面 4 项后续补齐
+            # 下面 5 项后续补齐
             "market_cap_yi": None,
             "industry": "-",
+            "top_concepts": [],
             "unmatched_amount_wan": None,
         })
 
@@ -336,6 +337,30 @@ def compute_market_auction_stats(
                     s["industry"] = ind
         except Exception as e:
             print(f"[一字涨停富化] 板块查表失败: {e}")
+
+        # 4) top_concepts 注入（涨停股最多的1-2个概念）
+        try:
+            from src.engine.concept_stats import (
+                aggregate_concept_limit_ups, top_concepts_for_stock,
+            )
+            from src.data.concept_fetcher import load_stock_to_concepts
+            c_map = load_stock_to_concepts() or {}
+            if c_map:
+                # 全市场涨停聚合 — 用 limit_up_cache 最新一天
+                lu_cache_file = DATA_DIR / "limit_up_cache.json"
+                heats = []
+                if lu_cache_file.exists():
+                    lu_cache = json.loads(lu_cache_file.read_text()) or {}
+                    if lu_cache:
+                        latest_d = sorted(lu_cache.keys())[-1]
+                        heats = aggregate_concept_limit_ups(
+                            lu_cache.get(latest_d, []) or [], c_map,
+                        )
+                for s in flat_list:
+                    cs = list(c_map.get(s["code"]) or [])
+                    s["top_concepts"] = top_concepts_for_stock(cs, heats, top_n=2) if heats else cs[:2]
+        except Exception as e:
+            print(f"[一字涨停富化] 概念热度注入失败: {e}")
 
     stats = MarketAuctionStats(
         date=now_cn().strftime("%Y-%m-%d %H:%M:%S"),

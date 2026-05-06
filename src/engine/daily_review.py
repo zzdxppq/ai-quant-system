@@ -189,6 +189,9 @@ def run_daily_review() -> Optional[DailyReview]:
     # 5. 生成次日观察池（严格 3 条件）
     review.watch_pool = _generate_watch_pool(lianban_data, ranking_data, review)
 
+    # 5.5 各 stock 节点注入 top_concepts（晋级矩阵 / space_board / watch_pool / 天梯）
+    _enrich_review_top_concepts(review, lianban_data)
+
     # 6. 市场情绪小结
     review.market_summary = _generate_summary(review)
 
@@ -251,6 +254,51 @@ def _build_sector_zt_stats(lianban_data: list[dict]) -> list[dict]:
     # 按涨停数降序，相同时按龙头板数
     result.sort(key=lambda r: (-r["count"], -r["leader"]["board_count"]))
     return result
+
+
+def _enrich_review_top_concepts(review, lianban_data: list[dict]) -> None:
+    """为复盘各节点（晋级矩阵 / space_board / watch_pool）注入 top_concepts。
+
+    数据源：lianban_data 已含 concepts；按全市场涨停聚合热度选 top 2。
+    """
+    try:
+        from src.engine.concept_stats import (
+            aggregate_concept_limit_ups, top_concepts_for_stock,
+        )
+        from src.data.concept_fetcher import load_stock_to_concepts
+    except Exception:
+        return
+
+    c_map = load_stock_to_concepts() or {}
+    if not c_map and not lianban_data:
+        return
+
+    heats = aggregate_concept_limit_ups(lianban_data, c_map)
+
+    def pick(code: str) -> list[str]:
+        cs = list(c_map.get(str(code)) or [])
+        return top_concepts_for_stock(cs, heats, top_n=2)
+
+    # 1) 晋级矩阵
+    for grp in (review.prev_board_groups or []):
+        for s in grp.get("promoted", []) + grp.get("failed", []):
+            s["top_concepts"] = pick(s.get("code", ""))
+
+    # 2) relay_env.space_board / prev_space_board
+    relay = review.relay_env or {}
+    sb = relay.get("space_board")
+    if isinstance(sb, dict) and sb.get("code"):
+        sb["top_concepts"] = pick(sb["code"])
+
+    # 3) watch_pool（次日观察池每条候选）
+    for w in (review.watch_pool or []):
+        if isinstance(w, dict) and w.get("code"):
+            w["top_concepts"] = pick(w["code"])
+
+    # 4) lianban_ladder 自身（display 用）
+    for s in (review.lianban_ladder or []):
+        if isinstance(s, dict) and s.get("code"):
+            s["top_concepts"] = pick(s["code"])
 
 
 def _build_concept_zt_stats(lianban_data: list[dict]) -> list[dict]:

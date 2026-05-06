@@ -147,6 +147,32 @@
             background: #0d1220; margin-bottom: 4px;
             font-size: 12px;
         }
+
+        /* 最强概念梯队 */
+        .concept-row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 6px 10px; border-radius: 6px;
+            background: #0d1220; margin-bottom: 4px;
+            font-size: 12px;
+        }
+        .concept-row .cr-name {
+            font-weight: 700; color: #ef4444; min-width: 110px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .concept-row .cr-count {
+            font-size: 11px; color: #fbbf24; font-weight: 700; min-width: 38px;
+        }
+        .concept-row .cr-ladder { color: #a0aec0; flex: 1; }
+        .concept-row .cl-board {
+            display: inline-block; padding: 1px 5px; border-radius: 3px;
+            margin-right: 4px; font-weight: 600;
+        }
+        .cl-b1 { background: #1a2040; color: #a0aec0; border: 1px solid #2a3050; }
+        .cl-b2 { background: #1e3a5f; color: #60a5fa; }
+        .cl-b3 { background: #065f46; color: #34d399; }
+        .cl-b4 { background: #92400e; color: #fbbf24; }
+        .cl-b5p { background: #7f1d1d; color: #fca5a5; }
+        .concept-row .cr-top { color: #6b7280; font-size: 11px; }
         .sector-row .sr-name {
             min-width: 100px; font-weight: 700; color: #60a5fa;
         }
@@ -345,7 +371,15 @@
                             <b>{{ review.relay_env.space_board.code }} {{ review.relay_env.space_board.name }}</b>
                             <span style="color:#fbbf24;font-weight:700;margin-left:6px;">{{ review.relay_env.space_board.board_count }}板</span>
                             <span class="gain-pos" style="margin-left:6px;">{{ fmtPct(review.relay_env.space_board.change_pct) }}</span>
-                            <span style="color:#6b7280;font-size:12px;margin-left:8px;">{{ review.relay_env.space_board.industry }}</span>
+                            <span style="font-size:12px;margin-left:8px;">
+                                <template v-if="(review.relay_env.space_board.top_concepts || []).length">
+                                    <span style="color:#ef4444;font-weight:600;">{{ (review.relay_env.space_board.top_concepts || []).join('/') }}</span>
+                                    <span style="color:#6b7280;margin-left:3px;">({{ review.relay_env.space_board.industry || '-' }})</span>
+                                </template>
+                                <template v-else>
+                                    <span style="color:#6b7280;">{{ review.relay_env.space_board.industry }}</span>
+                                </template>
+                            </span>
                         </td>
                     </tr>
                     <tr v-if="review.relay_env.prev_space_board_today">
@@ -429,7 +463,15 @@
                         <span style="color:#fbbf24;font-weight:700;font-size:14px;">{{ i+1 }}. {{ w.name }}</span>
                         <span style="color:#6b7280;font-size:12px;">{{ w.code }}</span>
                         <span style="background:#92400e;color:#fbbf24;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:700;">{{ w.board_count }}板</span>
-                        <span style="color:#a0aec0;font-size:12px;">{{ w.industry }}</span>
+                        <span style="font-size:12px;">
+                            <template v-if="(w.top_concepts || []).length">
+                                <span style="color:#ef4444;font-weight:600;">{{ (w.top_concepts || []).join('/') }}</span>
+                                <span style="color:#6b7280;margin-left:3px;">({{ w.industry }})</span>
+                            </template>
+                            <template v-else>
+                                <span style="color:#a0aec0;">{{ w.industry }}</span>
+                            </template>
+                        </span>
                         <span style="color:#a0aec0;font-size:12px;margin-left:auto;">市值 {{ Math.round(w.market_cap_yi) }}亿</span>
                     </div>
                     <div style="font-size:12px;color:#c9d1d9;line-height:1.6;">
@@ -494,7 +536,14 @@
                             </span>
                             <span class="ls-code">{{ s.code }}</span>
                         </span>
-                        <span class="ls-row3">{{ s.industry || '-' }}<span v-if="!s.is_main_board" style="color:#8b5cf6;"> · 创/科</span></span>
+                        <span class="ls-row3">
+                            <template v-if="(s.top_concepts || []).length">
+                                <span style="color:#ef4444;font-weight:600;">{{ (s.top_concepts || []).join('/') }}</span>
+                                <span style="color:#6b7280;"> ({{ s.industry || '-' }})</span>
+                            </template>
+                            <template v-else>{{ s.industry || '-' }}</template>
+                            <span v-if="!s.is_main_board" style="color:#8b5cf6;"> · 创/科</span>
+                        </span>
                     </span>
                     <!-- 晋级失败（开关控制） -->
                     <template v-if="showFailed">
@@ -508,13 +557,49 @@
                                 <span class="ls-name">{{ s.name }}</span>
                                 <span class="ls-code">{{ s.code }}</span>
                             </span>
-                            <span class="ls-row3">{{ s.industry || '-' }}<span v-if="!s.is_main_board" style="color:#8b5cf6;"> · 创/科</span></span>
+                            <span class="ls-row3">
+                            <template v-if="(s.top_concepts || []).length">
+                                <span style="color:#ef4444;font-weight:600;">{{ (s.top_concepts || []).join('/') }}</span>
+                                <span style="color:#6b7280;"> ({{ s.industry || '-' }})</span>
+                            </template>
+                            <template v-else>{{ s.industry || '-' }}</template>
+                            <span v-if="!s.is_main_board" style="color:#8b5cf6;"> · 创/科</span>
+                        </span>
                         </span>
                     </template>
                 </div>
             </div>
 
             </div><!-- end v-show ladderOpen -->
+        </div>
+
+        <!-- 最强概念梯队（一对多聚合，一股可同时支撑多个题材）— 默认展开 top15 -->
+        <div class="card" v-if="conceptZtAll.length">
+            <div class="card-title" @click="conceptOpen = !conceptOpen" style="cursor:pointer;user-select:none;">
+                <span style="margin-right:6px;">{{ conceptOpen ? '▾' : '▸' }}</span>
+                🔥 最强概念梯队
+                <span style="font-weight:400;font-size:13px;color:#a0aec0;margin-left:6px;">
+                    · {{ conceptZtAll.length }} 个概念 ≥3只 · 一股可贡献多概念
+                </span>
+                <span v-if="conceptOpen && conceptZtAll.length > 15"
+                      @click.stop="showAllConcepts = !showAllConcepts"
+                      style="margin-left:auto;font-size:11px;color:#60a5fa;cursor:pointer;">
+                    {{ showAllConcepts ? '收起' : `展开全部 (${conceptZtAll.length})` }}
+                </span>
+            </div>
+            <div v-show="conceptOpen">
+                <div v-for="grp in conceptZtStatsFiltered" :key="grp.name" class="concept-row">
+                    <span class="cr-name" :title="grp.name">{{ grp.name }}</span>
+                    <span class="cr-count">{{ grp.limit_up_count }}只</span>
+                    <span class="cr-ladder">
+                        <span v-for="(cnt, b) in sortedLadder(grp.ladder)" :key="b"
+                              class="cl-board" :class="conceptBoardCls(b)">
+                            {{ b == 1 ? '首板' : (b + '板') }}({{ cnt }}只)
+                        </span>
+                    </span>
+                    <span class="cr-top">⭐ {{ grp.top_stock_name }} ({{ grp.max_board }}板)</span>
+                </div>
+            </div>
         </div>
 
         <!-- 板块涨停分布 — 默认折叠 + 仅 ≥2 只 -->
@@ -791,6 +876,7 @@ createApp({
         const showFailed = ref(false)
         const ladderOpen = ref(false)   // 连板天梯默认折叠
         const sectorOpen = ref(false)   // 板块涨停分布默认折叠
+        const conceptOpen = ref(true)   // 最强概念梯队默认展开
 
         // 月度复盘（基于选股记录·每日盘后更新）
         const histRecords = ref([])
@@ -918,6 +1004,33 @@ createApp({
         const sectorStats = computed(() => review.value.sector_zt_stats || [])
         // 仅 ≥2 只的板块（按用户要求）
         const sectorStatsFiltered = computed(() => sectorStats.value.filter(s => (s.count || 0) >= 2))
+        // 最强概念梯队（一对多聚合）— 仅 ≥3 只，按 limit_up_count desc
+        // 默认仅展示前 15 个；showAllConcepts=true 时展示全量
+        const conceptZtStats = computed(() => review.value.concept_zt_stats || [])
+        const showAllConcepts = ref(false)
+        const conceptZtAll = computed(() =>
+            conceptZtStats.value.filter(c => (c.limit_up_count || 0) >= 3)
+        )
+        const conceptZtStatsFiltered = computed(() =>
+            showAllConcepts.value ? conceptZtAll.value : conceptZtAll.value.slice(0, 15)
+        )
+        // 板数排序：高板在前
+        function sortedLadder(ladder) {
+            if (!ladder) return {}
+            const entries = Object.entries(ladder).map(([b, c]) => [Number(b), c])
+            entries.sort((a, b) => b[0] - a[0])
+            const out = {}
+            for (const [b, c] of entries) out[b] = c
+            return out
+        }
+        function conceptBoardCls(b) {
+            const n = Number(b)
+            if (n >= 5) return 'cl-b5p'
+            if (n === 4) return 'cl-b4'
+            if (n === 3) return 'cl-b3'
+            if (n === 2) return 'cl-b2'
+            return 'cl-b1'
+        }
         // 区域 D：次日观察池
         const watchPool = computed(() => review.value.watch_pool || [])
         // 区域 B：连板梯队分布转数组（按板数降序）
@@ -1005,7 +1118,8 @@ createApp({
         onMounted(loadData)
         return {
             review, insight, activeTab,
-            ladderOpen, sectorOpen,
+            ladderOpen, sectorOpen, conceptOpen, showAllConcepts,
+            conceptZtAll, conceptZtStatsFiltered, sortedLadder, conceptBoardCls,
             sectorStatsFiltered, watchPool, ladderArr,
             histRecords, histStats, histPeriods, histLoading, histLoaded,
             histYear, histMonth, histAvailableYears, histMonthsForYear,

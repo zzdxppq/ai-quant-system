@@ -174,7 +174,15 @@
                             <td>{{ item.rank || (idx + 1) }}</td>
                             <td>{{ item.code }}</td>
                             <td>{{ item.name }}</td>
-                            <td>{{ item.industry || '-' }}</td>
+                            <td>
+                                <template v-if="(item.top_concepts || []).length">
+                                    <span style="color:#ef4444;font-weight:600;">{{ (item.top_concepts || []).join('/') }}</span>
+                                    <span v-if="item.industry" style="color:#6b7280;font-size:11px;margin-left:3px;">({{ item.industry }})</span>
+                                </template>
+                                <template v-else>
+                                    <span style="color:#6b7280;">{{ item.industry || '-' }}</span>
+                                </template>
+                            </td>
                             <td>{{ fmtNum(item.close, 2) }}</td>
                             <td>{{ fmtNum(item.market_cap_yi, 1) }}</td>
                             <td :class="numClass(item.change_pct)">{{ fmtPct(item.change_pct) }}</td>

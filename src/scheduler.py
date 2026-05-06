@@ -116,6 +116,12 @@ def run_ranking_refresh() -> dict:
         stamp_streak(ranking_records)
     except Exception as e:
         print(f"  周期计数失败: {e}")
+    # 注入 top_concepts（按今日涨停聚合热度选 1-2 个，前端显示用）
+    try:
+        from src.engine.concept_stats import enrich_ranking_with_top_concepts
+        enrich_ranking_with_top_concepts(ranking_records, top_n=2)
+    except Exception as e:
+        print(f"  概念热度注入失败: {e}")
     ranking_data = {
         "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
         "updated_at": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
@@ -185,6 +191,12 @@ def run_cycle_update() -> dict:
         stamp_streak(ranking_records)
     except Exception as e:
         print(f"  周期计数失败: {e}")
+    # 注入 top_concepts（按今日涨停聚合热度选 1-2 个，前端显示用）
+    try:
+        from src.engine.concept_stats import enrich_ranking_with_top_concepts
+        enrich_ranking_with_top_concepts(ranking_records, top_n=2)
+    except Exception as e:
+        print(f"  概念热度注入失败: {e}")
     ranking_data = {
         "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
         "updated_at": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
