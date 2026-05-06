@@ -78,30 +78,15 @@ def _fetch_one_gain_10d(code: str, realtime_close: float = 0.0) -> dict | None:
         code: 股票代码
         realtime_close: spot实时价，>0 时优先使用（比K线末根更准）
     """
-    from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
-    from src.config import now_cn
+    from src.data.sina_kline_api import fetch_kline, SCALE_DAILY, calc_10d_gain_from_kline
     df = fetch_kline(code, SCALE_DAILY, datalen=NEW_STOCK_MIN_TRADING_DAYS)
     if df is None or df.empty or len(df) < 2:
         # 至少 2 根 K 线（=昨日+今日），少于 2 根视为当天发行的纯新股，剔除
         return None
-    try:
-        # 最新价：优先用实时行情（准确），K线末根兜底
-        close_now = realtime_close if realtime_close > 0 else float(df.iloc[-1]["close"])
-
-        # 10日基准：判断K线是否包含当天，对齐通达信 REF(C,10)
-        today_str = now_cn().strftime("%Y-%m-%d")
-        last_kline_date = str(df.iloc[-1]["date"])[:10]
-        if last_kline_date == today_str:
-            idx = max(0, len(df) - 11)
-        else:
-            idx = max(0, len(df) - 10)
-
-        close_10d_ago = float(df.iloc[idx]["close"])
-    except (KeyError, IndexError, ValueError):
+    gain = calc_10d_gain_from_kline(df, realtime_close=realtime_close)
+    if gain is None:
         return None
-    if close_10d_ago <= 0:
-        return None
-    return {"code": code, "gain_10d": round((close_now / close_10d_ago - 1) * 100, 2)}
+    return {"code": code, "gain_10d": gain}
 
 
 def _scan_10d_gain_parallel(

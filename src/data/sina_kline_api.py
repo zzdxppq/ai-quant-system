@@ -94,6 +94,65 @@ def fetch_kline_batch(
 NEW_STOCK_MIN_TRADING_DAYS = 60  # 新股过滤阈值：上市不足60个交易日直接剔除
 
 
+def calc_10d_gain_from_kline(
+    df: pd.DataFrame,
+    realtime_close: float = 0.0,
+    today_str: str | None = None,
+) -> float | None:
+    """从日K + 实时价计算"近10日涨幅"，对齐同花顺/通达信 REF(C,10) 语义。
+
+    三种场景区分：
+      1. K线已含今日 (盘后)：close_now = realtime|K线末根, 基准 idx=-11 (10个交易日前)
+      2. K线还是昨日 + 实时价 ≠ 末根 (盘中)：close_now = realtime, 基准 idx=-10
+         （实时价是虚拟末根，K线末根=昨日，相对今天的虚拟 idx 算 10 天前）
+      3. K线还是昨日 + 实时价 ≈ 末根 (盘前/非交易日)：close_now = K线末根,
+         基准 idx=-11（"今日"实质等于K线末根，相对它 10 天前）
+
+    Args:
+        df: 日K DataFrame，最少 2 根
+        realtime_close: spot.close（盘中实时价或盘前=昨收）
+        today_str: 形如 "YYYY-MM-DD"，None 时取北京时间 now
+
+    Returns:
+        gain_10d (%)；K线长度不足或基准无效返回 None
+    """
+    if df is None or df.empty or len(df) < 2:
+        return None
+    try:
+        last_close = float(df.iloc[-1]["close"])
+    except (KeyError, IndexError, ValueError):
+        return None
+    last_kline_date = str(df.iloc[-1]["date"])[:10]
+    if today_str is None:
+        from src.config import now_cn
+        today_str = now_cn().strftime("%Y-%m-%d")
+
+    if last_kline_date == today_str:
+        # 盘后：K线已下发今日
+        close_now = realtime_close if realtime_close > 0 else last_close
+        base_idx = max(0, len(df) - 11)
+    elif (
+        realtime_close > 0
+        and last_close > 0
+        and abs(realtime_close - last_close) / last_close > 0.005
+    ):
+        # 盘中：实时价显著偏离昨收，按虚拟末根 = 实时
+        close_now = realtime_close
+        base_idx = max(0, len(df) - 10)
+    else:
+        # 盘前/非交易日：spot 实质等于 K线末根
+        close_now = last_close
+        base_idx = max(0, len(df) - 11)
+
+    try:
+        close_base = float(df.iloc[base_idx]["close"])
+    except (KeyError, IndexError, ValueError):
+        return None
+    if close_base <= 0:
+        return None
+    return round((close_now / close_base - 1) * 100, 2)
+
+
 def calc_10d_gain(
     codes: list[str],
     names: dict[str, str] = None,
@@ -123,33 +182,30 @@ def calc_10d_gain(
             # 至少 2 根 K 线（=昨日+今日），少于 2 根视为当天发行的纯新股，剔除
             continue
 
-        # 最新价：优先用实时行情（准确），K线末根兜底
-        close_now = realtime_prices.get(code, df.iloc[-1]["close"])
-
-        # 10日涨幅基准：对齐通达信 REF(C,10) = 从今天往前第10根K线收盘价
-        from src.config import now_cn
-        today_str = now_cn().strftime("%Y-%m-%d")
-        last_kline_date = str(df.iloc[-1]["date"])[:10]
-
-        if last_kline_date == today_str:
-            # K线含今天 → REF(C,10) = iloc[-11]
-            idx = max(0, len(df) - 11)
-        else:
-            # K线不含今天（延迟）→ 今天视为虚拟末根
-            # REF(C,10) 从今天数 = K线的 iloc[-10]
-            idx = max(0, len(df) - 10)
-
-        close_10d = df.iloc[idx]["close"]
-
-        if close_10d <= 0:
+        rt_close = float(realtime_prices.get(code, 0) or 0)
+        gain_10d = calc_10d_gain_from_kline(df, realtime_close=rt_close)
+        if gain_10d is None:
             continue
 
-        gain_10d = (close_now / close_10d - 1) * 100
+        # close 字段：对齐 calc 内使用的"今日 close"（盘前=K线末根，盘中=实时价）
+        last_close = float(df.iloc[-1]["close"])
+        last_kline_date = str(df.iloc[-1]["date"])[:10]
+        from src.config import now_cn
+        today_str = now_cn().strftime("%Y-%m-%d")
+        if last_kline_date == today_str and rt_close > 0:
+            close_now = rt_close
+        elif (
+            rt_close > 0 and last_close > 0
+            and abs(rt_close - last_close) / last_close > 0.005
+        ):
+            close_now = rt_close
+        else:
+            close_now = last_close
 
         results.append({
             "code": code,
             "name": names.get(code, ""),
-            "gain_10d": round(gain_10d, 2),
+            "gain_10d": gain_10d,
             "close": close_now,
             "is_main_board": _is_main_board(code),
         })

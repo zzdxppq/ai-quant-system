@@ -314,21 +314,21 @@ def calc_10d_gain_ranking(top_n: int = 100) -> pd.DataFrame:
         # 新浪也失败了，尝试东方财富逐个拉（加间隔）
         print("  新浪K线失败，尝试东方财富...")
         import time
-        from src.data.sina_kline_api import NEW_STOCK_MIN_TRADING_DAYS
+        from src.data.sina_kline_api import NEW_STOCK_MIN_TRADING_DAYS, calc_10d_gain_from_kline
         results = []
         for i, code in enumerate(codes[:top_n]):
             kline_df = fetch_kline(code, KLT_DAILY, FQT_QFQ, limit=NEW_STOCK_MIN_TRADING_DAYS)
             if kline_df.empty or len(kline_df) < 2:
                 # 至少 2 根 K 线（昨日+今日），少于 2 根视为当天发行的纯新股
                 continue
-            close_now = kline_df.iloc[-1]["close"]
-            idx = max(0, len(kline_df) - 11)
-            close_10d = kline_df.iloc[idx]["close"]
-            if close_10d > 0:
-                gain = (close_now / close_10d - 1) * 100
-                results.append({"code": code, "name": names.get(code, ""),
-                                "gain_10d": round(gain, 2), "close": close_now,
-                                "is_main_board": _is_main_board(code)})
+            rt = float(realtime_prices.get(code, 0) or 0)
+            gain = calc_10d_gain_from_kline(kline_df, realtime_close=rt)
+            if gain is None:
+                continue
+            close_now = rt if rt > 0 else float(kline_df.iloc[-1]["close"])
+            results.append({"code": code, "name": names.get(code, ""),
+                            "gain_10d": gain, "close": close_now,
+                            "is_main_board": _is_main_board(code)})
             time.sleep(0.2)
 
         if not results:
