@@ -225,17 +225,27 @@ def _load_cache() -> dict:
 
 
 def load_stock_to_concepts() -> dict[str, list[str]]:
-    """读取 {code: [concept_name, ...]}，用于 scanner enrich"""
-    return _load_cache().get("stock_to_concepts") or {}
+    """读取 {code: [concept_name, ...]}，用于 scanner enrich
+
+    源头过滤：默认剔除元标签（融资融券/沪深股通/百日新高 等），整站只见真概念。
+    若需访问原始未过滤数据，调用 _load_cache()['stock_to_concepts'] 直接读取。
+    """
+    from src.engine.concept_blacklist import is_meta_concept
+    raw = _load_cache().get("stock_to_concepts") or {}
+    return {
+        code: [c for c in concepts if not is_meta_concept(c)]
+        for code, concepts in raw.items()
+    }
 
 
 def load_concept_to_stocks() -> dict[str, list[str]]:
-    """读取 {concept_name: [code, ...]}，用于 stats 聚合"""
+    """读取 {concept_name: [code, ...]}，用于 stats 聚合（已过滤元标签）"""
+    from src.engine.concept_blacklist import is_meta_concept
     cache = _load_cache()
     out: dict[str, list[str]] = {}
     for info in (cache.get("concepts") or {}).values():
         nm = info.get("name") or ""
-        if nm:
+        if nm and not is_meta_concept(nm):
             out[nm] = list(info.get("stocks") or [])
     return out
 

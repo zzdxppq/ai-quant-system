@@ -298,17 +298,59 @@ async def get_review():
     if review_data is None:
         return JSONResponse({})
 
+    review_data = dict(review_data)  # 避免污染历史 entry
+
+    # 整站只取真概念：剔除历史快照中遗留的元标签
+    _strip_meta_concepts_inplace(review_data)
+
     # watch_pool 始终用最新 ranking 重算（按当前规则：top30+45%+≥2连板+主板）
     if ranking_file.exists():
         try:
             ranking_payload = json.loads(ranking_file.read_text())
             ranking_rows = ranking_payload.get("ranking") or []
-            review_data = dict(review_data)  # 避免污染历史 entry
             review_data["watch_pool"] = build_watch_pool_from_ranking(ranking_rows)
         except Exception:
             pass
 
     return JSONResponse(review_data)
+
+
+def _strip_meta_concepts_inplace(review: dict) -> None:
+    """对一个 review 字典做就地深度清洗：移除所有元标签。
+
+    范围：
+      · concept_zt_stats: 整条 entry 是元标签则丢弃
+      · lianban_ladder[i].concepts / .top_concepts
+      · prev_board_groups[].promoted/failed[].concepts / .top_concepts
+      · watch_pool[].concepts / .top_concepts
+      · relay_env.space_board.concepts / .top_concepts
+    """
+    from src.engine.concept_blacklist import is_meta_concept, filter_concepts
+
+    # concept_zt_stats: 整条丢弃
+    czs = review.get("concept_zt_stats")
+    if isinstance(czs, list):
+        review["concept_zt_stats"] = [c for c in czs if not is_meta_concept(c.get("name", ""))]
+
+    # 通用：清洗一个 stock-like 行
+    def clean_row(s):
+        if not isinstance(s, dict):
+            return
+        if isinstance(s.get("concepts"), list):
+            s["concepts"] = filter_concepts(s["concepts"])
+        if isinstance(s.get("top_concepts"), list):
+            s["top_concepts"] = filter_concepts(s["top_concepts"])
+
+    for s in (review.get("lianban_ladder") or []):
+        clean_row(s)
+    for grp in (review.get("prev_board_groups") or []):
+        for s in (grp.get("promoted") or []) + (grp.get("failed") or []):
+            clean_row(s)
+    for w in (review.get("watch_pool") or []):
+        clean_row(w)
+    relay = review.get("relay_env") or {}
+    for k in ("space_board", "prev_space_board_today"):
+        clean_row(relay.get(k) or {})
 
 
 @app.get("/api/auction-scores")

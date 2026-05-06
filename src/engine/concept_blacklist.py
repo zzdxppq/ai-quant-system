@@ -53,6 +53,12 @@ _PERF_KEYWORDS: tuple[str, ...] = (
     "业绩预增", "业绩预减", "业绩扭亏",
 )
 
+# 前缀规则：以这些字开头的概念几乎都是市场状态/行情元标签，不构成炒作主题
+# 例："昨日XX" / "近期XX" / "最近XX" / "百日XX" / "今日XX" / "本周XX"
+_META_PREFIXES: tuple[str, ...] = (
+    "昨日", "近期", "最近", "百日", "今日", "本周", "本月", "前期",
+)
+
 # 年份前缀（如 "2025XXX" / "2026—XXX"）
 _YEAR_PREFIX = re.compile(r"^20\d{2}[—\-－]?")
 
@@ -60,12 +66,15 @@ _YEAR_PREFIX = re.compile(r"^20\d{2}[—\-－]?")
 def is_meta_concept(name: str) -> bool:
     """是否为应屏蔽的元标签 / 非题材概念
 
-    判定顺序：字面命中 → 财报关键字命中 → 都不命中=保留
+    判定顺序：字面命中 → 前缀命中 → 财报关键字命中 → 年份模式 → 保留
     """
     if not name:
         return True
     if name in META_CONCEPT_BLACKLIST:
         return True
+    for prefix in _META_PREFIXES:
+        if name.startswith(prefix):
+            return True
     for key in _PERF_KEYWORDS:
         if key in name:
             return True
