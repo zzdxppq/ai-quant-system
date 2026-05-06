@@ -1082,11 +1082,14 @@ def _build_scorecard(
         red_count, b2_total, b2_promoted = 0, 0, 0
     score_2 = 1 if red_count >= 3 else 0
 
-    # === 指标 3: 板块集中度（前3概念涨停股数加和 / 总涨停数）≥50% ===
-    # 一股多概念时各概念都计数，可能超 100%（用户口径：前3概念涨停占比）
+    # === 指标 3: 板块集中度（前3概念覆盖的【独立】涨停股 / 总涨停数）≥50% ===
+    # 一股多概念时只计一次，避免累加超 100%
     if concept_zt_stats and limit_up_count > 0:
-        top3_count = sum(int(c.get("limit_up_count", 0) or 0) for c in concept_zt_stats[:3])
-        sec_concentration = round(top3_count / limit_up_count * 100, 1)
+        top3_codes: set[str] = set()
+        for c in concept_zt_stats[:3]:
+            for code in (c.get("limit_up_codes") or []):
+                top3_codes.add(str(code))
+        sec_concentration = round(len(top3_codes) / limit_up_count * 100, 1)
     elif sector_zt_stats and limit_up_count > 0:
         # 无概念数据兜底：旧 industry 路径
         top3_count = sum(s.get("count", 0) for s in sector_zt_stats[:3])
