@@ -323,6 +323,7 @@ async def get_review():
             review_data.get("sector_zt_stats") or [],
             int(review_data.get("limit_up_count") or 0),
             concept_zt_stats=review_data.get("concept_zt_stats") or [],
+            highest_board=int(review_data.get("highest_board") or 0),
         )
     except Exception:
         pass

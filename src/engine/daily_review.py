@@ -185,6 +185,7 @@ def run_daily_review() -> Optional[DailyReview]:
         review.prev_board_groups, review.relay_env,
         review.sector_zt_stats, review.limit_up_count,
         concept_zt_stats=review.concept_zt_stats,
+        highest_board=review.highest_board,
     )
 
     # 5. 生成次日观察池（严格 3 条件）
@@ -983,8 +984,9 @@ def _build_relay_env(
                     ybest = max(ytop, key=lambda s: s.get("change_pct", 0) or 0)
                     yc = str(ybest.get("code", ""))
                     yn = ybest.get("name", "")
-                    # 1) spot 算今日涨跌（精确）
+                    # 1) spot 算今日涨跌 + 开盘相对昨收（精确）
                     today_pct = None
+                    today_open_pct = None
                     today_zt = False
                     try:
                         spot = _get_spot_cached()
@@ -993,11 +995,14 @@ def _build_relay_env(
                             if not row.empty:
                                 close = float(row.iloc[0].get("close", 0) or 0)
                                 pre = float(row.iloc[0].get("pre_close", 0) or 0)
+                                op = float(row.iloc[0].get("open", 0) or 0)
                                 if close > 0 and pre > 0:
                                     today_pct = round((close / pre - 1) * 100, 2)
                                     is_main = not yc.startswith(("300", "301", "688", "8", "4"))
                                     thr = 9.7 if is_main else 19.4
                                     today_zt = today_pct >= thr
+                                if op > 0 and pre > 0:
+                                    today_open_pct = round((op / pre - 1) * 100, 2)
                     except Exception:
                         pass
                     # 2) spot 拿不到 → 回退到 limit_up_cache 判断今日是否仍涨停
@@ -1018,6 +1023,7 @@ def _build_relay_env(
                         "code": yc, "name": yn,
                         "yesterday_board": ymax,
                         "today_pct": today_pct,
+                        "today_open_pct": today_open_pct,
                         "today_held": today_zt,
                     }
     except Exception as e:
@@ -1070,9 +1076,10 @@ def _build_scorecard(
     sector_zt_stats: list[dict],
     limit_up_count: int,
     concept_zt_stats: list[dict] | None = None,
+    highest_board: int = 0,
 ) -> dict:
     """接力环境评分卡（区域 A）"""
-    # === 指标 1: 1进2 成功率 ≥30% ===
+    # === 指标 1: 1进2 成功率 ≥40% ===
     g1 = next((g for g in prev_board_groups if g.get("prev_board") == 1), None)
     if g1:
         b1_promoted = len(g1.get("promoted") or [])
@@ -1080,7 +1087,7 @@ def _build_scorecard(
         b1_rate = round(b1_promoted / b1_total * 100, 1) if b1_total else 0.0
     else:
         b1_promoted, b1_total, b1_rate = 0, 0, 0.0
-    score_1 = 1 if b1_rate >= 30 else 0
+    score_1 = 1 if b1_rate >= 40 else 0
 
     # === 指标 2: 2进3 成功率 ≥40% ===
     # 阈值与 _build_promotion_summary 中 2进3 warn 阈值一致（< 40% 即视为接力恶化）
@@ -1110,40 +1117,70 @@ def _build_scorecard(
         sec_concentration = 0.0
     score_3 = 1 if sec_concentration >= 50 else 0
 
-    # === 指标 4: 空间板未断板 ===
+    # === 指标 4: 空间板（红盘晋级 1.0 / 低开晋级 0.5 / 断板 0）===
+    # 三级判定：今日涨停且开盘 ≥0% 为红盘强势；今日涨停但低开为犹豫；未涨停=断板
     prev_space = relay_env.get("prev_space_board_today") or {}
     space_held = bool(prev_space.get("today_held"))
-    score_4 = 1 if space_held else 0
-    space_status_text = "未断板" if space_held else ("断板" if prev_space else "无昨日数据")
+    space_open_pct = prev_space.get("today_open_pct")
+    if not space_held:
+        score_4 = 0.0
+        space_status_text = "断板" if prev_space else "无昨日数据"
+    elif space_open_pct is None:
+        # 涨停但开盘数据缺失：保守给 0.5
+        score_4 = 0.5
+        space_status_text = "晋级（开盘数据缺失）"
+    elif space_open_pct >= 0:
+        score_4 = 1.0
+        space_status_text = f"红盘晋级（开{space_open_pct:+.1f}%）"
+    else:
+        score_4 = 0.5
+        space_status_text = f"低开晋级（开{space_open_pct:+.1f}%）"
 
-    # === 指标 5: 昨日连板指数今日涨跌幅 >0% ===
-    # 昨日 ≥2 连板今日表现：取 prev_board_groups 中 prev_board >= 2 的 promoted+failed 的 today_pct 均值
+    # === 指标 5: 昨日连板指数今日涨跌幅 >+2% ===
+    # 阈值改 2%：0~2% 是"赚不到钱"区间，必须正向溢价才算赚钱效应延续
     pcts = []
     for g in prev_board_groups:
         if g.get("prev_board", 0) >= 2:
             for s in (g.get("promoted") or []):
-                pcts.append(float(s.get("today_pct", 0) or 0))
+                tp = s.get("today_pct")
+                if tp is not None:
+                    pcts.append(float(tp))
             for s in (g.get("failed") or []):
-                pcts.append(float(s.get("today_pct", 0) or 0))
+                tp = s.get("today_pct")
+                if tp is not None and (s.get("today_close") or 0) > 0:
+                    pcts.append(float(tp))
     lianban_index_pct = round(sum(pcts) / len(pcts), 2) if pcts else 0.0
-    score_5 = 1 if lianban_index_pct > 0 else 0
+    score_5 = 1 if lianban_index_pct > 2 else 0
+
+    # === 指标 6: 高度突破（今日最高板 vs 昨日最高板）===
+    # 接力升温信号：高度有没有创新高
+    prev_max = int(prev_space.get("yesterday_board") or 0)
+    today_max = int(highest_board or 0)
+    if today_max > prev_max:
+        score_6, height_text = 1.0, f"{today_max}板↑（昨{prev_max}板）"
+    elif today_max == prev_max and today_max > 0:
+        score_6, height_text = 0.5, f"{today_max}板=（昨{prev_max}板）"
+    else:
+        score_6, height_text = 0.0, f"{today_max}板↓（昨{prev_max}板）"
 
     indicators = [
-        {"label": "1进2成功率",   "today": f"{b1_rate}%",          "target": "≥30%", "score": score_1, "raw": b1_rate, "detail": f"{b1_promoted}/{b1_total}"},
-        {"label": "2进3成功率", "today": f"{b2_rate}%", "target": "≥40%", "score": score_2, "raw": b2_rate, "detail": f"{b2_promoted}/{b2_total}"},
-        {"label": "板块集中度",   "today": f"{sec_concentration}%",     "target": "≥50%", "score": score_3, "raw": sec_concentration, "detail": "前3概念涨停占比"},
-        {"label": "空间板",       "today": space_status_text,           "target": "未断板", "score": score_4, "raw": int(space_held), "detail": (f"昨{prev_space.get('yesterday_board')}板{prev_space.get('name','')}" if prev_space else "—")},
-        {"label": "昨日连板指数", "today": f"{lianban_index_pct:+.2f}%",  "target": ">0%", "score": score_5, "raw": lianban_index_pct, "detail": f"昨≥2板共{len(pcts)}只今日均值"},
+        {"label": "1进2成功率",   "today": f"{b1_rate}%",          "target": "≥40%", "score": score_1, "raw": b1_rate, "detail": f"{b1_promoted}/{b1_total}"},
+        {"label": "2进3成功率",   "today": f"{b2_rate}%",          "target": "≥40%", "score": score_2, "raw": b2_rate, "detail": f"{b2_promoted}/{b2_total}"},
+        {"label": "板块集中度",   "today": f"{sec_concentration}%","target": "≥50%", "score": score_3, "raw": sec_concentration, "detail": "前3概念涨停占比"},
+        {"label": "空间板",       "today": space_status_text,      "target": "红盘晋级", "score": score_4, "raw": (space_open_pct if space_open_pct is not None else 0), "detail": (f"昨{prev_space.get('yesterday_board')}板{prev_space.get('name','')}" if prev_space else "—")},
+        {"label": "昨日连板指数", "today": f"{lianban_index_pct:+.2f}%", "target": ">+2%", "score": score_5, "raw": lianban_index_pct, "detail": f"昨≥2板共{len(pcts)}只今日均值"},
+        {"label": "高度突破",     "today": height_text,            "target": "高度创新", "score": score_6, "raw": today_max - prev_max, "detail": f"今日最高{today_max}板 / 昨日{prev_max}板"},
     ]
-    total_score = sum(ind["score"] for ind in indicators)
+    total_score = round(sum(ind["score"] for ind in indicators), 1)
+    # 6 项总分 0~6，含 0.5 fractional：≥5 重仓 / ≥4 正常 / ≥3 试错 / 否则空仓
     if total_score >= 5:
-        decision, color = "重仓", "#ef4444"   # 红：满血
-    elif total_score == 4:
-        decision, color = "正常", "#10b981"   # 绿：可做
-    elif total_score == 3:
-        decision, color = "试错", "#fbbf24"   # 黄：浅尝
+        decision, color = "重仓", "#ef4444"
+    elif total_score >= 4:
+        decision, color = "正常", "#10b981"
+    elif total_score >= 3:
+        decision, color = "试错", "#fbbf24"
     else:
-        decision, color = "空仓", "#6b7280"   # 灰：撤退
+        decision, color = "空仓", "#6b7280"
 
     headline = _build_decision_headline(
         total_score, decision, indicators, prev_board_groups,
@@ -1196,7 +1233,7 @@ def _build_decision_headline(
                 f"空仓。最大风险：中位股断层+无主线。今日 2进3 晋级 {g2_total} 只"
                 f"但红盘开仅 {g2_red} 只（绿盘开 {g2_green} 只），"
                 f"被动晋级为主，次日大概率补跌。"
-                f"除非明日竞价板块集中度>40% 且 1进2 成功率>30%，否则不开仓。"
+                f"除非明日竞价板块集中度>40% 且 1进2 成功率>40%，否则不开仓。"
             )
         return (
             f"空仓。最大风险：{worst_label}（{worst_today}）。"
