@@ -184,6 +184,7 @@ def run_daily_review() -> Optional[DailyReview]:
     review.scorecard = _build_scorecard(
         review.prev_board_groups, review.relay_env,
         review.sector_zt_stats, review.limit_up_count,
+        concept_zt_stats=review.concept_zt_stats,
     )
 
     # 5. 生成次日观察池（严格 3 条件）
@@ -1042,6 +1043,7 @@ def _build_scorecard(
     relay_env: dict,
     sector_zt_stats: list[dict],
     limit_up_count: int,
+    concept_zt_stats: list[dict] | None = None,
 ) -> dict:
     """接力环境评分卡（区域 A）"""
     # === 指标 1: 1进2 成功率 ≥30% ===
@@ -1068,8 +1070,16 @@ def _build_scorecard(
         red_count, b2_total, b2_promoted = 0, 0, 0
     score_2 = 1 if red_count >= 3 else 0
 
-    # === 指标 3: 板块集中度（前3板块涨停数占比）≥50% ===
-    if sector_zt_stats and limit_up_count > 0:
+    # === 指标 3: 概念集中度（前3概念覆盖的【独立】涨停股 / 总涨停数）≥50% ===
+    # 一股多概念时全部计入，集中度按【独立股票数】统计避免累加超100%
+    if concept_zt_stats and limit_up_count > 0:
+        top3_codes: set[str] = set()
+        for c in concept_zt_stats[:3]:
+            for code in (c.get("limit_up_codes") or []):
+                top3_codes.add(str(code))
+        sec_concentration = round(len(top3_codes) / limit_up_count * 100, 1)
+    elif sector_zt_stats and limit_up_count > 0:
+        # 无概念数据兜底：旧 industry 路径
         top3_count = sum(s.get("count", 0) for s in sector_zt_stats[:3])
         sec_concentration = round(top3_count / limit_up_count * 100, 1)
     else:
@@ -1097,7 +1107,7 @@ def _build_scorecard(
     indicators = [
         {"label": "1进2成功率",   "today": f"{b1_rate}%",          "target": "≥30%", "score": score_1, "raw": b1_rate, "detail": f"{b1_promoted}/{b1_total}"},
         {"label": "2进3红盘晋级", "today": f"{red_count}/{b2_promoted}", "target": "≥3只", "score": score_2, "raw": red_count, "detail": f"晋级{b2_promoted}只"},
-        {"label": "板块集中度",   "today": f"{sec_concentration}%",     "target": "≥50%", "score": score_3, "raw": sec_concentration, "detail": "前3板块涨停占比"},
+        {"label": "概念集中度",   "today": f"{sec_concentration}%",     "target": "≥50%", "score": score_3, "raw": sec_concentration, "detail": "前3概念覆盖独立涨停股"},
         {"label": "空间板",       "today": space_status_text,           "target": "未断板", "score": score_4, "raw": int(space_held), "detail": (f"昨{prev_space.get('yesterday_board')}板{prev_space.get('name','')}" if prev_space else "—")},
         {"label": "昨日连板指数", "today": f"{lianban_index_pct:+.2f}%",  "target": ">0%", "score": score_5, "raw": lianban_index_pct, "detail": f"昨≥2板共{len(pcts)}只今日均值"},
     ]
@@ -1162,12 +1172,12 @@ def _build_decision_headline(
                 f"空仓。最大风险：中位股断层+无主线。今日 2进3 晋级 {g2_total} 只"
                 f"但红盘开仅 {g2_red} 只（绿盘开 {g2_green} 只），"
                 f"被动晋级为主，次日大概率补跌。"
-                f"除非明日竞价板块集中度>40% 且 1进2 成功率>30%，否则不开仓。"
+                f"除非明日竞价概念集中度>40% 且 1进2 成功率>30%，否则不开仓。"
             )
         return (
             f"空仓。最大风险：{worst_label}（{worst_today}）。"
-            f"今日 1进2 仅 {b1_rate_str}、板块集中度 {sec_concentration}%，"
-            f"接力生态恶化。除非明日板块集中度>40% 且空间板未断板，否则不开仓。"
+            f"今日 1进2 仅 {b1_rate_str}、概念集中度 {sec_concentration}%，"
+            f"接力生态恶化。除非明日概念集中度>40% 且空间板未断板，否则不开仓。"
         )
     if total == 3:
         space_ok = next((i for i in indicators if i["label"] == "空间板"), {}).get("score", 0) == 1
@@ -1182,13 +1192,13 @@ def _build_decision_headline(
         )
     if total == 4:
         return (
-            f"正常出击。主线相对清晰（板块集中度 {sec_concentration}%），晋级率健康。"
+            f"正常出击。主线相对清晰（概念集中度 {sec_concentration}%），晋级率健康。"
             f"重点做 2进3 / 3进4 换手板。唯一风险：{worst_label}（{worst_today}），"
             f"一旦恶化立即收手。"
         )
     # total == 5
     return (
-        f"重仓出击。接力生态满血（板块集中度 {sec_concentration}%、1进2 {b1_rate_str}）。"
+        f"重仓出击。接力生态满血（概念集中度 {sec_concentration}%、1进2 {b1_rate_str}）。"
         f"重点做 2进3 / 3进4 / 4进5 换手板，仓位可上 70%。"
         f"唯一风险：空间板一旦断板立即减仓。"
     )

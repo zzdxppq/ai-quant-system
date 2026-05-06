@@ -253,10 +253,38 @@ async def review_page():
 
 @app.get("/api/review")
 async def get_review():
-    """获取最新复盘数据"""
-    f = DATA_DIR / "latest_review.json"
-    if f.exists():
-        return JSONResponse(json.loads(f.read_text()))
+    """获取复盘数据。
+
+    时间门控（用户要求）：当天 15:00 前显示昨日复盘，15:00 后显示今日。
+    实现：
+      · now < 15:00：从 review_history.json 取最近一条 date != today 的记录
+      · now >= 15:00：返回 latest_review.json（今日 cron 在 15:45 跑完）
+                       若 latest_review 还停留在昨日，也照常返回
+    """
+    from src.config import now_cn
+
+    latest_file = DATA_DIR / "latest_review.json"
+    history_file = DATA_DIR / "review_history.json"
+
+    n = now_cn()
+    today_str = n.strftime("%Y-%m-%d")
+    cutoff = n.replace(hour=15, minute=0, second=0, microsecond=0)
+
+    # 15:00 前 → 优先返回 history 中最近一条非今日的记录
+    if n < cutoff and history_file.exists():
+        try:
+            hist = json.loads(history_file.read_text())
+            if isinstance(hist, list):
+                for entry in reversed(hist):
+                    d = str(entry.get("date") or "")[:10]
+                    if d and d != today_str:
+                        return JSONResponse(entry)
+        except Exception:
+            pass
+
+    # 15:00 后 或 history 不可用 → latest_review.json
+    if latest_file.exists():
+        return JSONResponse(json.loads(latest_file.read_text()))
     return JSONResponse({})
 
 
