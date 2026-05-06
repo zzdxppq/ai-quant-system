@@ -1197,73 +1197,177 @@ def _build_scorecard(
 
 
 def _build_decision_headline(
-    total: int, decision: str, indicators: list[dict],
+    total: float, decision: str, indicators: list[dict],
     prev_board_groups: list[dict], sec_concentration: float,
 ) -> str:
-    """生成顶部一句话决策建议（按用户给的模板）"""
-    # 找最差项（score=0 中 raw 最差的）
-    zeros = [i for i in indicators if i["score"] == 0]
-    worst_label = zeros[0]["label"] if zeros else "无明显短板"
-    worst_today = zeros[0]["today"] if zeros else ""
+    """生成专业版决策建议（针对龙头 / 连板接力策略，融入周期系统理念）
 
-    # 中位股断层：3板及以上 ≤ 1 只
-    mid_count = 0
-    for g in prev_board_groups:
-        if g.get("prev_board", 0) == 0:
-            continue
-        for s in (g.get("promoted") or []):
-            if s.get("today_board", 0) >= 3:
-                mid_count += 1
-    mid_break = mid_count <= 1
+    输出多行结构：
+      第 1 行：周期阶段 + 关键指标 + 总评
+      第 2 行：龙头组（龙妖股 / 弹性股）建议
+      第 3 行：接力组（1进2 / 2进3 / 3进4 ...）建议
+      第 4 行：风险点 / 信号位
+    """
+    # 1. 读周期阶段
+    cycle_phase = ""
+    cycle_day = 0
+    rep_name = ""
+    rep_gain = 0.0
+    try:
+        snap_file = DATA_DIR / "latest_snapshot.json"
+        if snap_file.exists():
+            snap = json.loads(snap_file.read_text())
+            cycle_phase = snap.get("phase", "") or ""
+            cycle_day = int(snap.get("phase_day", 0) or 0)
+            rep = snap.get("representative") or {}
+            rep_name = rep.get("name", "") or ""
+            rep_gain = float(rep.get("gain_10d", 0) or 0)
+    except Exception:
+        pass
+    cyc_tag = f"{cycle_phase}{cycle_day}日" if cycle_phase else "周期未知"
+    rep_tag = f"·龙头 {rep_name}({rep_gain:.0f}%)" if rep_name else ""
 
-    # 2进3 红盘晋级数 / 总晋级
-    g2 = next((g for g in prev_board_groups if g.get("prev_board") == 2), None)
-    promoted2 = (g2 or {}).get("promoted") or []
-    g2_total = len(promoted2)
-    g2_red = sum(1 for s in promoted2 if (s.get("today_open_pct") or 0) >= 0)
-    g2_green = g2_total - g2_red
+    # 2. 取关键指标
+    ind_map = {i["label"]: i for i in indicators}
+    b1 = ind_map.get("1进2成功率", {})
+    b2 = ind_map.get("2进3成功率", {})
+    space = ind_map.get("空间板", {})
+    lianban_idx = ind_map.get("昨日连板指数", {})
+    height = ind_map.get("高度突破", {})
+    b1_rate = b1.get("today", "—")
+    b2_rate = b2.get("today", "—")
+    space_text = space.get("today", "—")
+    lb_idx_text = lianban_idx.get("today", "—")
+    height_text = height.get("today", "—")
+    space_ok = space.get("score", 0) >= 1.0
 
-    # 1进2 成功率
-    b1_ind = next((i for i in indicators if i["label"] == "1进2成功率"), {})
-    b1_rate_str = b1_ind.get("today", "")
+    # 找最差项（score 最低，非 None）
+    sortable = [i for i in indicators if i.get("score") is not None]
+    sortable.sort(key=lambda i: i["score"])
+    worst = sortable[0] if sortable else {}
+    worst_label = worst.get("label", "无")
+    worst_today = worst.get("today", "")
 
-    # 按 decision 选 headline（与 _build_scorecard 的阈值一致：≥5/≥4/≥3/<3）
-    if decision == "空仓":
-        if mid_break:
-            return (
-                f"空仓。最大风险：中位股断层+无主线。今日 2进3 晋级 {g2_total} 只"
-                f"但红盘开仅 {g2_red} 只（绿盘开 {g2_green} 只），"
-                f"被动晋级为主，次日大概率补跌。"
-                f"除非明日竞价板块集中度>40% 且 1进2 成功率>40%，否则不开仓。"
-            )
-        return (
-            f"空仓。最大风险：{worst_label}（{worst_today}）。"
-            f"今日 1进2 仅 {b1_rate_str}、板块集中度 {sec_concentration}%，"
-            f"接力生态恶化。除非明日板块集中度>40% 且空间板未断板，否则不开仓。"
-        )
-    if decision == "试错":
-        space_ok = next((i for i in indicators if i["label"] == "空间板"), {}).get("score", 0) >= 1
-        if space_ok:
-            return (
-                f"试错。最大风险：{worst_label}（{worst_today}）。"
-                f"空间板未断但其他维度偏弱，仅做最强主线方向、仓位 ≤20%。"
-            )
-        return (
-            f"试错。最大风险：{worst_label}（{worst_today}）。"
-            f"接力生态半生不熟，仓位严格控制在 1/4 以下，破信号位坚决出。"
-        )
-    if decision == "正常":
-        return (
-            f"正常出击。主线相对清晰（板块集中度 {sec_concentration}%），晋级率健康。"
-            f"重点做 2进3 / 3进4 换手板。唯一风险：{worst_label}（{worst_today}），"
-            f"一旦恶化立即收手。"
-        )
-    # decision == "重仓"
-    return (
-        f"重仓出击。接力生态满血（板块集中度 {sec_concentration}%、1进2 {b1_rate_str}）。"
-        f"重点做 2进3 / 3进4 / 4进5 换手板，仓位可上 70%。"
-        f"唯一风险：空间板一旦断板立即减仓。"
+    # 中位股断层判定
+    mid_count = sum(
+        1 for g in prev_board_groups if g.get("prev_board", 0) > 0
+        for s in (g.get("promoted") or []) if s.get("today_board", 0) >= 3
     )
+
+    # 周期相位下的额外动作语
+    is_ebb = cycle_phase in ("退潮期", "余温期", "混沌期")
+    is_main_rise = cycle_phase in ("完整周期", "小周期完成")
+    is_breeding = cycle_phase in ("孕育期", "小周期启动")
+
+    # === 空仓 ===
+    if decision == "空仓":
+        line1 = (
+            f"⛔ 空仓 | {cyc_tag}{rep_tag} | 1进2 {b1_rate}·2进3 {b2_rate}·空间板{space_text}"
+            f"·连板指数{lb_idx_text} → 接力链断裂"
+        )
+        if is_ebb:
+            line2 = "🐯 龙头组：龙妖T仓全清；余温/退潮期不接 7 字头反抽，盯老龙是否完成最后一次诱多。"
+        elif is_breeding:
+            line2 = "🐯 龙头组：弹性股仓位降至底仓，等下一波 5 日均线启动；不主动追买。"
+        else:
+            line2 = "🐯 龙头组：仓位 0；只用观察池标记次日可能反弹的一日游标的（昨日跌停/炸板今日反包）。"
+        if mid_count <= 1:
+            line3 = (
+                f"🪜 接力组：中位股断层（3板及以上仅 {mid_count} 只），1进2 {b1_rate} 全是被动接力；"
+                "不做 2进3 及以上，只看竞价分歧。"
+            )
+        else:
+            line3 = (
+                f"🪜 接力组：清空所有接力仓；1进2 {b1_rate}、空间板{space_text}，"
+                "新进首板成功率太低，宁可错过不做错。"
+            )
+        line4 = (
+            "🚦 重启信号：明日竞价 ≥2 项达标——板块集中度>40% / 空间板红盘晋级 / 1进2>40% / "
+            "高度新增板，达 ≥2 恢复试错仓位。"
+        )
+        return "\n".join([line1, line2, line3, line4])
+
+    # === 试错 ===
+    if decision == "试错":
+        line1 = (
+            f"🟡 试错 | {cyc_tag}{rep_tag} | 1进2 {b1_rate}·2进3 {b2_rate}·空间板{space_text}"
+            f"·高度{height_text} → 接力生态半生不熟"
+        )
+        if is_main_rise and space_ok:
+            line2 = (
+                "🐯 龙头组：留 1 只最强龙头继任者底仓 ≤15%；空间板若再封 +1 板加 5%，"
+                "炸板立即清。不接低位补涨股。"
+            )
+        elif is_breeding:
+            line2 = (
+                f"🐯 龙头组：弹性股关注度 ≥{rep_gain:.0f}% 的标的；只买红盘开盘+缩量阴线启动型，仓位 ≤15%。"
+            )
+        else:
+            line2 = "🐯 龙头组：龙妖T仓 ≤10%；不持仓过夜，盘中只做最强龙头日内回撤反包。"
+        line3 = (
+            f"🪜 接力组：仓位严控 ≤20%。仅做 1 只最强主线 2进3"
+            f"{'（首选红盘高开晋级）' if space_ok else '（必须竞价 5%+ 才接）'}；"
+            f"3 板及以上回避，高度未创新高时不打深水接力。"
+        )
+        line4 = f"🚦 风险位：{worst_label}（{worst_today}）。一旦再恶化立即清仓；破开盘价无条件出。"
+        return "\n".join([line1, line2, line3, line4])
+
+    # === 正常 ===
+    if decision == "正常":
+        line1 = (
+            f"🟢 正常出击 | {cyc_tag}{rep_tag} | 板块集中度 {sec_concentration}%·1进2 {b1_rate}"
+            f"·2进3 {b2_rate}·空间板{space_text} → 接力健康"
+        )
+        if is_main_rise:
+            line2 = (
+                f"🐯 龙头组：满仓持有空间板继任者，仓位 30-40%；"
+                f"龙头{rep_name} 若放量再创新高，仓位上 40-50%；"
+                "空间板若低开晋级则减 1/3 锁利。"
+            )
+        elif is_breeding:
+            line2 = (
+                "🐯 龙头组：弹性股选 1-2 只满仓持有，仓位 25-35%；"
+                "重点关注次日是否打开新空间。"
+            )
+        else:
+            line2 = "🐯 龙头组：龙妖股仓位 20-30%；只持有红盘晋级标的，绿盘走势收手。"
+        line3 = (
+            f"🪜 接力组：重点做 2进3 / 3进4 换手板，仓位 30-50%；"
+            f"4 板及以上 {'可参与' if 'creating' in str(height_text) or '↑' in str(height_text) else '回避（除非高度突破）'}；"
+            "首选红盘晋级股+主线方向。"
+        )
+        line4 = (
+            f"🚦 最弱环节：{worst_label}（{worst_today}）。一旦该项再恶化先减半，"
+            "次日空间板若低开 -2% 以上立即降至试错仓位。"
+        )
+        return "\n".join([line1, line2, line3, line4])
+
+    # === 重仓 ===
+    line1 = (
+        f"🔴 重仓出击 | {cyc_tag}{rep_tag} | 板块集中度 {sec_concentration}%·1进2 {b1_rate}"
+        f"·2进3 {b2_rate}·空间板{space_text}·高度{height_text} → 接力生态满血"
+    )
+    if is_main_rise:
+        line2 = (
+            f"🐯 龙头组：满仓持有龙头+次龙头，仓位 50-60%；"
+            f"{rep_name}({rep_gain:.0f}%) 若继续封 +1 板，仓位最高上 65%；"
+            "可中线持仓直至涨速放缓信号。"
+        )
+    else:
+        line2 = (
+            f"🐯 龙头组：弹性股满仓 40-50%；空间板红盘晋级则跟随加仓 5-10%；"
+            "保持快进快出节奏。"
+        )
+    line3 = (
+        f"🪜 接力组：全梯队参与 2进3 / 3进4 / 4进5，仓位 60-70%；"
+        f"红盘晋级股优先，{'继续追高' if '↑' in str(height_text) else '主做高度持平梯队'}；"
+        "破板后竞价位接低吸。"
+    )
+    line4 = (
+        "🚦 唯一风险：空间板一旦炸板（盘中跌破封板价 ≥3 次），立即减一半仓位；"
+        "次日竞价若 ≤+2% 全部清仓避免接力链塌陷连锁。"
+    )
+    return "\n".join([line1, line2, line3, line4])
 
 
 def _save_review(review: DailyReview):
