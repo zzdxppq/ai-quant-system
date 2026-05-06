@@ -68,7 +68,11 @@ def fetch_full_market_spot() -> pd.DataFrame:
 
 
 def _fetch_one_gain_10d(code: str, realtime_close: float = 0.0) -> dict | None:
-    """单只60根日K → 10日涨幅；返回 None 表示新股或拉取失败
+    """单只日K → 10日涨幅；返回 None 仅在拉取失败/当日新股(<2根K线)
+
+    保留 ST、次新股、退市预警股；仅排除当天发行的纯新股。
+    若历史不足 11 根，则按"自上市以来最早一根"为基准，等价于"自 IPO 涨幅"，
+    避免次新被一刀切。
 
     Args:
         code: 股票代码
@@ -77,7 +81,8 @@ def _fetch_one_gain_10d(code: str, realtime_close: float = 0.0) -> dict | None:
     from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
     from src.config import now_cn
     df = fetch_kline(code, SCALE_DAILY, datalen=NEW_STOCK_MIN_TRADING_DAYS)
-    if df is None or df.empty or len(df) < NEW_STOCK_MIN_TRADING_DAYS:
+    if df is None or df.empty or len(df) < 2:
+        # 至少 2 根 K 线（=昨日+今日），少于 2 根视为当天发行的纯新股，剔除
         return None
     try:
         # 最新价：优先用实时行情（准确），K线末根兜底
@@ -257,6 +262,30 @@ def _enrich_industry(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _enrich_concepts(df: pd.DataFrame) -> pd.DataFrame:
+    """为 top-N 补齐所属概念列表（list[str]）
+
+    数据源：data/concept_cache.json，由 scripts/build_concept_cache.py 周期性构建。
+    一只股票可挂多个概念，全量记录；缓存缺失则空列表。
+    """
+    if df.empty:
+        return df
+
+    from src.data.concept_fetcher import load_stock_to_concepts
+    cache = load_stock_to_concepts()
+    df = df.copy()
+    df["concepts"] = df["code"].astype(str).map(lambda c: list(cache.get(c, [])))
+
+    if not cache:
+        print("[概念] cache 为空，请先运行 scripts/build_concept_cache.py")
+    else:
+        codes = df["code"].astype(str).tolist()
+        miss = sum(1 for c in codes if not cache.get(c))
+        if miss:
+            print(f"[概念] cache 命中 {len(codes) - miss}/{len(codes)}")
+    return df
+
+
 def _enrich_zt_pool(df: pd.DataFrame) -> pd.DataFrame:
     """为 top-N 补齐 连板数 + 最后封板时间"""
     try:
@@ -323,15 +352,13 @@ def scan_full_market_10d_ranking(top_n: int = 30) -> pd.DataFrame:
         print("[扫描] spot 为空，放弃")
         return pd.DataFrame()
 
-    # 2. 过滤 ST / *ST / 退市 / 停牌
-    name_u = spot["name"].astype(str).str.upper()
+    # 2. 过滤 退市/停牌 — 保留 ST 和次新股（仅排除当天 IPO 在 _fetch_one_gain_10d 中处理）
     name_raw = spot["name"].astype(str)
     universe = spot[
-        ~name_u.str.contains("ST")
-        & ~name_raw.str.contains("退")
+        ~name_raw.str.contains("退")
         & (spot["close"] > 0)
     ].copy()
-    print(f"ST/停牌过滤后剩 {len(universe)} 只")
+    print(f"退市/停牌过滤后剩 {len(universe)} 只（保留 ST + 次新）")
 
     # 3. 并行扫 10 日涨幅（同时过滤新股）
     #    传入 spot 实时价，确保涨幅基于最新行情而非可能延迟的 K 线末根
@@ -363,9 +390,10 @@ def scan_full_market_10d_ranking(top_n: int = 30) -> pd.DataFrame:
     )
     merged["rank"] = merged.index + 1
 
-    # 5. 富化：腾讯补市值 + 行业板块 + 涨停板池 + 240 周线偏离度
+    # 5. 富化：腾讯补市值 + 行业 + 概念 + 涨停板池 + 240 周线偏离度
     merged = _enrich_market_cap(merged)
     merged = _enrich_industry(merged)
+    merged = _enrich_concepts(merged)
     merged = _enrich_zt_pool(merged)
     merged = _enrich_deviation(merged)
 
@@ -379,7 +407,7 @@ def scan_full_market_10d_ranking(top_n: int = 30) -> pd.DataFrame:
     print("=" * 50)
 
     keep = [
-        "rank", "code", "name", "industry", "close", "market_cap_yi",
+        "rank", "code", "name", "industry", "concepts", "close", "market_cap_yi",
         "change_pct", "auction_gain", "gain_10d", "continuous_limit_up",
         "last_limit_up_time", "deviation_pct", "is_main_board",
     ]

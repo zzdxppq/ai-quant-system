@@ -290,11 +290,9 @@ def calc_10d_gain_ranking(top_n: int = 100) -> pd.DataFrame:
         return pd.DataFrame()
 
     # 2. 取活跃股票（近期涨幅较大的更可能在10日涨幅前列）
-    # 过滤掉停牌和异常数据
+    # 过滤掉停牌和异常数据；保留 ST 和次新股；只剔除退市
     active = all_df[all_df["close"] > 0].copy()
-    # 过滤 ST / *ST / 退市：按名称匹配，与 screener 规则一致
-    name_upper = active["name"].astype(str).str.upper()
-    active = active[~name_upper.str.contains("ST") & ~active["name"].astype(str).str.contains("退")]
+    active = active[~active["name"].astype(str).str.contains("退")]
     # 取涨幅前 top_n*3 候选（新股过滤在 calc_10d_gain 内按K线长度判定）
     candidates = active.head(top_n * 3)
 
@@ -320,8 +318,8 @@ def calc_10d_gain_ranking(top_n: int = 100) -> pd.DataFrame:
         results = []
         for i, code in enumerate(codes[:top_n]):
             kline_df = fetch_kline(code, KLT_DAILY, FQT_QFQ, limit=NEW_STOCK_MIN_TRADING_DAYS)
-            if kline_df.empty or len(kline_df) < NEW_STOCK_MIN_TRADING_DAYS:
-                # 新股：不足60个交易日，剔除
+            if kline_df.empty or len(kline_df) < 2:
+                # 至少 2 根 K 线（昨日+今日），少于 2 根视为当天发行的纯新股
                 continue
             close_now = kline_df.iloc[-1]["close"]
             idx = max(0, len(kline_df) - 11)

@@ -242,9 +242,52 @@ def run_cycle_update() -> dict:
     except Exception as e:
         print(f"  选股记录回填失败: {e}")
 
+    # 收盘后异步刷新概念缓存（detached subprocess，不阻塞调度器）
+    _maybe_rebuild_concept_cache()
+
     print("=" * 50)
 
     return snapshot_dict
+
+
+def _maybe_rebuild_concept_cache() -> None:
+    """如概念缓存超过 18 小时未更新，detached 启动 builder。
+
+    设计原则（用户要求）：复用既有 15:30 调度，不另起 cron；
+    detached subprocess 避免阻塞 cycle_update。
+    """
+    try:
+        from src.data.concept_fetcher import cache_meta, CACHE_PATH
+        from datetime import datetime, timedelta
+        meta = cache_meta()
+        if meta.get("updated_at"):
+            try:
+                last = datetime.strptime(meta["updated_at"], "%Y-%m-%d %H:%M:%S")
+                if now_cn().replace(tzinfo=None) - last < timedelta(hours=18):
+                    print(f"  概念缓存仍新鲜 ({meta['updated_at']})，跳过重建")
+                    return
+            except ValueError:
+                pass
+
+        import subprocess
+        import sys
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "build_concept_cache.py"
+        if not script.exists():
+            return
+        log_path = root / "logs" / "concept_build.log"
+        log_fh = open(log_path, "a")
+        subprocess.Popen(
+            [sys.executable, str(script)],
+            cwd=str(root),
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        print(f"  概念缓存 builder 已 detached 启动 → {log_path}")
+    except Exception as e:
+        print(f"  概念缓存重建调度失败（不影响周期）: {e}")
 
 
 def run_screener_update() -> dict:

@@ -117,10 +117,10 @@ def calc_10d_gain(
 
     results = []
     for i, code in enumerate(codes):
-        # 请求60根日K：既满足10日涨幅计算，又可用 len(df) 做新股过滤
+        # 请求60根日K（兼容 240 周线偏离度等其他下游），但本函数只要求 ≥2 根
         df = fetch_kline(code, SCALE_DAILY, datalen=NEW_STOCK_MIN_TRADING_DAYS)
-        if df.empty or len(df) < NEW_STOCK_MIN_TRADING_DAYS:
-            # 新股：实际交易日 < 60，剔除
+        if df.empty or len(df) < 2:
+            # 至少 2 根 K 线（=昨日+今日），少于 2 根视为当天发行的纯新股，剔除
             continue
 
         # 最新价：优先用实时行情（准确），K线末根兜底
