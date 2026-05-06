@@ -755,13 +755,12 @@ def _generate_watch_pool(
 
 
 def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
-    """次日观察池（从10日涨幅榜 top30 中筛主板高位连板）
+    """次日观察池（从10日涨幅榜 top30 中筛主板候选 — 两条规则并列）
 
-    条件（必须全部满足）：
-    1. 当前在 10日涨幅榜 top30 中
-    2. gain_10d >= 45%
-    3. continuous_limit_up >= 2（连续两日及以上涨停）
-    4. is_main_board（主板）
+    入选规则（满足任一即可），均要求 主板 + 在 top30：
+      A) 高位接力：gain_10d ≥ 45% AND continuous_limit_up ≥ 2
+      B) 首板新标：gain_10d ≥ 40% AND continuous_limit_up == 1
+         （第一次涨停且已挤进 top30，主线候补来源）
 
     Args:
         ranking: {code: ranking_row} 或 [ranking_row, ...]
@@ -778,14 +777,22 @@ def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
         gain = float(r.get("gain_10d") or 0)
         clu = int(r.get("continuous_limit_up") or 0)
         is_main = bool(r.get("is_main_board"))
-        if gain < 45 or clu < 2 or not is_main:
+        if not is_main:
             continue
-        qualified.append(dict(r))
+        # 规则 A: 高位接力
+        rule_a = (gain >= 45 and clu >= 2)
+        # 规则 B: 首板新标
+        rule_b = (gain >= 40 and clu == 1)
+        if not (rule_a or rule_b):
+            continue
+        row = dict(r)
+        row["_pool_tag"] = "高位接力" if rule_a else "首板新标"
+        qualified.append(row)
 
     if not qualified:
         return []
 
-    # 排序：连板数 desc → 10日涨幅 desc
+    # 排序：连板数 desc → 10日涨幅 desc（高位接力天然排在前，首板按涨幅排）
     qualified.sort(
         key=lambda s: (
             -int(s.get("continuous_limit_up") or 0),
@@ -796,24 +803,31 @@ def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
     out: list[dict] = []
     for s in qualified:
         ind = s.get("industry") or "未知"
+        clu = int(s.get("continuous_limit_up") or 0)
+        gain = float(s.get("gain_10d") or 0)
+        tag = s.get("_pool_tag") or ""
+        if tag == "首板新标":
+            reason = f"首板·10日涨幅 {gain}%·主板（首板新标）"
+            watch_points = "竞价 3~6% 介入；首板高度未确认，破开盘价快出；优先红盘高开+缩量"
+        else:
+            reason = f"{clu}连板·10日涨幅 {gain}%·主板（高位接力）"
+            watch_points = "竞价 4~7.5% 介入；竞价回落破开盘价不接；同板块跟风缩量则减仓"
         candidate = asdict(WatchCandidate(
             code=str(s.get("code", "")),
             name=s.get("name", ""),
-            board_count=int(s.get("continuous_limit_up") or 0),
+            board_count=clu,
             industry=ind,
             close=float(s.get("close") or 0),
             market_cap_yi=float(s.get("market_cap_yi") or 0),
-            total_gain_pct=float(s.get("gain_10d") or 0),
-            reason=(
-                f"{s.get('continuous_limit_up')}连板·10日涨幅 "
-                f"{s.get('gain_10d')}%·主板"
-            ),
-            watch_points="竞价 4~7.5% 介入；竞价回落破开盘价不接；同板块跟风缩量则减仓",
+            total_gain_pct=gain,
+            reason=reason,
+            watch_points=watch_points,
             auction_range=_calc_auction_range(float(s.get("close") or 0)),
         ))
-        # 透传 top_concepts / is_main_board 给前端展示
+        # 透传 top_concepts / is_main_board / pool_tag 给前端展示
         candidate["top_concepts"] = list(s.get("top_concepts") or [])
         candidate["is_main_board"] = bool(s.get("is_main_board", True))
+        candidate["pool_tag"] = tag
         out.append(candidate)
     return out
 
