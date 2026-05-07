@@ -30,6 +30,17 @@
         .card-title { font-size: 14px; color: #8892a8; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
         .card-title .icon { font-size: 16px; }
 
+        /* ⚔️ 主动攻击热度 */
+        .attack-card { border-left: 4px solid #ef4444; }
+        .attack-badge {
+            display:inline-block; padding:4px 12px; border-radius:14px;
+            font-size:13px; font-weight:700; letter-spacing:0.5px;
+        }
+        .attack-summary { background:#0d1220; border-radius:6px; padding:10px 14px; }
+        .attack-row { display:flex; gap:24px; margin-bottom:8px; }
+        .attack-stat { font-size:13px; color:#e0e6ed; }
+        .attack-diag { font-size:13px; color:#c9d1d9; line-height:1.7; }
+
         /* 表格 */
         table { width: 100%; border-collapse: collapse; }
         th { text-align: left; padding: 8px 10px; font-size: 12px; color: #6b7280; border-bottom: 1px solid #1e2a45; font-weight: 500; }
@@ -105,6 +116,32 @@
     </div>
 
     <div class="container">
+        <!-- ⚔️ 主动攻击热度 — 醒目顶置 -->
+        <div class="card attack-card" v-if="attackPhase">
+            <div class="card-title" style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:18px;">⚔️ 主动攻击热度</span>
+                <span class="attack-badge" :style="{background: phaseColor, color:'#fff'}">
+                    {{ attackPhase.phase }} · 仓位上限 {{ attackPhase.position_cap_pct }}%
+                </span>
+                <span style="margin-left:auto;font-size:12px;color:#a0aec0;">{{ attackPhase.phase_note }}</span>
+            </div>
+            <div class="attack-summary">
+                <div class="attack-row">
+                    <span class="attack-stat">
+                        ⚔️ <b style="color:#ef4444;font-size:18px;">{{ attackPhase.attack_count }}</b>
+                        <span style="color:#6b7280;font-size:11px;">/30 主动攻击</span>
+                    </span>
+                    <span class="attack-stat">
+                        🚀 翻倍股 <b :style="{color: attackPhase.doubler_count >= 5 ? '#ef4444' : '#fbbf24', fontSize:'16px'}">{{ attackPhase.doubler_count }}</b>
+                        <span style="color:#6b7280;font-size:11px;">只</span>
+                    </span>
+                </div>
+                <div class="attack-diag">📊 {{ attackPhase.diagnostics.doubler }}</div>
+                <div class="attack-diag">🔄 {{ attackPhase.diagnostics.switch }}</div>
+                <div class="attack-diag">📉 {{ attackPhase.diagnostics.trend }}</div>
+            </div>
+        </div>
+
         <div class="card">
             <div class="card-title">
                 <span class="icon">📊</span> 10日涨幅榜 TOP30
@@ -235,6 +272,18 @@ createApp({
         const sentiment = ref({})
         const market = ref(null)
         const leader = ref({})
+        const insight = ref({})
+
+        // 主动攻击热度（来自 latest_insight.attack_phase）
+        const attackPhase = computed(() => insight.value.attack_phase || null)
+        const phaseColor = computed(() => {
+            const p = (attackPhase.value || {}).phase || ""
+            if (p.includes("冰点")) return "#6b7280"        // 灰
+            if (p.includes("启动")) return "#fbbf24"        // 黄
+            if (p.includes("发酵")) return "#10b981"        // 绿
+            if (p.includes("高潮")) return "#ef4444"        // 红警示降仓
+            return "#6b7280"
+        })
 
         // ============= helpers =============
         function fmtNum(v, digits = 2) {
@@ -418,13 +467,15 @@ createApp({
         async function loadData() {
             const live = isTradingTime()
             try {
-                const [snapRes, rankRes, sentRes, leaderRes] = await Promise.all([
+                const [snapRes, rankRes, sentRes, leaderRes, insightRes] = await Promise.all([
                     fetch('/api/snapshot').then(r => r.json()),
                     fetch('/api/gain-ranking').then(r => r.json()),
                     fetch('/api/sentiment').then(r => r.json()),
                     fetch('/api/leader').then(r => r.json()),
+                    fetch('/api/market-insight').then(r => r.json()),
                 ])
                 snapshot.value = snapRes
+                insight.value = insightRes || {}
                 // 交易时段：不让落盘静态数据覆盖 loadRankingLive 维护的实时数据
                 // 仅在首次（ranking 还为空）或非交易时段才用 gain-ranking 写入
                 if (!live || !ranking.value.length) {
@@ -466,6 +517,7 @@ createApp({
 
         return {
             snapshot, ranking, rankingUpdatedAt, rankingLive, sentiment, market, leader,
+            insight, attackPhase, phaseColor,
             top30Stats, top30Verdict, relayVerdict,
             fmtNum, fmtPct, numClass, isRepresentative, isCandidate, isLimitUp,
             attackTooltip,

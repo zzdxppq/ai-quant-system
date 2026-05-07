@@ -324,8 +324,13 @@ def _enrich_active_attack(df: pd.DataFrame, max_workers: int = 8) -> pd.DataFram
                 float(kdf.iloc[-i]["high"])
                 for i in range(2, min(12, len(kdf) + 1))
             ]
+            # 含今日在内最近 5 根 close（用于 MA5 强势位判断）
+            recent_5 = [float(kdf.iloc[-i]["close"]) for i in range(5, 0, -1) if i <= len(kdf)]
             zt_info = row.get("_zt_info")
-            return code, evaluate_active_attack(today_ohlc, prev_3, prev_10, zt_info)
+            return code, evaluate_active_attack(
+                today_ohlc, prev_3, prev_10, zt_info,
+                recent_5_closes=recent_5,
+            )
         except Exception:
             return code, None
 

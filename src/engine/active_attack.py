@@ -35,6 +35,7 @@ def evaluate_active_attack(
     prev_highs_3d: list[float],
     prev_highs_10d: list[float],
     zt_info: Optional[dict],
+    recent_5_closes: Optional[list[float]] = None,
 ) -> dict:
     """单只股票主动攻击核验
 
@@ -43,6 +44,8 @@ def evaluate_active_attack(
         prev_highs_3d: 过去 3 个交易日 high 列表
         prev_highs_10d: 过去 10 个交易日 high 列表（含 3 日，可不传）
         zt_info: 涨停池条目 {lbc, lbt, zbc} 或 None
+        recent_5_closes: 含今日在内最近 5 根 K线 close 列表（用于 MA5 强势位判断）
+                         为 None 时降级回 "low ≥ open" 兜底
 
     Returns:
         {is_attack, score (0-2),
@@ -80,13 +83,27 @@ def evaluate_active_attack(
     if cond2_10d:
         cond2_detail += "（10日新高）"
 
-    # === Cond 3: 分时均线（简化：low ≥ open 表示日内不破开盘）===
-    cond3 = (lo >= op) if lo > 0 else False
-    cond3_detail = (
-        f"日内不破开盘 (low{lo:.2f}≥open{op:.2f})"
-        if cond3
-        else f"日内破开盘 (low{lo:.2f}<open{op:.2f})"
-    )
+    # === Cond 3: 强势位判断 ===
+    # 优先：close > MA(close,5) * 1.02 — 收盘明显高于 5 日均线 ≥2%（用户口径）
+    # 兜底：low ≥ open （无 MA5 数据时用日内不破开盘代理）
+    cond3 = False
+    cond3_detail = ""
+    if recent_5_closes and len(recent_5_closes) >= 5:
+        try:
+            ma5 = sum(float(x) for x in recent_5_closes[-5:]) / 5
+            if ma5 > 0:
+                premium = (cl / ma5 - 1) * 100
+                cond3 = cl > ma5 * 1.02
+                cond3_detail = f"close {cl:.2f} vs MA5 {ma5:.2f}（溢价{premium:+.1f}%）"
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+    if not cond3_detail:
+        cond3 = (lo >= op) if lo > 0 else False
+        cond3_detail = (
+            f"日内不破开盘 (low{lo:.2f}≥open{op:.2f})"
+            if cond3
+            else f"日内破开盘 (low{lo:.2f}<open{op:.2f})"
+        )
 
     # === Cond 4: 无危险动作 ===
     if zt_info:
