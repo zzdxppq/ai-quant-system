@@ -84,6 +84,11 @@
         .t30-p3 { background: linear-gradient(90deg, #065f46, #34d399); }
         .t30-p4 { background: linear-gradient(90deg, #92400e, #fbbf24); }
         .t30-p5 { background: linear-gradient(90deg, #7f1d1d, #ef4444); }
+        /* 概念分布配色：前 3 用红/橙/紫渐变，"其他"灰 */
+        .t30-c1 { background: linear-gradient(90deg, #7f1d1d, #ef4444); }
+        .t30-c2 { background: linear-gradient(90deg, #92400e, #f59e0b); }
+        .t30-c3 { background: linear-gradient(90deg, #5b21b6, #a78bfa); }
+        .t30-c-rest { background: #374151; color: #9ca3af; }
         .t30-summary { font-size: 12px; color: #a0aec0; margin-top: 4px; padding-left: 76px; }
         .t30-verdict {
             margin-top: 10px; padding: 10px 14px;
@@ -153,6 +158,14 @@
 
             <!-- 结构占比 -->
             <div v-if="top30Stats" class="top30-stats">
+                <div v-if="top30Stats.concepts && top30Stats.concepts.length" class="t30-row">
+                    <span class="t30-label">概念分布</span>
+                    <span v-for="(c, i) in top30Stats.concepts" :key="c.name"
+                          class="t30-seg" :class="conceptSegCls(c.name, i)" :style="{flex: c.pct || 0.01}"
+                          :title="c.name + '：' + c.count + ' 票（每股票计入热度最高的前 2 个概念）'">
+                        {{ c.name }} {{ c.count }}（{{ c.pct }}%）
+                    </span>
+                </div>
                 <div class="t30-row">
                     <span class="t30-label">板块结构</span>
                     <span class="t30-seg t30-main" :style="{flex: top30Stats.board.mainPct || 0.01}">
@@ -345,11 +358,37 @@ createApp({
                 ? priceBuckets.reduce((a, b) => (b.count > a.count ? b : a))
                 : null
 
+            // 概念分布：聚合 top_concepts，前3 个概念 + "其他"
+            // 优先用 top_concepts（已过滤元标签 + 涨停热度 top2），降级用 concepts 全集
+            const conceptCounter = new Map()
+            for (const x of items) {
+                const cs = (x.top_concepts && x.top_concepts.length)
+                    ? x.top_concepts
+                    : (x.concepts || []).slice(0, 2)
+                for (const c of cs) {
+                    if (!c) continue
+                    conceptCounter.set(c, (conceptCounter.get(c) || 0) + 1)
+                }
+            }
+            const conceptArr = [...conceptCounter.entries()]
+                .map(([name, count]) => ({ name, count }))
+                .sort((a, b) => b.count - a.count)
+            const top3 = conceptArr.slice(0, 3)
+            const restCount = conceptArr.slice(3).reduce((s, x) => s + x.count, 0)
+            const totalConceptVotes = conceptArr.reduce((s, x) => s + x.count, 0)
+            const conceptBuckets = totalConceptVotes > 0
+                ? [
+                    ...top3.map(c => ({ name: c.name, count: c.count, pct: Math.round(c.count * 1000 / totalConceptVotes) / 10 })),
+                    ...(restCount > 0 ? [{ name: '其他', count: restCount, pct: Math.round(restCount * 1000 / totalConceptVotes) / 10 }] : []),
+                ]
+                : []
+
             return {
                 total,
                 board: { main, gem, mainPct: round1(main), gemPct: round1(gem) },
                 cap: { small, large, unknown, smallPct: round1(small), largePct: round1(large), unknownPct: round1(unknown) },
                 priceBuckets, priceMain,
+                concepts: conceptBuckets,
             }
         })
 
@@ -504,6 +543,14 @@ createApp({
         // 每分钟检测一次是否跨过交易时段边界，及时切换 polling 频率
         setInterval(startLivePolling, 60000)
 
+        function conceptSegCls(name, idx) {
+            if (name === '其他') return 't30-c-rest'
+            if (idx === 0) return 't30-c1'
+            if (idx === 1) return 't30-c2'
+            if (idx === 2) return 't30-c3'
+            return 't30-c-rest'
+        }
+
         function attackTooltip(aa) {
             if (!aa) return ''
             const lines = [
@@ -520,7 +567,7 @@ createApp({
             insight, attackPhase, phaseColor,
             top30Stats, top30Verdict, relayVerdict,
             fmtNum, fmtPct, numClass, isRepresentative, isCandidate, isLimitUp,
-            attackTooltip,
+            attackTooltip, conceptSegCls,
         }
     }
 }).mount('#app')
