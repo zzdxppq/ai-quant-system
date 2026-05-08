@@ -808,6 +808,19 @@ async def get_market_insight():
     return JSONResponse({"date": "", "sector_heats": [], "wave": None})
 
 
+def _sanitize_json(obj):
+    """递归把 NaN/Inf 收敛为 None；JSONResponse 默认不允许这两类值"""
+    import math as _math
+    if isinstance(obj, dict):
+        return {k: _sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_json(v) for v in obj]
+    if isinstance(obj, float):
+        if _math.isnan(obj) or _math.isinf(obj):
+            return None
+    return obj
+
+
 @app.get("/api/screener-history")
 async def get_screener_history(year: int = 0, month: int = 0):
     """获取选股记录+胜率统计
@@ -831,11 +844,14 @@ async def get_screener_history(year: int = 0, month: int = 0):
         print(f"[选股记录] refresh_today_records 失败: {e}")
     y = year if year > 0 else None
     m = month if month > 0 else None
-    return JSONResponse({
+    payload = {
         "records": get_history(limit=0, year=y, month=m),
         "stats": calc_win_stats(filter_year=y, filter_month=m),
         "available_periods": list_available_periods(),
-    })
+    }
+    # 历史记录里可能有 market_cap=NaN（Story 2.4 修复前归档的脏数据），
+    # 走 _sanitize_json 收敛为 None，避免 JSONResponse 抛 ValueError
+    return JSONResponse(_sanitize_json(payload))
 
 
 # ========== 自选股模块已移除 ==========
