@@ -842,6 +842,28 @@ async def get_screener_history(year: int = 0, month: int = 0):
         refresh_today_records()
     except Exception as e:
         print(f"[选股记录] refresh_today_records 失败: {e}")
+
+    # 9:25 之后若昨日记录的 next_day_* 还是 None（cron 未跑），主动拉 spot 回填
+    # 解决"今日已开盘但'昨日选股今日竞价'卡片仍显示等待"的体验问题
+    try:
+        from src.engine.screener_history import backfill_next_day_auction, _load
+        n = now_cn()
+        cutoff = n.replace(hour=9, minute=25, second=0, microsecond=0)
+        if n >= cutoff:
+            today_str = n.strftime("%Y-%m-%d")
+            recs = _load()
+            need_backfill = any(
+                r.get("date") and r.get("date") < today_str
+                and r.get("next_day_open") is None
+                for r in recs
+            )
+            if need_backfill:
+                from src.data.fetcher import fetch_realtime_spot
+                spot = fetch_realtime_spot()
+                if spot is not None and not spot.empty:
+                    backfill_next_day_auction(spot)
+    except Exception as e:
+        print(f"[选股记录] 昨日次日竞价回填失败: {e}")
     y = year if year > 0 else None
     m = month if month > 0 else None
     payload = {
