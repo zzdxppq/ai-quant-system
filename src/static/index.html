@@ -348,11 +348,11 @@
         }
         .btn-kline-close:hover { color: #ef4444; }
 
-        /* K 线 Modal — 双栏：图左 + 解读右 */
+        /* K 线 Modal — 双栏：图左 + 解读右；弹窗居中 */
         .kline-modal-mask {
             position: fixed; top:0; left:0; right:0; bottom:0;
             background: rgba(0,0,0,0.75); z-index: 1000;
-            display: flex; align-items: stretch; justify-content: flex-start;
+            display: flex; align-items: center; justify-content: center;
             padding: 16px;
         }
         .kline-modal {
@@ -724,7 +724,7 @@
                             <span v-if="isCycleStock(hit.code)" class="tag tag-rep" style="background:#3b0a0a;color:#ef4444;padding:1px 6px;border-radius:4px;font-size:11px;">是</span>
                             <span v-else class="tag" style="background:#0a2a1a;color:#10b981;padding:1px 6px;border-radius:4px;font-size:11px;">否</span>
                         </td>
-                        <td style="text-align:center;">
+                        <td style="text-align:left;">
                             <button class="btn-kline" @click="openKline(hit.code, hit.name)" title="查看日K + 防线">
                                 📈 日K
                             </button>
