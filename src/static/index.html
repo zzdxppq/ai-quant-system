@@ -966,6 +966,7 @@ createApp({
         const screenerDate = ref('')
         const signals = ref([])
         const leader = ref({})
+        const advice = ref(null)
         const deviations = ref([])
         const btResult = ref(null)
         // 今日竞价决策卡（从复盘页迁入）
@@ -1193,77 +1194,19 @@ createApp({
             return { label: '一般', cls: 'hm-ok', icon: '☁️', detail: detailNames }
         })
 
-        // 当日操作建议 — 三维联动：竞价跌停数 / 梯队加权竞价 / 昨日连板高标竞价
-        // 任二命中 → 不操作；单条命中 → 谨慎参与；都不命中 → 可参与
+        // 当日操作建议 — 读 9:27 决策快照 latest_advice.json (decision-consistency-2.1)
+        // 看板不再实时算；与邮件读同一份单一真源；盘中不变（直至 refresh-screener 重写）
+        const _BUCKET_TO_CLS = { stop: 'advice-stop', warn: 'advice-warn', go: 'advice-go' }
         const dailyAdvice = computed(() => {
-            const limitDown = Number(market.value?.limit_down ?? null)
-            const wAvg  = Number(sentiment.value?.weighted_auction_gain ?? null)
-            const hasLD = market.value && Number.isFinite(limitDown)
-            const hasWAvg = sentiment.value?.verdict && Number.isFinite(wAvg)
-
-            // 第三维：昨日连板高标 任一 跌停 或 水下开（auction_change_pct < 0）
-            const mbList = leader.value?.main_board_leaders || []
-            const lbBadList = mbList.filter(x =>
-                x.signal === '跌停' || (Number(x.auction_change_pct) < 0)
-            )
-            const hasLB = mbList.length > 0
-            const lbBad = hasLB && lbBadList.length > 0
-
-            if (!hasLD && !hasWAvg && !hasLB) {
+            const a = advice.value
+            if (!a || !a.bucket) {
                 return { cls: 'advice-go', text: '— 数据加载中 —', reason: '', suggestedPosition: '—' }
             }
-
-            const ldBad = hasLD && limitDown > 5
-            const wAvgBad = hasWAvg && wAvg < 0
-            // 第四维：跌幅>9%个股数 > 9只
-            const dropOver9 = Number(market.value?.drop_over_9pct ?? 0)
-            const dropBad = dropOver9 > 9
-
-            // 收集警戒明细
-            const warnings = []
-            if (ldBad) warnings.push(`市场竞价跌停 ${limitDown} 只（>5 警戒线）`)
-            if (dropBad) warnings.push(`跌幅>9%个股 ${dropOver9} 只（>9 警戒线）`)
-            if (wAvgBad) warnings.push(`梯队加权竞价 ${wAvg >= 0 ? '+' : ''}${wAvg}% 偏弱（<0）`)
-            if (lbBad) {
-                const desc = lbBadList.map(x =>
-                    `${x.leader_name}(${x.signal === '跌停' ? '跌停' : `水下${x.auction_change_pct >= 0 ? '+' : ''}${x.auction_change_pct}%`})`
-                ).join('、')
-                warnings.push(`昨日连板高标 ${desc}`)
-            }
-
-            const badCount = warnings.length
-
-            if (badCount >= 2) {
-                return {
-                    cls: 'advice-stop',
-                    text: '🛑 今日不操作',
-                    suggestedPosition: '0层（空仓避险）',
-                    reason: warnings.join('；') + '。四维警戒中已 ' + badCount + ' 项触发，避免开仓。'
-                }
-            }
-            if (badCount === 1) {
-                return {
-                    cls: 'advice-warn',
-                    text: '⚠️ 谨慎参与',
-                    suggestedPosition: '1.5层（小仓试错）',
-                    reason: warnings[0] + '。仅一项警戒，可小仓试错或观望。'
-                }
-            }
-            // 检查连续情绪好的天数（从sentiment历史判断）
-            const prevWavg = sentiment.value?.prev_day_weighted_auction_gain
-            const todayWavg = wAvg
-            const prevLD = market.value?.prev_day_limit_down
-            const todayLD = limitDown
-            // 连续2日+都好（跌停<=5且加权竞价>=0）→ 4层
-            const todayGood = hasLD && todayLD <= 5 && hasWAvg && todayWavg >= 0
-            const prevGood = prevWavg != null && prevWavg >= 0 && prevLD != null && prevLD <= 5
-            const consecutiveGood = todayGood && prevGood
-
             return {
-                cls: 'advice-go',
-                text: '✅ 可参与',
-                suggestedPosition: consecutiveGood ? '4层（连续情绪良好）' : '3层（标准仓位）',
-                reason: consecutiveGood ? '连续2日情绪良好（跌停≤5+加权竞价≥0），建议加至4层' : ''
+                cls: _BUCKET_TO_CLS[a.bucket] || 'advice-go',
+                text: a.text || '— 数据加载中 —',
+                suggestedPosition: a.suggested_position || '—',
+                reason: a.reason || ''
             }
         })
 
@@ -1568,7 +1511,7 @@ createApp({
 
         async function loadData() {
             try {
-                const [snapRes, rankRes, scrRes, sigRes, leaderRes, devRes, sentRes, scoreRes] = await Promise.all([
+                const [snapRes, rankRes, scrRes, sigRes, leaderRes, devRes, sentRes, scoreRes, adviceRes] = await Promise.all([
                     fetch('/api/snapshot').then(r => r.json()),
                     fetch('/api/gain-ranking').then(r => r.json()),
                     fetch('/api/screener').then(r => r.json()),
@@ -1577,6 +1520,7 @@ createApp({
                     fetch('/api/deviation').then(r => r.json()),
                     fetch('/api/sentiment').then(r => r.json()),
                     fetch('/api/auction-scores').then(r => r.json()),
+                    fetch('/api/daily-advice').then(r => r.json()),
                 ])
                 snapshot.value = snapRes
                 ranking.value = rankRes.ranking || []
@@ -1588,6 +1532,7 @@ createApp({
                 screenerDate.value = scrRes.date || ''
                 signals.value = sigRes.signals || []
                 leader.value = leaderRes
+                advice.value = adviceRes
                 deviations.value = devRes.results || []
                 auctionScores.value = Array.isArray(scoreRes) ? scoreRes : []
             } catch (e) { console.error('加载数据失败:', e) }

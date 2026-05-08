@@ -1,0 +1,26 @@
+{
+  "_note": "Baseline fingerprint for src/static/index.html template (decision-consistency-2.1 BR-2.4 / BR-5.4). Recorded 2026-05-08 before AC2 dashboard rewrite. Lines 505-509 / 595-596 / 657-666 must remain char-level unchanged through this Story.",
+  "lines_505_509": [
+    "        <div class=\"card full-width hero-banner\" :class=\"dailyAdvice.cls\">",
+    "            <div class=\"hero-main\">",
+    "                <div class=\"hero-action\">",
+    "                    <div class=\"ha-text\">{{ dailyAdvice.text }}</div>",
+    "                    <div class=\"ha-position\">建议仓位：<b>{{ dailyAdvice.suggestedPosition }}</b></div>"
+  ],
+  "lines_595_596": [
+    "            <div class=\"hero-reason\" v-if=\"dailyAdvice.reason\">",
+    "                💡 {{ dailyAdvice.reason }}"
+  ],
+  "lines_657_666": [
+    "                            <div class=\"decision-cell\" :class=\"dailyAdvice.cls\" style=\"padding:4px 8px;border-radius:6px;\">",
+    "                                <div class=\"dc-action\" style=\"font-size:12px;font-weight:600;\">",
+    "                                    {{ dailyAdvice.text }}",
+    "                                </div>",
+    "                                <div style=\"font-size:11px;margin-top:2px;\"",
+    "                                     :style=\"{color: hit.matched_cycle ? '#60a5fa' : '#a0aec0'}\">",
+    "                                    <template v-if=\"dailyAdvice.cls === 'advice-go'\">",
+    "                                        {{ hit.matched_cycle ? '3层（🎯周期股）' : '2层（非周期降1层）' }}",
+    "                                    </template>",
+    "                                    <template v-else-if=\"dailyAdvice.cls === 'advice-warn'\">"
+  ]
+}

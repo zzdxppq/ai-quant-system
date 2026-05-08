@@ -49,7 +49,7 @@ def send_screener_report(
         print("[邮件] 未配置 SMTP_USER 或 SMTP_PASSWORD，跳过推送")
         return False
 
-    advice = _calc_daily_advice(sentiment_data, leader)
+    advice = _load_advice_from_disk() or _calc_daily_advice(sentiment_data, leader)
 
     now = now_cn()
     subject_emoji = {"stop": "🛑", "warn": "⚠️", "go": "✅"}[advice["bucket"]]
@@ -169,6 +169,139 @@ def _calc_daily_advice(sent: dict | None, leader: dict | None = None) -> dict:
         "position_short": "3层",
         "reason": "",
         "color": "#ef4444", "bg": "#2a0f0f",
+    }
+
+
+# 决策快照单一真源 (decision-consistency-2.1)
+# bucket → (color, bg)，用于 _load_advice_from_disk 重建 _build_html 所需字段
+_BUCKET_COLOR = {
+    "stop": ("#10b981", "#0a2a0a"),
+    "warn": ("#fbbf24", "#2a2a0a"),
+}
+_GO_COLOR_NORMAL = ("#ef4444", "#2a0f0f")
+_GO_COLOR_LOADING = ("#6b7280", "#0d1220")
+_LOADING_TEXT = "— 数据加载中 —"
+_REQUIRED_ADVICE_KEYS = {
+    "bucket", "text", "suggested_position", "suggested_position_short", "reason",
+}
+
+
+def _is_num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def write_advice_snapshot(sent: dict | None, leader: dict | None = None) -> dict | None:
+    """计算 9:27 决策快照并写入 DATA_DIR/latest_advice.json (单一真源)
+
+    与 src/static/index.html dailyAdvice computed 等价；不引入新算法。
+    bucket / text / position / position_short / reason 由 _calc_daily_advice 给出，
+    本函数另独立计算 dimensions/bad_count/inputs（持久化扩展字段，BR-1.6）。
+
+    Returns: 写入的 payload dict；写盘失败返回 None（不抛错给 caller）。
+    """
+    advice = _calc_daily_advice(sent, leader)
+
+    sent = sent or {}
+    market = sent.get("market") or {}
+    limit_down = market.get("limit_down")
+    drop_over_9pct = market.get("drop_over_9pct")
+    prev_day_limit_down = market.get("prev_day_limit_down")
+    w_avg = sent.get("weighted_auction_gain")
+    prev_w_avg = sent.get("prev_day_weighted_auction_gain")
+
+    mb_list = (leader or {}).get("main_board_leaders") or []
+    lb_bad_list = [
+        x for x in mb_list
+        if x.get("signal") == "跌停"
+        or (_is_num(x.get("auction_change_pct")) and x["auction_change_pct"] < 0)
+    ]
+
+    ld_bad = bool(_is_num(limit_down) and limit_down > 5)
+    drop_bad = bool(_is_num(drop_over_9pct) and drop_over_9pct > 9)
+    w_bad = bool(_is_num(w_avg) and w_avg < 0)
+    lb_bad = bool(len(mb_list) > 0 and len(lb_bad_list) > 0)
+    bad_count = int(ld_bad) + int(drop_bad) + int(w_bad) + int(lb_bad)
+
+    summary = [
+        {
+            "leader_name": x.get("leader_name", ""),
+            "signal": x.get("signal", ""),
+            "auction_change_pct": x.get("auction_change_pct"),
+        }
+        for x in mb_list
+    ]
+
+    payload = {
+        "generated_at": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
+        "bucket": advice["bucket"],
+        "text": advice["text"],
+        "suggested_position": advice["position"],
+        "suggested_position_short": advice["position_short"],
+        "reason": advice["reason"],
+        "bad_count": bad_count,
+        "dimensions": {
+            "ld_bad": ld_bad,
+            "drop_bad": drop_bad,
+            "w_bad": w_bad,
+            "lb_bad": lb_bad,
+        },
+        "inputs": {
+            "limit_down": limit_down if _is_num(limit_down) else None,
+            "drop_over_9pct": drop_over_9pct if _is_num(drop_over_9pct) else None,
+            "weighted_auction_gain": w_avg if _is_num(w_avg) else None,
+            "prev_day_limit_down": prev_day_limit_down if _is_num(prev_day_limit_down) else None,
+            "prev_day_weighted_auction_gain": prev_w_avg if _is_num(prev_w_avg) else None,
+            "main_board_leaders_summary": summary,
+        },
+    }
+
+    try:
+        (DATA_DIR / "latest_advice.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        print(f"[决策快照] 写入失败: {e}")
+        return None
+
+    return payload
+
+
+def _load_advice_from_disk() -> dict | None:
+    """读 latest_advice.json，反向重命名 snake_case → 内部 dict (BR-3.5)
+
+    保 _build_html 完全无感知（继续使用 position / position_short / color / bg）。
+    缺失 / 损坏 / 字段不全 → 返回 None，由 caller fallback 到 _calc_daily_advice。
+    """
+    p = DATA_DIR / "latest_advice.json"
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[邮件] 决策快照解析失败: {e}，回退实时计算")
+        return None
+    if not isinstance(data, dict) or not _REQUIRED_ADVICE_KEYS.issubset(data.keys()):
+        print("[邮件] 决策快照字段不全，回退实时计算")
+        return None
+
+    bucket = data["bucket"]
+    text = data["text"]
+    if bucket in _BUCKET_COLOR:
+        color, bg = _BUCKET_COLOR[bucket]
+    elif text == _LOADING_TEXT:
+        color, bg = _GO_COLOR_LOADING
+    else:
+        color, bg = _GO_COLOR_NORMAL
+
+    return {
+        "bucket": bucket,
+        "text": text,
+        "position": data["suggested_position"],
+        "position_short": data["suggested_position_short"],
+        "reason": data["reason"],
+        "color": color,
+        "bg": bg,
     }
 
 

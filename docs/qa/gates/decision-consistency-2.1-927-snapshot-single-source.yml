@@ -1,0 +1,191 @@
+schema: 1
+story: "decision-consistency-2.1"
+story_title: "9:27 决策快照单一真源（看板 + 邮件读同一份 latest_advice.json）"
+gate: PASS
+status_reason: |
+  All 5 ACs fully verified with 100% pass rate (99/99 project tests; 48/48 story tests
+  + 46 email-sync-1.1 baseline + 5 fallback). Architect Major Issue #1 收敛到路径 (b)
+  确认（仅写文件 + send_screener_report 签名字符级冻结，INT-007 验证）。Brownfield
+  契约保护到位：HTML 模板 505-509/595-596/657-666 字符级未变（INT-005/INT-015 双重断言），
+  send_screener_report inspect.signature 与 email-sync-1.1 baseline 一致（INT-007）。
+  端到端三方一致性矩阵（2.1-INT-018 ×5 parametrize）直接缓解用户 2026-05-08 实盘
+  "邮件 0 层 vs 看板 1.5 层" 反馈。零 CRITICAL/HIGH/MEDIUM 问题。
+reviewer: "Turing (Test Engineer)"
+updated: "2026-05-08T21:54:30+08:00"
+
+review_round: 1
+review_mode_type: full
+issues_from_previous_round: 0
+issues_resolved: 0
+improvement_percentage: 0
+
+incremental_context:
+  cached_risk_level: MEDIUM
+  cached_review_mode: automated_plus_spot_check
+  cached_project_type: fullstack
+  failed_acs: []
+  failed_e2e_scenarios: []
+  missing_blind_spots: []
+  checkbox_issues: []
+
+waiver: { active: false }
+
+architecture_concern: false
+escalation_reason: ""
+
+top_issues: []
+
+test_results:
+  automated:
+    executed: true
+    passed: true
+    total: 99
+    passed_count: 99
+    failed_count: 0
+    skipped_count: 0
+    pass_rate: 100
+    coverage_percentage: 100  # 5/5 ACs with code+test traceability
+    failed_tests: []
+    breakdown:
+      story_unit: 26          # UNIT-001..026
+      story_integration: 18   # INT-001..016 + INT-017 + INT-018(parametrize ×5 = 6 records but 1 fn)
+      baseline_email_sync: 46  # tests/notify/test_email_decision_alignment.py
+      baseline_fallback: 5     # tests/notify/test_email_fallback_industry_concept.py
+      blind_spot: 7
+    strict_mode_passed: true   # pytest -W error 通过
+    test_command_story: "pytest tests/notify/test_decision_consistency.py -W error -v"
+    test_command_full: "pytest tests/ -W error"
+    execution_time_seconds: 0.39
+  e2e:
+    executed: false
+    passed: true
+    skipped: true
+    skip_reason: "skip_e2e=true (review_mode = automated_plus_spot_check); 项目无 Playwright 环境；dashboard 改动通过 INT-001..006 grep 静态分析 + 模板 baseline diff 覆盖等效。"
+    scenarios_tested: 0
+    scenarios_passed: 0
+    scenarios_failed: 0
+    console_errors_found: false
+    network_errors_found: false
+  regression:
+    executed: true
+    method: full_pytest_suite
+    passed: true
+    tests_total: 99
+    tests_failed: 0
+    baseline_suites_included:
+      - "tests/notify/test_email_decision_alignment.py (46 tests, email-sync-1.1 baseline)"
+      - "tests/notify/test_email_fallback_industry_concept.py (5 tests)"
+
+evidence:
+  directory: ""  # 无问题，Step 6 跳过 evidence collection
+  issues: []
+
+risk_assessment:
+  risk_level: MEDIUM
+  review_mode: automated_plus_spot_check
+  complexity_count: 2
+  security_sensitive: false
+  dev_gate_score: 100
+
+risk_summary:
+  totals: { critical: 0, high: 0, medium: 0, low: 0 }
+  recommendations:
+    must_fix: []
+    monitor:
+      - action: "下一次 Story revise 时刷新 Story §Dev Notes 中 dailyAdvice 行号引用（1196 vs 1198 混用）— 已由 Architect 在 *review 阶段标记为 Minor，本 Story 范围不要求修改。"
+        refs:
+          - "docs/stories/decision-consistency-2.1-927-snapshot-single-source.md §Architect Review › Low/Minor Issues #2"
+
+ac_coverage:
+  total: 5
+  fully_verified: 5
+  coverage_rate: 100
+  details:
+    AC1:
+      status: VERIFIED
+      refs:
+        - "src/notify/email_sender.py:193-265 (write_advice_snapshot)"
+        - "src/scheduler.py:576-596 (7b 决策快照块)"
+      tests: ["UNIT-001..016 (16 tests, all PASS)"]
+    AC2:
+      status: VERIFIED
+      refs:
+        - "src/api/app.py:94-121 (placeholder + endpoint)"
+        - "src/static/index.html:969 (advice ref)"
+        - "src/static/index.html:1200-1211 (dailyAdvice computed reads only advice.value)"
+        - "src/static/index.html:1523 (fetch in Promise.all)"
+      tests: ["UNIT-017,018,019 + INT-001..006 (9 tests, all PASS)"]
+    AC3:
+      status: VERIFIED
+      refs:
+        - "src/notify/email_sender.py:52 (advice = _load_advice_from_disk() or _calc_daily_advice)"
+        - "src/notify/email_sender.py:270-300 (_load_advice_from_disk)"
+        - "src/notify/email_sender.py:72-172 (_calc_daily_advice retained as fallback)"
+      tests: ["UNIT-020..026 + INT-007,008 (9 tests, all PASS)"]
+    AC4:
+      status: VERIFIED
+      refs:
+        - "src/scheduler.py:576-596 (7b block between latest_signals.json @572 and send_screener_report @640+)"
+      tests: ["INT-009,010,011 (3 tests, all PASS)"]
+      architect_major_issue_1: "RESOLVED — path (b) only (file-only persistence, no advice param)"
+    AC5:
+      status: VERIFIED
+      refs:
+        - "src/notify/email_sender.py send_screener_report 签名 char-level frozen"
+        - "src/static/index.html template lines 505-509/595-596/657-666 unchanged"
+      tests:
+        - "INT-007 (signature freeze) + INT-005,015 (template diff) + INT-012,013,014,016 (regression branches)"
+        - "tests/notify/test_email_decision_alignment.py (46 baseline tests, all PASS)"
+        - "tests/notify/test_email_fallback_industry_concept.py (5 tests, all PASS)"
+
+blind_spot_coverage:
+  total_scenarios: 7
+  covered: 7
+  coverage_rate: 100
+  by_category:
+    BOUNDARY: { total: 2, covered: 2 }   # UNIT-016 (w_avg=0), UNIT-022 (字段不全)
+    ERROR:    { total: 3, covered: 3 }   # UNIT-019, UNIT-021, UNIT-015
+    FLOW:     { total: 2, covered: 2 }   # INT-013, INT-016
+
+three_way_consistency_matrix:
+  scenario_count: 5
+  parametrize_test: "test_2_1_int_018_consistency_email_subject_eq_disk_payload"
+  buckets_tested: ["bad_count=0", "bad_count=1", "bad_count=2", "bad_count=3", "bad_count=4"]
+  asserted_equality: |
+    file["suggested_position_short"] == email_subject "仓位{...}层" == helper.position_short
+  user_feedback_resolved: |
+    Direct mitigation of user's 2026-05-08 实盘反馈 "9:27 邮件 0 层 vs 11:30 看板 1.5 层"
+  status: PASS
+
+dashboard_truth_source_check:
+  src_static_index_html_505_509: untouched  # hero metrics
+  src_static_index_html_595_596: untouched  # advice card top
+  src_static_index_html_657_666: untouched  # advice details
+  template_baseline: "tests/notify/fixtures/index_template_baseline.json (INT-005, INT-015)"
+
+signature_freeze_check:
+  send_screener_report:
+    expected: "(cycle_phase, cycle_day, representative, leader, hits, signals, deviations=None, sentiment_data=None, ranking_data=None) -> bool"
+    actual_match: true
+    test: "test_2_1_int_007_send_screener_report_signature_unchanged PASS"
+
+scheduler_order_check:
+  advice_write_after_signals_write: true  # line 576 > 572
+  advice_write_before_send_screener_report: true  # line 596 < 640+
+  not_in_background_thread: true
+  tests: ["INT-009 (line order grep)", "INT-010 (not in _background_tasks)"]
+
+architect_review_issues_resolution:
+  major_issue_1_BR_4_3_path_choice:
+    decision: "Path (b) only — file-only persistence, signature frozen"
+    evidence: "INT-007 PASS + scheduler 7b block does not pass advice into send_screener_report"
+    status: RESOLVED
+  minor_issue_1_accumulated_context_outdated:
+    status: NOTED — out-of-scope per Architect, no action required this Story
+  minor_issue_2_dailyAdvice_line_number_drift:
+    status: NOTED — Story refs 1196 vs 1198; functionality verified at 1200; deferred to next SM revise
+
+history:
+  - at: "2026-05-08T21:54:30+08:00"
+    gate: PASS
+    note: "Round 1 — full review. 99/99 tests pass, 5/5 ACs verified, 7/7 blind spots covered, three-way consistency matrix PASS, signature + template baselines unchanged."

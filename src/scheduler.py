@@ -573,6 +573,28 @@ def run_screener_update() -> dict:
         json.dumps(signals_data, ensure_ascii=False, indent=2)
     )
 
+    # 7b. 决策快照（看板 + 邮件单一真源, decision-consistency-2.1）
+    # 同步写入 latest_advice.json；必须在 send_screener_report 之前完成。
+    try:
+        from src.notify.email_sender import write_advice_snapshot
+        sentiment_advice = None
+        sent_file = DATA_DIR / "latest_sentiment.json"
+        if sent_file.exists():
+            try:
+                sentiment_advice = json.loads(sent_file.read_text())
+            except Exception:
+                pass
+        leader_advice = None
+        leader_file = DATA_DIR / "latest_leader.json"
+        if leader_file.exists():
+            try:
+                leader_advice = json.loads(leader_file.read_text())
+            except Exception:
+                pass
+        write_advice_snapshot(sentiment_advice, leader_advice)
+    except Exception as e:
+        print(f"[决策快照] 异常: {e}")
+
     hit_count = len(hits)
     matched = sum(1 for h in hits if h.matched_cycle)
     print(f"选股结果: {hit_count} 只命中, {matched} 只匹配周期")

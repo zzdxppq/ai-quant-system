@@ -91,6 +91,36 @@ async def get_leader_feedback():
     return JSONResponse({"signal": "未知", "can_trade": True})
 
 
+_DAILY_ADVICE_PLACEHOLDER = {
+    "generated_at": "",
+    "bucket": "go",
+    "text": "— 数据加载中 —",
+    "suggested_position": "—",
+    "suggested_position_short": "—",
+    "reason": "",
+    "bad_count": 0,
+    "dimensions": {"ld_bad": False, "drop_bad": False, "w_bad": False, "lb_bad": False},
+    "inputs": {},
+}
+
+
+@app.get("/api/daily-advice")
+async def get_daily_advice():
+    """9:27 决策快照 (decision-consistency-2.1)
+
+    看板与邮件共同读这一份 latest_advice.json (单一真源)。
+    文件不存在 / 损坏 → 返回占位响应（前端"数据加载中"分支视觉等价）。
+    """
+    advice_file = DATA_DIR / "latest_advice.json"
+    if not advice_file.exists():
+        return JSONResponse(dict(_DAILY_ADVICE_PLACEHOLDER))
+    try:
+        return JSONResponse(json.loads(advice_file.read_text(encoding="utf-8")))
+    except Exception as e:
+        print(f"[决策快照] 读取失败: {e}")
+        return JSONResponse(dict(_DAILY_ADVICE_PLACEHOLDER))
+
+
 @app.get("/api/signals")
 async def get_signals():
     """获取交叉验证信号"""
