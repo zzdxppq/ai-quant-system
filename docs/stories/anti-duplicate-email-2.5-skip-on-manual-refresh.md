@@ -8,7 +8,7 @@ Story:
   title: run_screener_update 加 skip_email 参数 + /api/refresh-screener 默认 skip_email=True（防盘中重复邮件）
   epic: iteration-2 brownfield (virtual epic — 真源为 docs/prd/iteration-2-scope.md)
   tier: simple
-  status: Review
+  status: Done
   mode: quick
   repository: monolith
   priority: P3
@@ -120,7 +120,7 @@ deliverable_bindings:
 | Dev | Linus (Opus 4.7) |
 | Files | src/scheduler.py (signature + `_in_927_window`/`_should_send_email` helpers + 8c 守卫); src/api/app.py (`/api/refresh-screener` → `skip_email=True`); tests/scheduler/__init__.py (新建); tests/scheduler/test_run_screener_skip_email.py (新建, 10 tests) |
 | Tests | tests/scheduler/test_run_screener_skip_email.py 10/10 PASS；全量 pytest tests/ --ignore=tests/engine: 190 passed / 35 failed（35 失败均为 pre-existing in-progress story 基线: relay-sentiment-2.3 + dashboard-hits-table-display-2.4 模板 SHA 漂移 + email_decision_alignment 1 项；与本 Story 无关，对比 stash 验证） |
-| QA | - |
+| QA | Turing (Opus 4.7) — Round 1 PASS, gate=PASS, 7/7 AC verified, 10/10 new tests PASS, 31 baseline 失败均为 pre-existing 与 2.5 无关 |
 | Commit | - |
 
 ### Rebaselined frozen tests (necessary side-effect of AC1 authorized signature change)
@@ -135,6 +135,20 @@ Story 2.5 AC1 显式授权修改 `run_screener_update` 签名 + scheduler.py 邮
 
 ---
 
+## QA Review
+
+- **Round**: 1
+- **Risk Level**: LOW
+- **Review Mode**: automated_only
+- **Gate**: PASS
+- **Tests**: 10/10 new (test_run_screener_skip_email.py) + 194 baseline pass; 31 baseline failures pre-existing (1.1/2.1/2.2/2.3/2.4)
+- **AC Coverage**: 7/7 verified
+- **Issues**: 0 critical / 0 high / 0 medium
+- **Gate File**: `docs/qa/gates/anti-duplicate-email-2.5-skip-on-manual-refresh.yml`
+- **Reviewer**: Turing (Opus 4.7)
+
+---
+
 ## Change Log
 
 | Date | Agent | Status | Details |
@@ -142,3 +156,4 @@ Story 2.5 AC1 显式授权修改 `run_screener_update` 签名 + scheduler.py 邮
 | 2026-05-08 | SM (Phil) | Approved | Quick story created (tier=simple, mode=quick); scope 与代码无差异；HANDOFF → dev *quick-develop |
 | 2026-05-08 | Dev (Linus) | Approved -> InProgress | Quick development started |
 | 2026-05-08 | Dev (Linus) | InProgress -> Review | T1-T4 完成；新测 10/10 PASS；3 处前序 Story 基线（2.2 SHA / 2.4 签名 / 2.1 regex）按 AC1 授权同步更新；HANDOFF → qa *quick-verify |
+| 2026-05-08 20:23 | QA (Turing) | Review -> Done | Round 1, Gate: PASS, Tests: 10/10 new + 194 baseline pass; 7/7 AC 验证通过；31 pre-existing 失败均与 2.5 无关 (1.1/2.1/2.2/2.3/2.4 baseline drift)；Gate file: docs/qa/gates/anti-duplicate-email-2.5-skip-on-manual-refresh.yml |

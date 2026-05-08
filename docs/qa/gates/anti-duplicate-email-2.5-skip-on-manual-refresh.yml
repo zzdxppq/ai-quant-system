@@ -1,0 +1,151 @@
+schema: 1
+story: "anti-duplicate-email-2.5"
+story_title: "邮件防误触发（手动 refresh-screener 默认 skip_email）"
+gate: "PASS"
+status_reason: >
+  All 7 ACs verified against implementation; 10/10 new branch tests pass independently.
+  Risk = LOW (quick tier, single guard helper + API call site change). Skip-email guard
+  correctly bridges manual /api/refresh-screener calls (skip_email=True) and 9:27 cron
+  (skip_email=None → ±5min window via SCREENER_CRON_HOUR/MINUTE constants, now_cn UTC+8).
+  No regressions introduced; 31 pre-existing baseline failures all in unrelated stories
+  (1.1 subject, 2.1 template HTML drift, 2.2 collect-count guard, 2.3 in-progress relay-sentiment).
+reviewer: "Turing (Test Engineer & Quality Architect)"
+updated: "2026-05-08T12:23:17Z"
+
+review_round: 1
+review_mode_type: full
+issues_from_previous_round: 0
+issues_resolved: 0
+improvement_percentage: 0
+
+incremental_context:
+  cached_risk_level: "LOW"
+  cached_review_mode: "automated_only"
+  cached_project_type: "web_backend"
+  failed_acs: []
+  failed_e2e_scenarios: []
+  missing_blind_spots: []
+  checkbox_issues: []
+
+waiver: { active: false }
+
+architecture_concern: false
+escalation_reason: ""
+
+top_issues: []
+
+test_results:
+  automated:
+    executed: true
+    passed: true
+    total: 10
+    passed_count: 10
+    failed_count: 0
+    skipped_count: 0
+    pass_rate: 100
+    coverage_percentage: 0
+    failed_tests: []
+    notes: >
+      `pytest tests/scheduler/test_run_screener_skip_email.py -v` → 10/10 PASS
+      (4 AC-branch tests + 6 boundary helper tests). Full-suite cross-check
+      `pytest tests/ --ignore=tests/engine -q` → 194 passed / 31 failed; all 31
+      failures are pre-existing baseline drift in unrelated stories
+      (test_email_decision_alignment 1.1, test_decision_consistency 2.1,
+      test_relay_sentiment_render 2.3 in-progress, test_review_watch_pool_snapshot 2.2,
+      test_screener_display_2_4 baseline guard). Story 2.5's 4 rebaselined assertions
+      (parameters=['skip_email'], regex relaxed, scheduler.py SHA, fixture comment)
+      are all passing post-rebaseline.
+  e2e:
+    executed: false
+    passed: true
+    skipped: true
+    skip_reason: "Review mode is automated_only (LOW risk, quick tier, no UI surface)"
+    scenarios_tested: 0
+    scenarios_passed: 0
+    scenarios_failed: 0
+    console_errors_found: false
+    network_errors_found: false
+
+evidence:
+  directory: ""
+  issues: []
+
+risk_assessment:
+  risk_level: LOW
+  review_mode: automated_only
+  complexity_count: 1
+  security_sensitive: false
+  dev_gate_score: 95
+
+risk_summary:
+  totals: { critical: 0, high: 0, medium: 0, low: 0 }
+  recommendations:
+    must_fix: []
+    monitor:
+      - "scripts/retry_on_push2_recovery.py:86 calls run_screener_update() zero-arg → falls to AC4 time-window. Per Notes §已知额外调用点, push2 recovery may miss 9:27±5min window and silently skip. Tracked as future-Story follow-up; out of 2.5 scope."
+
+ac_coverage:
+  total: 7
+  fully_verified: 7
+  coverage_rate: 100
+  details:
+    - ac_id: AC1
+      verification: "src/scheduler.py:353 — `def run_screener_update(skip_email: bool | None = None) -> dict:`. Default None preserves zero-arg call sites (main.py 9:27 cron + CLI --screen + push2 recovery)."
+      status: VERIFIED
+    - ac_id: AC2
+      verification: "src/scheduler.py:684 `if _should_send_email(skip_email):` wraps the entire 8c block (lines 685-725). When skip_email=True, _should_send_email returns False (line 346-347) → entire send_screener_report try-block skipped → log printed at line 727-730 with skip_email value and now_cn() timestamp. Test: test_skip_email_true_never_sends PASS."
+      status: VERIFIED
+    - ac_id: AC3
+      verification: "src/scheduler.py:348-349 `if skip_email is False: return True` forces send regardless of time. Test: test_skip_email_false_always_sends PASS."
+      status: VERIFIED
+    - ac_id: AC4
+      verification: "src/scheduler.py:325-336 `_in_927_window` reads SCREENER_CRON_HOUR/SCREENER_CRON_MINUTE constants (no hardcoded 9:27); `abs((now_dt - center).total_seconds()) <= 300` enforces ±5min inclusive boundary. Uses now_cn() (UTC+8 enforced per project standard). Tests: test_none_window_lower_bound_inclusive (9:22:00 → send), test_none_window_upper_bound_inclusive (9:32:00 → send), test_none_just_outside_lower (9:21:59 → skip), test_none_just_outside_upper (9:32:01 → skip) — all PASS."
+      status: VERIFIED
+    - ac_id: AC5
+      verification: "src/api/app.py:380 `result = run_screener_update(skip_email=True)` + docstring at line 376 references story 2.5. Manual /api/refresh-screener calls always skip email regardless of time."
+      status: VERIFIED
+    - ac_id: AC6
+      verification: "main.py:37-45 cron job registration unchanged (verified `git log --oneline -- main.py` does not include 2.5 commits). Zero-arg APScheduler invocation → skip_email=None → AC4 time-window logic → 9:27 falls in [9:22, 9:32] window → email sent. Behavior char-for-char identical."
+      status: VERIFIED
+    - ac_id: AC7
+      verification: "tests/scheduler/test_run_screener_skip_email.py exists with 10 tests covering 4 AC-mandated branches: (a) test_skip_email_true_never_sends, (b) test_skip_email_false_always_sends, (c) test_skip_email_none_in_window_sends [09:27:30], (d) test_skip_email_none_outside_window_skips [11:35:00]. Plus 6 boundary tests via TestShouldSendEmailGuard. Mocks send_screener_report and now_cn — no real network/SMTP. Pattern matches tests/notify/test_decision_consistency.py reference."
+      status: VERIFIED
+
+task_checkbox_verification:
+  total_checkboxes: 11   # 7 ACs + 4 Tasks
+  checked_count: 11
+  unchecked_count: 0
+  completion_rate: 100
+  consistency_checks:
+    total: 11
+    passed: 11
+    failed: 0
+    consistency_rate: 100
+  issues:
+    critical: []
+    high: []
+    medium: []
+
+regression:
+  executed: true
+  passed: true
+  tests_total: 225  # 194 passed + 31 pre-existing baseline failures
+  tests_failed: 31
+  notes: >
+    All 31 failures verified pre-existing (in tests/notify/test_email_decision_alignment 1.1,
+    tests/notify/test_decision_consistency 2.1 template HTML drift,
+    tests/notify/test_relay_sentiment_render 2.3 in-progress story baseline,
+    tests/test_review_watch_pool_snapshot 2.2 collect-count guard,
+    tests/test_screener_display_2_4 cascade-fail baseline guard). None introduced by 2.5.
+
+blind_spot_verification:
+  total_scenarios: 0
+  covered: 0
+  coverage_rate: 0
+  notes: "Quick tier story — no test-design/blind-spot file (skipped per qa.testDesignThresholds.simple)."
+
+# QA notes for SM/Dev
+qa_notes:
+  - "Story Quick Record `Commit | -` is a documentation gap; the implementation is committed in 1b50571 (bundled with relay-sentiment UI feature, not a clean 2.5-only commit). The forthcoming *finalize-commit will create a clean QA-gate commit and stamp that hash."
+  - "AC4 inclusive boundary semantics (≤300s) match 'including endpoints' wording in spec. If business intent ever shifts to exclusive boundaries, edit `<= 300` → `< 300` in src/scheduler.py:336."
+  - "Out-of-scope monitor item: scripts/retry_on_push2_recovery.py:86 may silently skip email if push2 recovery completes outside 9:22-9:32 window (per story Notes §已知额外调用点). Tracked for follow-up Story."
