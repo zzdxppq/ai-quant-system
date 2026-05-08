@@ -16,12 +16,13 @@
 （1196-1268 行）+ hero-metrics（505-600 行）为唯一真源；任何分歧由 Python 端
 对齐 JS，不得反向。
 """
+import json
 import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-from src.config import now_cn
+from src.config import DATA_DIR, now_cn
 
 
 # QQ邮箱 SMTP 配置
