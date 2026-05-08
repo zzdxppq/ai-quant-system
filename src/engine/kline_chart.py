@@ -479,6 +479,7 @@ def analyze_stock_action(
     name: str,
     df: pd.DataFrame,
     market_ctx: dict | None = None,
+    auction_ctx: dict | None = None,
 ) -> dict:
     """生成单股操作建议（基于防线 + 市场环境）
 
@@ -528,6 +529,21 @@ def analyze_stock_action(
     gain = (close / prev_close - 1) * 100 if prev_close > 0 else 0.0
     volume_lots = float(today.get("volume", 0)) / 100  # 股 → 手
 
+    # 竞价时段数据（9:25 开盘价 + 竞价涨幅 + 竞价成交量）— 优先使用
+    # 来自 latest_screener.hits[] / latest_ranking.ranking[] 的 auction_* 字段
+    auction_ctx = auction_ctx or {}
+    auction_open = auction_ctx.get("open_price")
+    auction_gain = auction_ctx.get("auction_gain")
+    auction_vol_lots = auction_ctx.get("auction_volume_lots")
+    use_auction = auction_open is not None or auction_gain is not None
+
+    display_price = float(auction_open) if auction_open is not None else round(close, 2)
+    display_gain = float(auction_gain) if auction_gain is not None else round(gain, 2)
+    display_volume = (
+        float(auction_vol_lots) if auction_vol_lots is not None
+        else round(volume_lots, 0)
+    )
+
     qiba_arr = ind.get("qiba")
     qiba = float(qiba_arr[-1]) if qiba_arr is not None and not np.isnan(qiba_arr[-1]) else None
     mixian = ind.get("mixian_y")
@@ -537,9 +553,10 @@ def analyze_stock_action(
     above_both = above_qiba and above_mixian
 
     out.update({
-        "price": round(close, 2),
-        "gain_pct": round(gain, 2),
-        "volume_lots": round(volume_lots, 0),
+        "price": round(display_price, 2),
+        "gain_pct": round(display_gain, 2),
+        "volume_lots": round(display_volume, 0),
+        "data_source": "auction" if use_auction else "kline_close",
         "qiba": round(qiba, 2) if qiba else None,
         "mixian": round(mixian, 2) if mixian else None,
         "above_qiba": above_qiba,
@@ -608,9 +625,16 @@ def analyze_stock_action(
     if lb_index < 0:
         penalty += 1
         penalty_notes.append(f"昨日连板指数{lb_index:.1f}%（亏钱效应）")
-    if gain >= 9.5:  # 当日已涨停，明日加分但加仓位风险
+    # 竞价过热 / 已涨停 风险（优先看竞价；无竞价数据时回退 K线 close）
+    risk_gain = float(auction_gain) if auction_gain is not None else gain
+    if risk_gain >= 7:
         penalty += 1
-        penalty_notes.append(f"已涨停 +{gain:.1f}%（高位接力风险）")
+        penalty_notes.append(
+            f"{'竞价' if auction_gain is not None else '收盘'}+{risk_gain:.1f}%（追高/高位接力风险）"
+        )
+    elif risk_gain >= 9.5:
+        penalty += 2
+        penalty_notes.append(f"已涨停 +{risk_gain:.1f}%（高位接力风险）")
 
     # ── 仓位决策 ─────────────────────────────────
     if above_both and bonus >= 3 and penalty <= 1:

@@ -195,17 +195,25 @@ async def get_kline_analysis(code: str):
     if df is None or df.empty or len(df) < 35:
         return JSONResponse({"error": "kline data insufficient"}, status_code=404)
 
-    # 取股票名称
+    # 取股票名称 + 竞价时段数据（优先 latest_screener，其次 latest_ranking）
     name = ""
-    for src_file in ("latest_ranking.json", "latest_screener.json"):
+    auction_ctx: dict = {}
+    for src_file in ("latest_screener.json", "latest_ranking.json"):
         try:
             payload = json.loads((DATA_DIR / src_file).read_text())
-            rows = payload.get("ranking") or payload.get("hits") or []
+            rows = payload.get("hits") or payload.get("ranking") or []
             for r in rows:
                 if str(r.get("code")) == code:
-                    name = r.get("name") or ""
+                    name = name or (r.get("name") or "")
+                    # screener: open_price / auction_gain / auction_volume_lots
+                    if r.get("open_price") is not None:
+                        auction_ctx["open_price"] = r["open_price"]
+                    if r.get("auction_gain") is not None:
+                        auction_ctx["auction_gain"] = r["auction_gain"]
+                    if r.get("auction_volume_lots") is not None:
+                        auction_ctx["auction_volume_lots"] = r["auction_volume_lots"]
                     break
-            if name:
+            if name and auction_ctx:
                 break
         except Exception:
             continue
@@ -234,7 +242,7 @@ async def get_kline_analysis(code: str):
     except Exception:
         pass
 
-    result = analyze_stock_action(code, name, df, market_ctx)
+    result = analyze_stock_action(code, name, df, market_ctx, auction_ctx=auction_ctx)
     return JSONResponse(result)
 
 
@@ -363,10 +371,13 @@ async def refresh_cycle():
 
 @app.post("/api/refresh-screener")
 async def refresh_screener():
-    """手动触发选股引擎"""
+    """手动触发选股引擎
+
+    默认 skip_email=True（防盘中重复邮件，story anti-duplicate-email-2.5）
+    """
     try:
         from src.scheduler import run_screener_update
-        result = run_screener_update()
+        result = run_screener_update(skip_email=True)
         return JSONResponse({"status": "ok", "result": result})
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)

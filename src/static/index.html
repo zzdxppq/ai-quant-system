@@ -791,10 +791,10 @@
                         <div v-if="klineModal.analysisLoading" style="color:#6b7280;text-align:center;padding:40px;">分析中…</div>
                         <template v-else-if="klineModal.analysis">
                             <div class="ka-section">
-                                <div class="ka-title">📊 实时数据</div>
-                                <div class="ka-row"><span class="ka-label">当前价</span><span class="ka-val">{{ klineModal.analysis.price }}</span></div>
-                                <div class="ka-row"><span class="ka-label">今日涨幅</span><span class="ka-val" :class="(klineModal.analysis.gain_pct||0) >= 0 ? 'pos' : 'neg'">{{ fmtPct(klineModal.analysis.gain_pct) }}</span></div>
-                                <div class="ka-row"><span class="ka-label">成交量(手)</span><span class="ka-val">{{ Number(klineModal.analysis.volume_lots||0).toLocaleString() }}</span></div>
+                                <div class="ka-title">📊 当日竞价数据 <small v-if="klineModal.analysis.data_source !== 'auction'" style="color:#fbbf24;">⚠️ 无竞价数据，回退 K 线收盘</small></div>
+                                <div class="ka-row"><span class="ka-label">{{ klineModal.analysis.data_source === 'auction' ? '开盘价' : '当前价' }}</span><span class="ka-val">{{ klineModal.analysis.price }}</span></div>
+                                <div class="ka-row"><span class="ka-label">{{ klineModal.analysis.data_source === 'auction' ? '竞价涨幅' : '今日涨幅' }}</span><span class="ka-val" :class="(klineModal.analysis.gain_pct||0) >= 0 ? 'pos' : 'neg'">{{ fmtPct(klineModal.analysis.gain_pct) }}</span></div>
+                                <div class="ka-row"><span class="ka-label">{{ klineModal.analysis.data_source === 'auction' ? '竞价成交(手)' : '成交量(手)' }}</span><span class="ka-val">{{ Number(klineModal.analysis.volume_lots||0).toLocaleString() }}</span></div>
                             </div>
 
                             <div class="ka-section">
