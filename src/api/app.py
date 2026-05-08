@@ -177,6 +177,67 @@ async def get_kline_chart(code: str, days: int = 60):
     })
 
 
+@app.get("/api/kline-analysis/{code}")
+async def get_kline_analysis(code: str):
+    """单股操作建议 JSON：双线突破判定 + 仓位 + 买入条件 + 止损 + 一句话"""
+    from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
+    from src.engine.kline_chart import analyze_stock_action
+
+    code = (code or "").strip()
+    if not (code.isdigit() and len(code) == 6):
+        return JSONResponse({"error": "invalid code"}, status_code=400)
+
+    try:
+        df = fetch_kline(code, SCALE_DAILY, datalen=500)
+    except Exception as e:
+        return JSONResponse({"error": f"fetch_kline failed: {e}"}, status_code=502)
+
+    if df is None or df.empty or len(df) < 35:
+        return JSONResponse({"error": "kline data insufficient"}, status_code=404)
+
+    # 取股票名称
+    name = ""
+    for src_file in ("latest_ranking.json", "latest_screener.json"):
+        try:
+            payload = json.loads((DATA_DIR / src_file).read_text())
+            rows = payload.get("ranking") or payload.get("hits") or []
+            for r in rows:
+                if str(r.get("code")) == code:
+                    name = r.get("name") or ""
+                    break
+            if name:
+                break
+        except Exception:
+            continue
+
+    # 市场上下文：concentration / lianban_index / b1_rate / attack_phase
+    market_ctx: dict = {}
+    try:
+        review = json.loads((DATA_DIR / "latest_review.json").read_text())
+        sc = review.get("scorecard") or {}
+        for ind in (sc.get("indicators") or []):
+            label = ind.get("label", "")
+            raw = ind.get("raw")
+            if label == "板块集中度" and raw is not None:
+                market_ctx["concentration"] = float(raw)
+            elif label == "1进2成功率" and raw is not None:
+                market_ctx["b1_rate"] = float(raw)
+            elif label == "昨日连板指数" and raw is not None:
+                market_ctx["lianban_index_pct"] = float(raw)
+    except Exception:
+        pass
+    try:
+        insight = json.loads((DATA_DIR / "latest_insight.json").read_text())
+        ap = insight.get("attack_phase") or {}
+        market_ctx["attack_phase"] = ap.get("phase")
+        market_ctx["attack_count"] = ap.get("attack_count")
+    except Exception:
+        pass
+
+    result = analyze_stock_action(code, name, df, market_ctx)
+    return JSONResponse(result)
+
+
 @app.get("/api/gain-ranking")
 async def get_gain_ranking():
     """获取10日涨幅排行"""

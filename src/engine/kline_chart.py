@@ -474,6 +474,187 @@ def render_kline_chart(
     return buf.read()
 
 
+def analyze_stock_action(
+    code: str,
+    name: str,
+    df: pd.DataFrame,
+    market_ctx: dict | None = None,
+) -> dict:
+    """生成单股操作建议（基于防线 + 市场环境）
+
+    Args:
+        df: 完整日 K（≥35 根）
+        market_ctx: {
+            concentration:    float | None,  # 板块集中度 %
+            lianban_index_pct: float | None, # 昨日连板指数 %
+            b1_rate:          float | None,  # 1进2 成功率 %
+            attack_phase:     str | None,    # 主动攻击热度阶段
+            attack_count:     int | None,    # 攻击数 / 30
+        }
+    Returns: {
+        code, name, price, gain_pct, volume_lots,
+        qiba, mixian,
+        above_qiba, above_mixian, above_both,
+        operable: bool,
+        position: str,   # "空仓" / "轻仓(10%)" / "正常(20-30%)" / "重仓(50%)"
+        buy_condition: str,
+        stop_loss: str,
+        summary: str,
+        market_ctx: dict,
+    }
+    """
+    market_ctx = market_ctx or {}
+    out = {
+        "code": code, "name": name,
+        "price": None, "gain_pct": None, "volume_lots": None,
+        "qiba": None, "mixian": None,
+        "above_qiba": False, "above_mixian": False, "above_both": False,
+        "operable": False, "position": "空仓",
+        "buy_condition": "—",
+        "stop_loss": "—",
+        "summary": "数据不足",
+        "market_ctx": market_ctx,
+    }
+    if df is None or df.empty or len(df) < 35:
+        return out
+
+    ind = compute_indicators(df)
+    if not ind:
+        return out
+
+    today = df.iloc[-1]
+    close = float(today["close"])
+    prev_close = float(df.iloc[-2]["close"]) if len(df) >= 2 else 0.0
+    gain = (close / prev_close - 1) * 100 if prev_close > 0 else 0.0
+    volume_lots = float(today.get("volume", 0)) / 100  # 股 → 手
+
+    qiba_arr = ind.get("qiba")
+    qiba = float(qiba_arr[-1]) if qiba_arr is not None and not np.isnan(qiba_arr[-1]) else None
+    mixian = ind.get("mixian_y")
+
+    above_qiba = qiba is not None and close > qiba
+    above_mixian = mixian is not None and close > mixian
+    above_both = above_qiba and above_mixian
+
+    out.update({
+        "price": round(close, 2),
+        "gain_pct": round(gain, 2),
+        "volume_lots": round(volume_lots, 0),
+        "qiba": round(qiba, 2) if qiba else None,
+        "mixian": round(mixian, 2) if mixian else None,
+        "above_qiba": above_qiba,
+        "above_mixian": above_mixian,
+        "above_both": above_both,
+    })
+
+    # ── 综合打分 → 仓位决策 ────────────────────────
+    concentration = float(market_ctx.get("concentration") or 0)
+    lb_index = float(market_ctx.get("lianban_index_pct") or 0)
+    b1_rate = float(market_ctx.get("b1_rate") or 0)
+    phase = str(market_ctx.get("attack_phase") or "")
+
+    # 加分
+    bonus = 0
+    bonus_notes: list[str] = []
+    if concentration >= 50:
+        bonus += 2
+        bonus_notes.append(f"板块集中度{concentration:.0f}%（高度集中）")
+    elif concentration >= 30:
+        bonus += 1
+        bonus_notes.append(f"板块集中度{concentration:.0f}%（主线明确）")
+    if lb_index > 2:
+        bonus += 1
+        bonus_notes.append(f"昨日连板指数+{lb_index:.1f}%（赚钱效应延续）")
+    if b1_rate >= 40:
+        bonus += 1
+        bonus_notes.append(f"1进2成功率{b1_rate:.0f}%（接力健康）")
+    if "发酵" in phase or "启动" in phase:
+        bonus += 1
+        bonus_notes.append(f"市场{phase}（攻击窗口）")
+
+    # 减分
+    penalty = 0
+    penalty_notes: list[str] = []
+    if "高潮" in phase:
+        penalty += 2
+        penalty_notes.append(f"市场{phase}（警惕退潮）")
+    if "冰点" in phase:
+        penalty += 2
+        penalty_notes.append(f"市场{phase}（接力稀缺）")
+    if lb_index < 0:
+        penalty += 1
+        penalty_notes.append(f"昨日连板指数{lb_index:.1f}%（亏钱效应）")
+    if gain >= 9.5:  # 当日已涨停，明日加分但加仓位风险
+        penalty += 1
+        penalty_notes.append(f"已涨停 +{gain:.1f}%（高位接力风险）")
+
+    # ── 仓位决策 ─────────────────────────────────
+    if above_both and bonus >= 3 and penalty <= 1:
+        position = "重仓(50%)"
+        operable = True
+    elif above_both and bonus >= 1:
+        position = "正常(20-30%)"
+        operable = True
+    elif (above_qiba or above_mixian) and bonus >= 1:
+        position = "轻仓(10%)"
+        operable = True
+    else:
+        position = "空仓"
+        operable = False
+
+    # ── 买入条件 ─────────────────────────────────
+    if position == "重仓(50%)":
+        buy_condition = "明日竞价 3%~6% + 换手 >0.8% + 量能放大；竞价跳空高开 >7% 则等待回踩起拔线"
+    elif position == "正常(20-30%)":
+        buy_condition = "明日竞价 4%~7% + 换手 >0.8% + 板块集中度维持 >30%；破开盘价 -2% 即出"
+    elif position == "轻仓(10%)":
+        buy_condition = "明日竞价 2%~5% + 缩量阴线启动型；破开盘价坚决出，不补仓"
+    else:
+        buy_condition = "暂不参与；等突破双线 + 量能配合再考虑"
+
+    # ── 止损位 ───────────────────────────────────
+    if qiba is not None and mixian is not None:
+        lower = min(qiba, mixian)
+        stop_loss = f"跌破 {lower:.2f}（起拔/秘线较低者）-3%（约 {lower * 0.97:.2f}）即清仓"
+    elif qiba is not None:
+        stop_loss = f"跌破起拔线 {qiba:.2f} -3%（约 {qiba * 0.97:.2f}）即清仓"
+    elif mixian is not None:
+        stop_loss = f"跌破秘线 {mixian:.2f} -3%（约 {mixian * 0.97:.2f}）即清仓"
+    else:
+        stop_loss = "跌破今日开盘价 -3% 即清仓"
+
+    # ── 一句话总结 ────────────────────────────────
+    if operable and above_both:
+        summary = (
+            f"突破双压力线（起拔 {qiba:.2f} / 秘线 {mixian:.2f}）"
+            + ("，" + "+".join(bonus_notes[:2]) if bonus_notes else "")
+            + f"，可参与{position}接力"
+            + (f"；注意：{penalty_notes[0]}" if penalty_notes else "")
+        )
+    elif operable:
+        line = "起拔线" if above_qiba else "秘线"
+        summary = (
+            f"仅突破{line}（{qiba if above_qiba else mixian}），"
+            f"另一线未确认，{position}试错；破信号位坚决出"
+        )
+    else:
+        if not above_qiba and not above_mixian:
+            summary = "未突破起拔线 + 秘线，主动攻击信号缺失，空仓观察"
+        else:
+            summary = f"双线未同时突破 + 市场环境偏弱（{phase or '未知'}），空仓回避"
+
+    out.update({
+        "operable": operable,
+        "position": position,
+        "buy_condition": buy_condition,
+        "stop_loss": stop_loss,
+        "summary": summary,
+        "bonus_notes": bonus_notes,
+        "penalty_notes": penalty_notes,
+    })
+    return out
+
+
 def _render_empty(code: str, name: str, msg: str) -> bytes:
     """数据不足时返回占位 PNG"""
     fig, ax = plt.subplots(figsize=(10, 4), facecolor="#0a0e1a")

@@ -348,28 +348,62 @@
         }
         .btn-kline-close:hover { color: #ef4444; }
 
-        /* K 线 Modal */
+        /* K 线 Modal — 双栏：图左 + 解读右 */
         .kline-modal-mask {
             position: fixed; top:0; left:0; right:0; bottom:0;
             background: rgba(0,0,0,0.75); z-index: 1000;
-            display: flex; align-items: center; justify-content: center;
+            display: flex; align-items: stretch; justify-content: flex-start;
+            padding: 16px;
         }
         .kline-modal {
             background: #0a0e1a; border: 1px solid #1e2a45; border-radius: 8px;
-            width: min(95vw, 1100px); max-height: 92vh; overflow: auto;
+            width: min(98vw, 1480px); max-height: 95vh; overflow: hidden;
+            display: flex; flex-direction: column;
             box-shadow: 0 20px 60px rgba(0,0,0,0.6);
         }
         .kline-modal-header {
             display: flex; align-items: center; gap: 10px;
             padding: 12px 16px; border-bottom: 1px solid #1e2a45;
-            color: #e0e6ed; font-size: 14px;
+            color: #e0e6ed; font-size: 14px; flex-shrink: 0;
         }
-        .kline-modal-body { padding: 8px; min-height: 200px; }
+        .kline-modal-content {
+            display: flex; flex: 1; min-height: 0; overflow: hidden;
+        }
+        .kline-image-pane {
+            flex: 0 0 64%; padding: 8px; overflow: auto;
+            border-right: 1px solid #1e2a45;
+        }
+        .kline-analysis-pane {
+            flex: 1; padding: 14px 16px; overflow: auto;
+            background: #0d1220; font-size: 13px; color: #e0e6ed; line-height: 1.7;
+        }
+        .kline-modal-body { min-height: 200px; }
         .kline-modal-legend {
             display: flex; flex-wrap: wrap; gap: 12px;
             padding: 10px 16px; border-top: 1px solid #1e2a45;
-            font-size: 11px; color: #a0aec0;
+            font-size: 11px; color: #a0aec0; flex-shrink: 0;
         }
+        /* 解读区样式 */
+        .ka-section { margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px dashed #1e2a45; }
+        .ka-section:last-child { border-bottom: none; }
+        .ka-title { font-size: 12px; color: #6b7280; margin-bottom: 4px; font-weight: 600; }
+        .ka-row { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; font-size: 12px; }
+        .ka-label { color: #8892a8; min-width: 76px; flex-shrink: 0; }
+        .ka-val { color: #e0e6ed; flex: 1; }
+        .ka-val.pos { color: #ef4444; font-weight: 600; }
+        .ka-val.neg { color: #10b981; font-weight: 600; }
+        .ka-val.warn { color: #fbbf24; }
+        .ka-summary {
+            background: #1a2332; border-left: 3px solid #60a5fa;
+            padding: 8px 12px; border-radius: 4px;
+            font-size: 13px; line-height: 1.7;
+        }
+        .ka-summary.go { border-color: #ef4444; background: #2a0f0f; color: #fca5a5; }
+        .ka-summary.warn { border-color: #fbbf24; background: #2a2a0a; color: #fde68a; }
+        .ka-summary.stop { border-color: #10b981; background: #0a2a0a; color: #6ee7b7; }
+        .ka-bullet { font-size: 11px; color: #a0aec0; padding-left: 8px; }
+        .ka-bullet.bonus { color: #ef4444; }
+        .ka-bullet.penalty { color: #fbbf24; }
 
         /* 市场风向条 — 首屏关键指标 */
         .market-banner { padding: 14px 18px; }
@@ -656,8 +690,8 @@
                     <th>连板</th>
                     <th>10日涨幅</th>
                     <th>周期股</th>
-                    <th>决策</th>
                     <th>操作</th>
+                    <th>决策</th>
                 </tr></thead>
                 <tbody>
                     <tr v-for="hit in screenerHits" :key="hit.code">
@@ -672,7 +706,7 @@
                             {{ hitLive(hit.code).pct != null ? ((hitLive(hit.code).pct >= 0 ? '+' : '') + hitLive(hit.code).pct + '%') : '-' }}
                         </td>
                         <td class="gain-pos"><b>{{ hit.auction_gain }}%</b></td>
-                        <td>{{ hit.market_cap }}亿</td>
+                        <td><template v-if="hit.market_cap != null">{{ hit.market_cap }}亿</template><template v-else>—</template></td>
                         <td style="font-size:12px;">
                             <template v-if="topConceptsOf(hit.code).length">
                                 <span style="color:#ef4444;font-weight:600;">{{ topConceptsOf(hit.code).join('/') }}</span>
@@ -689,6 +723,11 @@
                         <td>
                             <span v-if="isCycleStock(hit.code)" class="tag tag-rep" style="background:#3b0a0a;color:#ef4444;padding:1px 6px;border-radius:4px;font-size:11px;">是</span>
                             <span v-else class="tag" style="background:#0a2a1a;color:#10b981;padding:1px 6px;border-radius:4px;font-size:11px;">否</span>
+                        </td>
+                        <td style="text-align:center;">
+                            <button class="btn-kline" @click="openKline(hit.code, hit.name)" title="查看日K + 防线">
+                                📈 日K
+                            </button>
                         </td>
                         <td>
                             <div class="decision-cell" :class="dailyAdvice.cls" style="padding:4px 8px;border-radius:6px;">
@@ -708,11 +747,6 @@
                                     </template>
                                 </div>
                             </div>
-                        </td>
-                        <td style="text-align:center;">
-                            <button class="btn-kline" @click="openKline(hit.code, hit.name)" title="查看日K + 防线">
-                                📈 日K
-                            </button>
                         </td>
                     </tr>
                 </tbody>
@@ -735,10 +769,68 @@
                         <button class="btn-kline-close" @click="closeKline">✕</button>
                     </span>
                 </div>
-                <div class="kline-modal-body">
-                    <div v-if="klineModal.loading" style="text-align:center;color:#6b7280;padding:60px;">加载中…</div>
-                    <img v-else-if="klineModal.url" :src="klineModal.url" style="width:100%;display:block;border-radius:4px;">
-                    <div v-else style="text-align:center;color:#ef4444;padding:60px;">{{ klineModal.error || '加载失败' }}</div>
+                <div class="kline-modal-content">
+                    <!-- 图区（左 ~64%）-->
+                    <div class="kline-image-pane">
+                        <div v-if="klineModal.loading" style="text-align:center;color:#6b7280;padding:60px;">加载中…</div>
+                        <img v-else-if="klineModal.url" :src="klineModal.url" style="width:100%;display:block;border-radius:4px;">
+                        <div v-else style="text-align:center;color:#ef4444;padding:60px;">{{ klineModal.error || '加载失败' }}</div>
+                    </div>
+
+                    <!-- 解读区（右 ~36%）-->
+                    <div class="kline-analysis-pane">
+                        <div v-if="klineModal.analysisLoading" style="color:#6b7280;text-align:center;padding:40px;">分析中…</div>
+                        <template v-else-if="klineModal.analysis">
+                            <div class="ka-section">
+                                <div class="ka-title">📊 实时数据</div>
+                                <div class="ka-row"><span class="ka-label">当前价</span><span class="ka-val">{{ klineModal.analysis.price }}</span></div>
+                                <div class="ka-row"><span class="ka-label">今日涨幅</span><span class="ka-val" :class="(klineModal.analysis.gain_pct||0) >= 0 ? 'pos' : 'neg'">{{ fmtPct(klineModal.analysis.gain_pct) }}</span></div>
+                                <div class="ka-row"><span class="ka-label">成交量(手)</span><span class="ka-val">{{ Number(klineModal.analysis.volume_lots||0).toLocaleString() }}</span></div>
+                            </div>
+
+                            <div class="ka-section">
+                                <div class="ka-title">🛡️ 防线判定</div>
+                                <div class="ka-row"><span class="ka-label">起拔线</span><span class="ka-val" :class="klineModal.analysis.above_qiba ? 'pos' : 'warn'">{{ klineModal.analysis.qiba ?? '—' }} <small>{{ klineModal.analysis.above_qiba ? '✓ 已突破' : '× 未突破' }}</small></span></div>
+                                <div class="ka-row"><span class="ka-label">秘线</span><span class="ka-val" :class="klineModal.analysis.above_mixian ? 'pos' : 'warn'">{{ klineModal.analysis.mixian ?? '—' }} <small>{{ klineModal.analysis.above_mixian ? '✓ 已突破' : '× 未突破' }}</small></span></div>
+                                <div class="ka-row"><span class="ka-label">双线突破</span><span class="ka-val" :class="klineModal.analysis.above_both ? 'pos' : 'warn'">{{ klineModal.analysis.above_both ? '✅ 是' : '⚠️ 否' }}</span></div>
+                            </div>
+
+                            <div class="ka-section">
+                                <div class="ka-title">🌐 市场环境</div>
+                                <div class="ka-row" v-if="klineModal.analysis.market_ctx?.attack_phase">
+                                    <span class="ka-label">攻击阶段</span><span class="ka-val">{{ klineModal.analysis.market_ctx.attack_phase }} · {{ klineModal.analysis.market_ctx.attack_count ?? '—' }}/30</span>
+                                </div>
+                                <div class="ka-row" v-if="klineModal.analysis.market_ctx?.concentration != null">
+                                    <span class="ka-label">板块集中</span><span class="ka-val">{{ klineModal.analysis.market_ctx.concentration }}%</span>
+                                </div>
+                                <div class="ka-row" v-if="klineModal.analysis.market_ctx?.lianban_index_pct != null">
+                                    <span class="ka-label">连板指数</span><span class="ka-val" :class="(klineModal.analysis.market_ctx.lianban_index_pct||0) >= 0 ? 'pos' : 'neg'">{{ fmtPct(klineModal.analysis.market_ctx.lianban_index_pct) }}</span>
+                                </div>
+                                <div class="ka-row" v-if="klineModal.analysis.market_ctx?.b1_rate != null">
+                                    <span class="ka-label">1进2成功率</span><span class="ka-val">{{ klineModal.analysis.market_ctx.b1_rate }}%</span>
+                                </div>
+                            </div>
+
+                            <div class="ka-section">
+                                <div class="ka-title">⚖️ 操作建议</div>
+                                <div class="ka-row"><span class="ka-label">是否可操作</span><span class="ka-val" :class="klineModal.analysis.operable ? 'pos' : 'neg'">{{ klineModal.analysis.operable ? '✅ 是' : '⛔ 否' }}</span></div>
+                                <div class="ka-row"><span class="ka-label">建议仓位</span><span class="ka-val pos">{{ klineModal.analysis.position }}</span></div>
+                                <div class="ka-row"><span class="ka-label">买入条件</span><span class="ka-val" style="font-size:11px;">{{ klineModal.analysis.buy_condition }}</span></div>
+                                <div class="ka-row"><span class="ka-label">止损位</span><span class="ka-val warn" style="font-size:11px;">{{ klineModal.analysis.stop_loss }}</span></div>
+                            </div>
+
+                            <div class="ka-section" v-if="(klineModal.analysis.bonus_notes||[]).length || (klineModal.analysis.penalty_notes||[]).length">
+                                <div class="ka-title">📋 综合打分</div>
+                                <div v-for="b in (klineModal.analysis.bonus_notes||[])" :key="'b-'+b" class="ka-bullet bonus">+ {{ b }}</div>
+                                <div v-for="p in (klineModal.analysis.penalty_notes||[])" :key="'p-'+p" class="ka-bullet penalty">- {{ p }}</div>
+                            </div>
+
+                            <div class="ka-summary" :class="klineModal.analysis.operable ? (klineModal.analysis.above_both ? 'go' : 'warn') : 'stop'">
+                                💡 {{ klineModal.analysis.summary }}
+                            </div>
+                        </template>
+                        <div v-else style="color:#6b7280;text-align:center;padding:40px;">{{ klineModal.analysisError || '解读加载失败' }}</div>
+                    </div>
                 </div>
                 <div class="kline-modal-legend">
                     <span style="color:#d946ef;">━ VARAB 综合均线</span>
@@ -1510,6 +1602,8 @@ createApp({
 
         // 选股表决策列 helpers
         function industryOf(code) {
+            const hit = (screenerHits.value || []).find(x => String(x.code) === String(code))
+            if (hit?.industry) return hit.industry
             const r = (ranking.value || []).find(x => String(x.code) === String(code))
             return r?.industry || '-'
         }
@@ -1518,29 +1612,53 @@ createApp({
         const klineModal = ref({
             open: false, code: '', name: '', days: 60,
             url: '', loading: false, error: '',
+            analysis: null, analysisLoading: false, analysisError: '',
         })
         function openKline(code, name) {
             klineModal.value.open = true
             klineModal.value.code = code
             klineModal.value.name = name || ''
             klineModal.value.days = 60
+            klineModal.value.analysis = null
+            klineModal.value.analysisError = ''
             reloadKline()
+            loadAnalysis()
         }
-        function closeKline() { klineModal.value.open = false; klineModal.value.url = '' }
+        function closeKline() {
+            klineModal.value.open = false
+            klineModal.value.url = ''
+            klineModal.value.analysis = null
+        }
         function reloadKline() {
             const m = klineModal.value
             m.loading = true
             m.error = ''
             const ts = Date.now()
             const url = `/api/kline/${m.code}?days=${m.days}&_=${ts}`
-            // 用 Image 预加载，避免空白闪烁
             const img = new Image()
             img.onload = () => { m.url = url; m.loading = false }
             img.onerror = () => { m.error = '加载失败（K线接口异常）'; m.loading = false }
             img.src = url
         }
+        async function loadAnalysis() {
+            const m = klineModal.value
+            m.analysisLoading = true
+            m.analysisError = ''
+            try {
+                const res = await fetch(`/api/kline-analysis/${m.code}?_=${Date.now()}`)
+                if (!res.ok) throw new Error('http ' + res.status)
+                m.analysis = await res.json()
+            } catch (e) {
+                m.analysisError = '解读接口异常: ' + e.message
+                m.analysis = null
+            } finally {
+                m.analysisLoading = false
+            }
+        }
 
         function topConceptsOf(code) {
+            const hit = (screenerHits.value || []).find(x => String(x.code) === String(code))
+            if (hit?.top_concepts?.length) return hit.top_concepts
             const r = (ranking.value || []).find(x => String(x.code) === String(code))
             return r?.top_concepts || []
         }
@@ -1930,7 +2048,7 @@ createApp({
             miniTicksOf, miniPreCloseY, miniPricePath, miniVolBars, miniOpenPoint,
             today, phaseClass, phaseColor, progressPct, progressClass,
             industryOf, topConceptsOf, isCycleStock, signalOf, scoreOf, decisionLevelClass, decisionIcon,
-            klineModal, openKline, closeKline, reloadKline,
+            klineModal, openKline, closeKline, reloadKline, loadAnalysis,
             leaderClass, leaderIcon, leaderBadgeClass,
             getLeaderClass, getLeaderIcon, getLeaderBadgeClass,
             sentimentClass, sentimentIcon, marketClass, marketIcon,
