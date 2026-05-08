@@ -142,6 +142,35 @@ def compute_indicators(df: pd.DataFrame) -> dict:
     cc = CURRBARSCOUNT(n)
     mixian_y, mixian_start = _compute_mixian(C, H, L, cc)
 
+    # —— 倒拔杨柳 ——
+    # ABA = REF(涨停,1) AND O>REF(C,1) AND C<O AND O=H AND V=HHV(V,34)
+    # 昨涨停 + 今高开收阴 + 开盘即最高 + 量能 34 日新高
+    yesterday_zt_strong = REF(is_zt_strong, 1)  # 昨日是否涨停且封板
+    aba_arr = (
+        (yesterday_zt_strong == 1)
+        & (O > REF(C, 1))
+        & (C < O)
+        & np.isclose(O, H)
+        & np.isclose(V, HHV(V, 34))
+    ).astype(int)
+
+    # —— 普通倒灌 ——
+    # SAT = (AMOUNT/C) / (HHV(AMOUNT,120)/HHV(C,120))；量能饱和=min(SAT,1)*100
+    # 倒灌 = REF(涨停_含一字, 1) AND 量能饱和>75 AND O>REF(C,1) AND C<O AND O<H
+    with np.errstate(divide="ignore", invalid="ignore"):
+        sat_num = np.where(C > 0, AMOUNT / C, 0.0)
+        sat_den = np.where(HHV(C, 120) > 0,
+                           HHV(AMOUNT, 120) / HHV(C, 120), 1.0)
+        sat = np.where(sat_den > 0, sat_num / sat_den, 0.0)
+    saturation = np.minimum(sat, 1.0) * 100
+    daoguan_arr = (
+        (yesterday_zt_strong == 1)
+        & (saturation > 75)
+        & (O > REF(C, 1))
+        & (C < O)
+        & (O < H)
+    ).astype(int)
+
     # —— 形态条件 ——
     # 个股线 = EMA(EMA(C,30),9)；大盘线无 INDEXC，简化用 SMA 替代
     个线 = EMA(EMA(C, 30), 9)
@@ -191,6 +220,11 @@ def compute_indicators(df: pd.DataFrame) -> dict:
         & (is_zt_strong == 1)
     ).astype(int)
 
+    # —— 倒拔杨柳 / 普通倒灌 的水平延伸线起点 ——
+    # 用最近 60/90 天内最近一次触发那天的 O / H 作 y 值，从触发 bar 起延伸到末根
+    daoba_y, daoba_start = _last_trigger_value(aba_arr, O, window=60)
+    daoguan_y, daoguan_start = _last_trigger_value(daoguan_arr, H, window=90)
+
     return {
         "varab": varab,
         "varab_up": varab_up,
@@ -201,6 +235,12 @@ def compute_indicators(df: pd.DataFrame) -> dict:
         "qiba": qiba,
         "mixian_y": mixian_y,
         "mixian_start_idx": mixian_start,
+        "aba": aba_arr,           # 倒拔杨柳触发数组
+        "daoguan": daoguan_arr,   # 普通倒灌触发数组
+        "daoba_y": daoba_y,
+        "daoba_start_idx": daoba_start,
+        "daoguan_y": daoguan_y,
+        "daoguan_start_idx": daoguan_start,
         "pat_钝化涨停": pat_dunhua,
         "pat_突破涨停": pat_tupo,
         "pat_拉升涨停": pat_lashen,
@@ -208,47 +248,62 @@ def compute_indicators(df: pd.DataFrame) -> dict:
     }
 
 
+def _last_trigger_value(cond_arr: np.ndarray, val_arr: np.ndarray, window: int):
+    """找 cond_arr 在末根往前 window 内最近一次为真的 bar idx 与 val_arr 在该 bar 的值"""
+    cond_arr = np.asarray(cond_arr).astype(int)
+    n = len(cond_arr)
+    start = max(0, n - window)
+    for i in range(n - 1, start - 1, -1):
+        if cond_arr[i] == 1:
+            return float(val_arr[i]), int(i)
+    return None, None
+
+
 def _compute_mixian(C: np.ndarray, H: np.ndarray, L: np.ndarray, cc: np.ndarray):
-    """秘线 T3HIGH 计算 — 三段递增的高点，取最早的高度作水平线
+    """秘线 T3HIGH 计算 — 通达信公式 BACKWARD 回溯三段顶
 
-    通达信原意：
-      T1: 10 日内最低点的位置
-      T2: T1 之后第一次创新高（high > T1HIGH）的位置
-      T3: T2 之后第一次创新高（high > T2HIGH）的位置
-      mixian = T3HIGH，从 T3+1 画到最后一根
+    通达信原意（CCVV=CURRBARSCOUNT 在末根=0）：
+      T1: LLVBARS(LOW, 10) — 近 10 根最低点距末根的 bar 数（同低取最近）
+      T2: BARSLAST((CURRBARSCOUNT > T1) AND (HIGH > T1HIGH))
+          → 在 T1 【之前】（更老的 bars）最近一次 HIGH > T1HIGH 的位置
+      T3: 同理，在 T2 之前最近一次 HIGH > T2HIGH 的位置
+      秘线 = T3HIGH，从 T3+1 起到末根画粗水平线
 
-    Returns: (mixian_y, mixian_start_bar_idx) — 失败返回 (None, None)
+    与之前的 forward 扫描相反：方向是从 T1 → 更早的历史去找历史高点。
     """
     n = len(C)
     if n < 12:
         return None, None
     try:
-        # T1: 最近 10 根的最低点位置（distance from current）
+        last = n - 1
+
+        # T1: 近 10 根 LLV 距末根的 bar 数（同低取最近）
         recent_l = L[-10:]
-        t1 = int(np.argmin(recent_l))  # in slice
-        t1_abs = (n - 10) + t1
-        t1_high = H[t1_abs]
+        # rightmost arg-min（最近的最低）
+        rightmost_pos = (len(recent_l) - 1) - int(np.argmin(recent_l[::-1]))
+        t1_idx = (n - 10) + rightmost_pos
+        t1_high = float(H[t1_idx])
 
-        # T2: t1 之后第一次 high > t1_high
-        t2_abs = None
-        for i in range(t1_abs + 1, n):
+        # T2: 在 t1_idx 之前（更老）最近一次 HIGH > T1HIGH
+        t2_idx = None
+        for i in range(t1_idx - 1, -1, -1):
             if H[i] > t1_high:
-                t2_abs = i
+                t2_idx = i
                 break
-        if t2_abs is None:
+        if t2_idx is None:
             return None, None
-        t2_high = H[t2_abs]
+        t2_high = float(H[t2_idx])
 
-        # T3: t2 之后第一次 high > t2_high
-        t3_abs = None
-        for i in range(t2_abs + 1, n):
+        # T3: 在 t2_idx 之前（更老）最近一次 HIGH > T2HIGH
+        t3_idx = None
+        for i in range(t2_idx - 1, -1, -1):
             if H[i] > t2_high:
-                t3_abs = i
+                t3_idx = i
                 break
-        if t3_abs is None:
+        if t3_idx is None:
             return None, None
 
-        return float(H[t3_abs]), int(t3_abs)
+        return float(H[t3_idx]), int(t3_idx)
     except Exception:
         return None, None
 
@@ -374,23 +429,41 @@ def render_kline_chart(
         warn_too_much_data=999,
     )
 
-    # 秘线：T3HIGH 水平线（直接在主轴画，使用 axhline 仅画窗口内）
-    mixian_y = ind.get("mixian_y")
-    mixian_start = ind.get("mixian_start_idx")
-    if mixian_y is not None and mixian_start is not None and mixian_start >= cut:
-        ax_main = axes[0]
-        # 从 mixian_start 到末尾 画水平线
-        x_start_in_show = mixian_start - cut
+    ax_main = axes[0]
+
+    def _draw_horizontal(y, start_idx, color, label, linewidth=1.6, linestyle="-"):
+        """从 start_idx 到末尾画水平线 + 末端文字标签（自动裁剪到显示窗口）"""
+        if y is None or start_idx is None:
+            return
+        x_start = max(0, start_idx - cut)
+        if x_start >= len(plot_df):
+            return
         ax_main.hlines(
-            y=mixian_y,
-            xmin=x_start_in_show, xmax=len(plot_df) - 1,
-            colors="#ec4899", linewidth=2.2, zorder=5,
+            y=y, xmin=x_start, xmax=len(plot_df) - 1,
+            colors=color, linewidth=linewidth, linestyle=linestyle, zorder=5,
         )
         ax_main.text(
-            len(plot_df) - 1, mixian_y,
-            f"  秘线 {mixian_y:.2f}",
-            color="#ec4899", fontsize=9, va="center", ha="left",
+            len(plot_df) - 1, y, f"  {label} {y:.2f}",
+            color=color, fontsize=9, va="center", ha="left",
         )
+
+    # 秘线（T3HIGH，粗洋红）
+    _draw_horizontal(
+        ind.get("mixian_y"), ind.get("mixian_start_idx"),
+        color="#ec4899", label="秘线", linewidth=2.2,
+    )
+
+    # 倒拔杨柳（最近 60 天内 ABA 触发那天的 OPEN，浅灰）
+    _draw_horizontal(
+        ind.get("daoba_y"), ind.get("daoba_start_idx"),
+        color="#d1d5db", label="倒拔杨柳", linewidth=1.5, linestyle="--",
+    )
+
+    # 普通倒灌（最近 90 天内倒灌触发那天的 HIGH，浅灰）
+    _draw_horizontal(
+        ind.get("daoguan_y"), ind.get("daoguan_start_idx"),
+        color="#a0aec0", label="倒灌", linewidth=1.5, linestyle="--",
+    )
 
     # 4) 输出 PNG
     buf = io.BytesIO()

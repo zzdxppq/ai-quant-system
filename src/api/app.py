@@ -147,9 +147,9 @@ async def get_kline_chart(code: str, days: int = 60):
     if not (code.isdigit() and len(code) == 6):
         return JSONResponse({"error": "invalid code"}, status_code=400)
 
-    # 拉 120 根日 K（指标计算需 ≥35 根，120 充裕）
+    # 拉 500 根日 K（≈2 年）— 秘线/倒拔杨柳/普通倒灌 需要更老历史回溯
     try:
-        df = fetch_kline(code, SCALE_DAILY, datalen=120)
+        df = fetch_kline(code, SCALE_DAILY, datalen=500)
     except Exception as e:
         return JSONResponse({"error": f"fetch_kline failed: {e}"}, status_code=502)
 
