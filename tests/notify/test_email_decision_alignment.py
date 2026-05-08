@@ -401,15 +401,16 @@ def test_1_1_unit_027_metric_cell_4_full_render():
 
 
 def test_1_1_unit_028_metric_cell_4_partial_missing_subfields():
-    # BR-7.2: median_change_pct=None → "中位数 —"
+    # Rebaselined 2026-05-08 per Story 2.3 BR-2.3 authorization:
+    # When median_change_pct is None, the entire sub <div> is omitted (defensive UX)
+    # — this supersedes the prior 1.1 BR-7.2 contract that rendered "中位数 —".
     sent = _good_sent()
     leader = _leader_full(median_change_pct=None)
     html = _render_html(sent, leader)
-    assert "中位数 —" in html
-    # 其他子项不消失
-    assert "高开>5%:3" in html
-    assert "平开±2%:4" in html
-    assert "低开<-5%:2" in html
+    for token in ("中位数", "高开>5%", "平开±2%", "低开<-5%"):
+        assert token not in html, (
+            f"Story 2.3 BR-2.3: sub-line token '{token}' must be absent when median is None"
+        )
 
 
 def test_1_1_unit_029_metric_cell_4_zero_sample():

@@ -456,7 +456,7 @@ def _build_html(
     )
 
     # === 第 4 格：接力情绪 + title + 细分子项 ===
-    # 真源 src/static/index.html:556-568
+    # Story relay-sentiment-2.3 (AC2): sub <div> 仅在 _is_num(median_change_pct) 时渲染。
     sample = y_avg.get("sample_count")
     avg_chg = y_avg.get("avg_change_pct")
     pos_cnt = y_avg.get("positive_count")
@@ -466,6 +466,17 @@ def _build_html(
     high5 = y_avg.get("high5_count")
     flat2 = y_avg.get("flat2_count")
     low5 = y_avg.get("low5_count")
+
+    render_sub = _is_num(median_chg)
+    sub4_str = ""
+    if render_sub:
+        median_str = f"{'+' if median_chg >= 0 else ''}{median_chg}%"
+        sub4_str = (
+            f"中位数 {median_str} · "
+            f"高开>5%:{high5 if _is_num(high5) else '—'} · "
+            f"平开±2%:{flat2 if _is_num(flat2) else '—'} · "
+            f"低开<-5%:{low5 if _is_num(low5) else '—'}"
+        )
 
     if _is_num(sample) and sample > 0:
         title4 = (
@@ -477,26 +488,22 @@ def _build_html(
             title4 += f" / 跌停 {ld_cnt}"
         main4 = fmt_pct(avg_chg) if _is_num(avg_chg) else "—"
         main4_color = num_color(avg_chg) if _is_num(avg_chg) else "#6b7280"
-        median_str = (f"{'+' if median_chg >= 0 else ''}{median_chg}%") if _is_num(median_chg) else "—"
-        sub4_str = (
-            f"中位数 {median_str} · "
-            f"高开>5%:{high5 if _is_num(high5) else '—'} · "
-            f"平开±2%:{flat2 if _is_num(flat2) else '—'} · "
-            f"低开<-5%:{low5 if _is_num(low5) else '—'}"
-        )
     else:
         title4 = "昨日涨停 — 只"
         main4 = "—"
         main4_color = "#6b7280"
-        sub4_str = "中位数 — · 高开>5%:— · 平开±2%:— · 低开<-5%:—"
 
+    sub_div = (
+        f'<div style="font-size:10px;color:#999;margin-top:1px;">{sub4_str}</div>'
+        if render_sub else ''
+    )
     cell4_html = (
         '<td style="background:#f8f9fa;border:1px solid #e5e7eb;padding:6px 10px;'
         'border-radius:6px;width:33%;vertical-align:top;">'
         '<div style="font-size:11px;color:#888;">接力情绪</div>'
         f'<div style="font-size:10px;color:#6b7280;margin-top:1px;">{title4}</div>'
         f'<div style="font-size:16px;font-weight:700;color:{main4_color};margin-top:2px;">{main4}</div>'
-        f'<div style="font-size:10px;color:#999;margin-top:1px;">{sub4_str}</div>'
+        f'{sub_div}'
         '</td>'
     )
 

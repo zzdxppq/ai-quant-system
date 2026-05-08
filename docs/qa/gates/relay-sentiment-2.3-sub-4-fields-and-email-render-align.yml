@@ -1,0 +1,134 @@
+schema: 1
+story: "relay-sentiment-2.3"
+story_title: "接力情绪 sub 4 字段数据源回归锁定 + 邮件 sub 行与 dashboard v-if 行为对齐"
+gate: PASS
+status_reason: >
+  Story 2.3 own tests 41 PASS + 2 authorized SKIP (AC4 invalidated by pre-Story commit
+  1b50571 — path-2 user decision). All in-scope ACs (AC1/AC2/AC3/AC5) verified;
+  email_sender.py:458-508 diff matches Architect Low Issue 1 form exactly. 5 full-suite
+  failures are independently confirmed pre-existing (caused by post-approval commits
+  and Stories 2.4/2.5 baseline shifts) — not Story 2.3 caused.
+reviewer: "Turing (QA)"
+updated: "2026-05-08T13:00:00+08:00"
+
+review_round: 1
+review_mode_type: full
+issues_from_previous_round: 0
+issues_resolved: 0
+improvement_percentage: 0
+
+incremental_context:
+  cached_risk_level: MEDIUM
+  cached_review_mode: automated_plus_spot_check
+  cached_project_type: web_backend
+  failed_acs: []
+  failed_e2e_scenarios: []
+  missing_blind_spots: []
+  checkbox_issues: []
+
+waiver: { active: false }
+
+architecture_concern: false
+escalation_reason: ""
+
+top_issues:
+  - id: "BASELINE-001"
+    severity: low
+    finding: >
+      Repository carries 5 pre-existing test failures (test_2_1_int_005 / test_2_1_int_015
+      dashboard SHA drift caused by commit 1b50571; test_1_1_int_001 sentiment_data subject
+      drift; test_2_2_unit_013 collect baseline 232→242 from Stories 2.4/2.5; test_2_4_unit_042
+      cascade wrapper). None are caused by Story 2.3 changes.
+    suggested_action: >
+      Track as candidate "iteration-2 baseline rebaseline" Story to refresh dashboard SHA
+      fixture (lines 541-545 / 556-568) + collect-baseline counter + sentiment_data → 1.5层 path.
+
+test_results:
+  automated:
+    executed: true
+    passed: true   # Story-2.3 own scope: 41 PASS / 0 FAIL / 2 authorized SKIP
+    total: 43      # Story-2.3 own tests
+    passed_count: 41
+    failed_count: 0
+    skipped_count: 2
+    pass_rate: 100  # of in-scope (excluding authorized AC4 SKIP)
+    coverage_percentage: 80   # 4/5 ACs fully verified; AC4 authorized deviation
+    failed_tests: []
+    full_suite_summary:
+      total: 242
+      passed: 235
+      failed: 5
+      skipped: 2
+      failures_caused_by_story_2_3: 0
+      failures_pre_existing: 5
+  e2e:
+    executed: false
+    passed: null
+    skipped: true
+    skip_reason: >
+      Project type web_backend (Python pytest); email HTML output verified via
+      render-string assertions in INT-007/008/009. Dashboard not modified by Story 2.3
+      (AC4 authorized deviation). No browser flow to E2E-test.
+    scenarios_tested: 0
+    scenarios_passed: 0
+    scenarios_failed: 0
+    console_errors_found: false
+    network_errors_found: false
+
+evidence:
+  directory: ""
+  issues: []
+
+risk_assessment:
+  risk_level: MEDIUM
+  review_mode: automated_plus_spot_check
+  complexity_count: 2
+  security_sensitive: false
+  dev_gate_score: 95
+
+risk_summary:
+  totals: { critical: 0, high: 0, medium: 0, low: 1 }
+  recommendations:
+    must_fix: []
+    monitor:
+      - "Pre-existing baseline drift (5 failures) — schedule a follow-up rebaseline Story."
+
+ac_coverage:
+  total_acs: 5
+  fully_verified: 4   # AC1, AC2, AC3, AC5
+  authorized_deviation: 1   # AC4
+  failed: 0
+  details:
+    - ac_id: AC1
+      status: VERIFIED
+      code: 'src/engine/leader_feedback.py:393-510 (frozen)'
+      tests: 'tests/engine/test_leader_feedback_relay.py (17 tests UNIT-001..016 + BLIND-BOUNDARY-003)'
+    - ac_id: AC2
+      status: VERIFIED
+      code: 'src/notify/email_sender.py:458-508 (modified)'
+      tests: 'tests/notify/test_relay_sentiment_render.py UNIT-017..023 (7 tests) + UNIT-028 rebaselined'
+      diff_review: 'Matches Architect Low Issue 1 recommended structure exactly.'
+    - ac_id: AC3
+      status: VERIFIED
+      code: 'src/scheduler.py (frozen char-level via substring assertion)'
+      tests: 'UNIT-024/025 + INT-001'
+    - ac_id: AC4
+      status: AUTHORIZED_DEVIATION
+      reason: 'Pre-Story commit 1b50571 invalidated v-if anchor; user 2026-05-08 path-2 decision; UNIT-026/027 → pytest.skip with cited reason.'
+    - ac_id: AC5
+      status: VERIFIED_WITH_NOTE
+      tests: 'INT-002..006 + 6 BLIND tests + INT-007..009 e2e + cross-story coexist'
+      note: '5 pre-existing repo failures noted in top_issues:BASELINE-001 (NOT Story-2.3 caused).'
+
+blind_spot_coverage:
+  total: 7
+  covered: 7
+  coverage_rate: 100
+
+dev_evidence_integrity:
+  dev_claim: '235 PASS + 2 SKIP + 5 FAIL (matches QA independent run exactly)'
+  qa_independent_result: '235 PASS + 2 SKIP + 5 FAIL'
+  discrepancy: false
+  br_2_3_rebaseline_minimal: true
+  signature_frozen_INT_002: true
+  collect_baseline_anti_drift: 'PASS (242 = story-start baseline)'
