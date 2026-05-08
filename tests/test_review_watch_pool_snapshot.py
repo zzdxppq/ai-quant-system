@@ -563,7 +563,9 @@ class TestAC5DoDRegression:
         total = int(m.group(1))
         # 99 baseline (email-sync-1.1: 46 + decision-consistency-2.1: 48 + fallback: 5)
         # + 本 Story 34 (32 scenarios; UNIT-009 parametrize ×3)
-        EXPECTED_TOTAL = 133
+        # + Story dashboard-hits-table-display-2.4 (56 scenarios — parallel-developed; rebaselined 2026-05-08)
+        # + Story relay-sentiment-2.3 (43 scenarios — parallel-developed)
+        EXPECTED_TOTAL = 232
         assert total == EXPECTED_TOTAL, (
             f"测试基线漂移：collect={total}, expected={EXPECTED_TOTAL}\n"
             f"提示：若本 Story 增/减用例，需同步更新 EXPECTED_TOTAL 与 baseline 注释。"

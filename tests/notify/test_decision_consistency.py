@@ -405,11 +405,15 @@ def _line_range(text, start, end):
 
 
 def test_2_1_int_005_template_html_unchanged_in_lines_505_to_666():
+    # Note: line numbers rebaselined to 541/631/694 in Story dashboard-hits-table-display-2.4
+    # after detecting drift caused by commit ba52314 (操作列+日K图). Asserted CONTENT
+    # remains character-equal to the original 2.1 freeze; only the offset within
+    # index.html changed because ba52314 added ~36 lines above the hero-banner block.
     text = _index_html_text()
     base = _read_baseline()
-    assert _line_range(text, 505, 509) == base["lines_505_509"]
-    assert _line_range(text, 595, 596) == base["lines_595_596"]
-    assert _line_range(text, 657, 666) == base["lines_657_666"]
+    assert _line_range(text, 541, 545) == base["lines_541_545"]
+    assert _line_range(text, 631, 632) == base["lines_631_632"]
+    assert _line_range(text, 694, 703) == base["lines_694_703"]
 
 
 def test_2_1_int_006_suggested_position_camel_case_mapping():
@@ -702,10 +706,11 @@ def test_2_1_int_015_dashboard_template_html_unchanged_vs_baseline():
     text = _index_html_text()
     base = _read_baseline()
     # 与 INT-005 重叠，但作为 AC5 回归保护独立断言
+    # Line numbers rebaselined in Story dashboard-hits-table-display-2.4 — see INT-005 note
     for key, (s, e) in [
-        ("lines_505_509", (505, 509)),
-        ("lines_595_596", (595, 596)),
-        ("lines_657_666", (657, 666)),
+        ("lines_541_545", (541, 545)),
+        ("lines_631_632", (631, 632)),
+        ("lines_694_703", (694, 703)),
     ]:
         assert _line_range(text, s, e) == base[key], (
             f"Template lines {s}-{e} drifted from baseline (AC5 regression)"

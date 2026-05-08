@@ -1,0 +1,32 @@
+{
+  "_comment": "SHA256 baselines for character-level frozen regions of src/static/index.html (Story dashboard-hits-table-display-2.4). Update only when story explicitly modifies the corresponding region. The market-cap cell at line 675 is intentionally NOT included — it is the single change point of this story (BR-2.1 v-if/v-else).",
+  "frozen_at": "2026-05-08",
+  "story": "dashboard-hits-table-display-2.4",
+  "source_file": "src/static/index.html",
+  "regions": {
+    "table_header": {
+      "start": 649,
+      "end": 660,
+      "description": "Screener-table <th> header rows (12 columns)",
+      "sha256": "b3ae3e263be806633467771a187d2d2ea0426e097f8fef07164d7820dad6c843"
+    },
+    "before_board": {
+      "start": 663,
+      "end": 674,
+      "description": "tr-open + first 5 columns (代码 / 名称 / 价格 / 涨幅 / 竞价涨幅) — frozen by BR-2.2",
+      "sha256": "262bb02a738e59c70b27b100a2ecab88e484f504441201d124cda6f358cfc021"
+    },
+    "board_column": {
+      "start": 676,
+      "end": 684,
+      "description": "板块列 td (v-if/v-else template) — frozen by BR-2.3 / BR-4.3 (only helper bodies move)",
+      "sha256": "c640876d13883d935df765928cf98ca52d0d066a2448c00363f25b72c276cde9"
+    },
+    "after_board": {
+      "start": 685,
+      "end": 717,
+      "description": "Last 5 columns (连板 / 10日涨幅 / 周期股 / 决策 / 操作) + closing </tr> — frozen by BR-2.2",
+      "sha256": "2500703a763ac31f9c888ed9c5741134aa48f7307615949410a2897112883edc"
+    }
+  }
+}

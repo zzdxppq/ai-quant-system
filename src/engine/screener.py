@@ -10,12 +10,38 @@
 6. 量比 > 1
 7. 排除 ST / 科创板 / 创业板 / 北交所
 """
+import math
 from dataclasses import dataclass
 from typing import Optional
 
 import pandas as pd
 
 from src.config import SCREENER_CONFIG, now_cn
+
+
+def _safe_round(v, ndigits: int = 2) -> Optional[float]:
+    """Round a numeric value safely; collapse invalid/missing inputs to None.
+
+    Returns None for: None / NaN / ±inf / non-numeric / v <= 0.
+    Rationale (Story dashboard-hits-table-display-2.4 BR-1.1): upstream batch
+    quote APIs occasionally return missing market_cap as NaN; round(NaN, 2) is
+    NaN, which JSON-serializes to literal `NaN` (non-standard) and surfaces in
+    the dashboard as a stray '亿' unit. Collapsing to None makes downstream
+    rendering decisions explicit (`hit.market_cap != null` v-if branch).
+    """
+    if v is None:
+        return None
+    # Reject str / dict / list / bool (bool is int subclass, but semantically not a quantity)
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    try:
+        if not math.isfinite(v):  # covers NaN, +inf, -inf
+            return None
+        if v <= 0:
+            return None
+        return round(v, ndigits)
+    except (TypeError, ValueError):
+        return None
 
 
 @dataclass
@@ -30,7 +56,7 @@ class ScreenerHit:
     auction_amount: float       # 竞价金额(万元)
     auction_volume_lots: float  # 竞价成交量(手)
     auction_volume_ratio: float # 竞价量比（自算）
-    market_cap: float           # 流通市值(亿)
+    market_cap: Optional[float] # 流通市值(亿) — None when upstream quote missing/NaN (Story 2.4)
     volume_ratio: float         # 量比
     gain_10d: float = 0         # 10日涨幅(%)
     matched_cycle: bool = False # 是否匹配周期代表股
@@ -203,7 +229,7 @@ def run_screener(
             auction_amount=round(auction_amount, 2),
             auction_volume_lots=auction_vol_lots,
             auction_volume_ratio=round(auction_vr, 2),
-            market_cap=round(market_cap_yi, 2),
+            market_cap=_safe_round(market_cap_yi),
             volume_ratio=round(volume_ratio, 2),
             gain_10d=round(float(row.get("gain_10d", 0)), 2) if row.get("gain_10d") else 0,
             matched_cycle=code in cycle_codes,

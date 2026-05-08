@@ -533,6 +533,22 @@ def run_screener_update() -> dict:
         "date": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
         "hits": [asdict(h) for h in hits],
     }
+
+    # 6.1 富化 hits：注入 top_concepts + industry（dashboard 选股表显示用，Story 2.4）
+    # 优先源 ranking_data；缺/损时 helper 内部走 cache 兜底链；永不抛错
+    ranking_data: dict | None = None
+    try:
+        rank_file = DATA_DIR / "latest_ranking.json"
+        if rank_file.exists():
+            ranking_data = json.loads(rank_file.read_text())
+    except Exception:
+        ranking_data = None
+    try:
+        from src.engine.screener_concept_enrich import enrich_screener_hits_with_concepts
+        enrich_screener_hits_with_concepts(hits_data, ranking_data)
+    except Exception as e:
+        print(f"[选股富化] helper 调用失败: {e}")
+
     (DATA_DIR / "latest_screener.json").write_text(
         json.dumps(hits_data, ensure_ascii=False, indent=2)
     )
