@@ -1,0 +1,129 @@
+schema: 1
+story: "email-sync-1.1"
+story_title: "邮件推送内容逐字段对齐首页看板"
+gate: PASS
+status_reason: |
+  All 9 ACs fully verified with 100% test pass rate (46/46) and zero CRITICAL/HIGH/MEDIUM
+  issues. Algorithm and 6-cell layout aligned to dashboard 真源 (src/static/index.html
+  :1196-1268, :505-600). No regression in SMTP / loading / empty-hits branches.
+reviewer: "Turing (Test Engineer)"
+updated: "2026-05-08T00:00:00+08:00"
+
+review_round: 1
+review_mode_type: full
+issues_from_previous_round: 0
+issues_resolved: 0
+improvement_percentage: 0
+
+incremental_context:
+  cached_risk_level: MEDIUM
+  cached_review_mode: automated_plus_spot_check
+  cached_project_type: fullstack
+  failed_acs: []
+  failed_e2e_scenarios: []
+  missing_blind_spots: []
+  checkbox_issues: []
+
+waiver: { active: false }
+
+architecture_concern: false
+escalation_reason: ""
+
+top_issues: []
+
+test_results:
+  automated:
+    executed: true
+    passed: true
+    total: 46
+    passed_count: 46
+    failed_count: 0
+    skipped_count: 0
+    pass_rate: 100
+    coverage_percentage: 100  # 9/9 ACs with code+test traceability
+    failed_tests: []
+    breakdown:
+      unit: 32
+      integration: 7
+      blind_spot: 7
+    strict_mode_passed: true  # -W error 通过
+    test_command: "pytest tests/notify/"
+  e2e:
+    executed: false
+    passed: true
+    skipped: true
+    skip_reason: "skip_e2e=true (email content delivery, not browser DOM); pytest INT-001~007 cover same surface"
+    scenarios_tested: 0
+    scenarios_passed: 0
+    scenarios_failed: 0
+    console_errors_found: false
+    network_errors_found: false
+
+evidence:
+  directory: ""  # No issues found, evidence collection skipped per Step 6 skip-condition
+  issues: []
+
+risk_assessment:
+  risk_level: MEDIUM
+  review_mode: automated_plus_spot_check
+  complexity_count: 2
+  security_sensitive: false
+  dev_gate_score: 100  # 46/46 + 0 warning + module-grep clean
+
+risk_summary:
+  totals: { critical: 0, high: 0, medium: 0, low: 1 }
+  recommendations:
+    must_fix: []
+    monitor:
+      - action: "Refresh ac_traceability code_locations line numbers post-merge for traceback ergonomics."
+        refs: ["docs/stories/email-sync-1.1-email-content-align-dashboard.md (lines 537-705)"]
+
+ac_coverage:
+  total: 9
+  fully_verified: 9
+  coverage_rate: 100
+  details:
+    AC1: { status: VERIFIED, refs: ["src/notify/email_sender.py:82-117"], tests: ["unit_001~006","blind_boundary_001/002","blind_error_002"] }
+    AC2: { status: VERIFIED, refs: ["src/notify/email_sender.py:83-171"], tests: ["unit_007~013"] }
+    AC3: { status: VERIFIED, refs: ["src/notify/email_sender.py:140-148"], tests: ["unit_014","int_001"] }
+    AC4: { status: VERIFIED, refs: ["src/notify/email_sender.py:155-171"], tests: ["unit_015~017"] }
+    AC5: { status: VERIFIED, refs: ["src/notify/email_sender.py:72,137"], tests: ["unit_018~020"] }
+    AC6: { status: VERIFIED, refs: ["src/notify/email_sender.py:270-322"], tests: ["unit_021~026"] }
+    AC7: { status: VERIFIED, refs: ["src/notify/email_sender.py:324-367"], tests: ["unit_027~030","blind_error_001"] }
+    AC8: { status: VERIFIED, refs: ["src/notify/email_sender.py:384"], tests: ["unit_031","unit_032"] }
+    AC9: { status: VERIFIED, refs: ["src/notify/email_sender.py:35-49,100-105,555,582+"], tests: ["int_002~007","blind_flow_001"] }
+
+blind_spot_coverage:
+  total_scenarios: 7
+  covered: 7
+  coverage_rate: 100
+  by_category:
+    BOUNDARY: { total: 4, covered: 4 }
+    ERROR: { total: 2, covered: 2 }
+    FLOW: { total: 1, covered: 1 }
+
+negative_assertions:
+  module_grep_legacy_strings:
+    "三维": 0
+    "3-6 层": 0
+    "1-2 层": 0
+    "昨日涨停溢价": 0
+    "昨日跌停今日": 0
+
+dashboard_truth_source_check:
+  src_static_index_html_1196_1268: untouched  # dailyAdvice algorithm
+  src_static_index_html_505_600: untouched    # hero-metrics 6-cell layout
+  send_screener_report_signature: unchanged   # INT-005 inspect.signature baseline
+
+out_of_scope_observations:
+  - id: PREEXISTING-DATA-DIR-NAMEERROR
+    severity: low
+    location: "src/notify/email_sender.py:419-424, 446-451"
+    finding: "DATA_DIR + json referenced but never imported; runtime NameError silently swallowed by surrounding try/except. Industry/heat cache fallback paths are dead code."
+    introduced_by: "commit 45baa67 (predates this Story)"
+    qa_position: "Out of scope for email-sync-1.1. Recommend a separate Story to import the missing names and restore the cache fallback path."
+
+history:
+  - at: "2026-05-08T00:00:00+08:00"
+    gate: PASS
+    note: "Round 1 — full review. 46/46 tests pass, 9/9 ACs verified, 7/7 blind spots covered."

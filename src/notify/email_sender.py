@@ -2,7 +2,7 @@
 
 9:27 选股完成后，按看板新版布局推送决策邮件：
 - 顶部决策大字栏（当日操作建议 + 建议仓位）
-- 4 指标格（竞价跌停 / 梯队加权竞价 / 昨日涨停溢价率 / 昨日连板高标竞价）
+- 6 指标格（竞价跌停+跌>9% / 梯队加权竞价 / 连板高标竞价 / 接力情绪 / 昨日炸板今日 / 昨日跌停平均反馈）
 - 触发原因
 - 今日选股精简表（代码/名称/价格/竞价/市值/板块/连板/10日%/决策）
 - 当前周期阶段（小字脚注）
@@ -11,6 +11,10 @@
 - 周期代表股 / 龙头反馈 / 昨日涨停股 详情
 - 交叉验证信号详情
 - 四维评分卡 / 回测统计
+
+真源约束：所有决策算法与指标格内容以 src/static/index.html 的 dailyAdvice
+（1196-1268 行）+ hero-metrics（505-600 行）为唯一真源；任何分歧由 Python 端
+对齐 JS，不得反向。
 """
 import os
 import smtplib
@@ -65,18 +69,24 @@ def send_screener_report(
 # 决策计算 — 与前端 dailyAdvice 保持同一逻辑
 # ============================================================
 def _calc_daily_advice(sent: dict | None, leader: dict | None = None) -> dict:
-    """三维警戒 → {bucket, text, position, position_short, reason, color, bg}
+    """四维警戒 → {bucket, text, position, position_short, reason, color, bg}
 
-    维度: 竞价跌停>5 / 加权竞价<0 / 连板高标(任一跌停或水下开)
+    维度: 竞价跌停>5 / 跌幅>9% 个股数>9 / 加权竞价<0 / 连板高标(任一跌停或水下开)
     任二触发 → 不操作；单触发 → 谨慎；都未触发 → 可参与
+    （连续 2 日"跌停≤5 + 加权竞价≥0" → 升 4 层）
+    与 src/static/index.html:1196-1268 dailyAdvice 完全等价。
     """
     sent = sent or {}
     market = sent.get("market") or {}
     limit_down = market.get("limit_down")
+    drop_over_9pct = market.get("drop_over_9pct")
+    prev_day_limit_down = market.get("prev_day_limit_down")
     w_avg = sent.get("weighted_auction_gain")
+    prev_w_avg = sent.get("prev_day_weighted_auction_gain")
 
-    has_ld = isinstance(limit_down, (int, float))
-    has_w = isinstance(w_avg, (int, float))
+    has_ld = isinstance(limit_down, (int, float)) and not isinstance(limit_down, bool)
+    has_drop = isinstance(drop_over_9pct, (int, float)) and not isinstance(drop_over_9pct, bool)
+    has_w = isinstance(w_avg, (int, float)) and not isinstance(w_avg, bool)
 
     mb_list = (leader or {}).get("main_board_leaders") or []
     lb_bad_list = [
@@ -86,7 +96,8 @@ def _calc_daily_advice(sent: dict | None, leader: dict | None = None) -> dict:
     ]
     has_lb = len(mb_list) > 0
 
-    if not has_ld and not has_w and not has_lb:
+    # 全 4 维都无数据 → 数据加载中（BR-1.3：has_drop 也参与判定）
+    if not has_ld and not has_drop and not has_w and not has_lb:
         return {
             "bucket": "go", "text": "— 数据加载中 —",
             "position": "—", "position_short": "—",
@@ -94,12 +105,16 @@ def _calc_daily_advice(sent: dict | None, leader: dict | None = None) -> dict:
         }
 
     ld_bad = has_ld and limit_down > 5
+    drop_bad = has_drop and drop_over_9pct > 9
     w_bad = has_w and w_avg < 0
     lb_bad = has_lb and len(lb_bad_list) > 0
 
+    # warnings 顺序与 dashboard JS 一致：ld → drop → w → lb
     warnings = []
     if ld_bad:
         warnings.append(f"市场竞价跌停 {limit_down} 只（>5 警戒线）")
+    if drop_bad:
+        warnings.append(f"市场跌幅>9% 个股 {drop_over_9pct} 只（>9 警戒线）")
     if w_bad:
         warnings.append(f"梯队加权竞价 {('+' if w_avg >= 0 else '')}{w_avg}% 偏弱（<0）")
     if lb_bad:
@@ -119,23 +134,38 @@ def _calc_daily_advice(sent: dict | None, leader: dict | None = None) -> dict:
             "text": "🛑 今日不操作",
             "position": "0 层（空仓避险）",
             "position_short": "0层",
-            "reason": "；".join(warnings) + f"。三维警戒中已 {bad_count} 项触发，避免开仓。",
+            "reason": "；".join(warnings) + f"。四维警戒中已 {bad_count} 项触发，避免开仓。",
             "color": "#10b981", "bg": "#0a2a0a",
         }
     if bad_count == 1:
         return {
             "bucket": "warn",
             "text": "⚠️ 谨慎参与",
-            "position": "1-2 层（小仓试错）",
-            "position_short": "1-2层",
+            "position": "1.5 层（小仓试错）",
+            "position_short": "1.5层",
             "reason": warnings[0] + "。仅一项警戒，可小仓试错或观望。",
             "color": "#fbbf24", "bg": "#2a2a0a",
+        }
+
+    # bad_count == 0 → 检查连续 2 日情绪好（BR-2.x）
+    has_prev_ld = isinstance(prev_day_limit_down, (int, float)) and not isinstance(prev_day_limit_down, bool)
+    has_prev_w = isinstance(prev_w_avg, (int, float)) and not isinstance(prev_w_avg, bool)
+    today_good = has_ld and limit_down <= 5 and has_w and w_avg >= 0
+    prev_good = has_prev_ld and prev_day_limit_down <= 5 and has_prev_w and prev_w_avg >= 0
+    if today_good and prev_good:
+        return {
+            "bucket": "go",
+            "text": "✅ 可参与",
+            "position": "4 层（连续情绪良好）",
+            "position_short": "4层",
+            "reason": "连续2日情绪良好（跌停≤5+加权竞价≥0），建议加至4层",
+            "color": "#ef4444", "bg": "#2a0f0f",
         }
     return {
         "bucket": "go",
         "text": "✅ 可参与",
-        "position": "3-6 层（标准仓位）",
-        "position_short": "3-6层",
+        "position": "3 层（标准仓位）",
+        "position_short": "3层",
         "reason": "",
         "color": "#ef4444", "bg": "#2a0f0f",
     }
@@ -201,11 +231,16 @@ def _build_html(
     # === 6 指标格数据 ===
     market = (sentiment_data or {}).get("market") or {}
     limit_down = market.get("limit_down")
+    drop_over_9pct = market.get("drop_over_9pct")
+    prev_day_limit_down = market.get("prev_day_limit_down")
     w_avg = (sentiment_data or {}).get("weighted_auction_gain")
     y_avg = ((leader or {}).get("yesterday_main_board_avg_auction") or {})
     y_zb = ((leader or {}).get("yesterday_zb_today_auction") or {})
     y_ld = ((leader or {}).get("yesterday_limit_down_today_auction") or {})
     lianban = _calc_lianban_state(leader)
+
+    def _is_num(v):
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
 
     def num_color(v, threshold_high_is_bad=False):
         if v is None or v == "—":
@@ -232,6 +267,105 @@ def _build_html(
             f'{sub_html}</td>'
         )
 
+    # === 第 1 格：竞价跌停 / 跌>9% 双数 + 箭头 + 昨日对比 ===
+    # 真源 src/static/index.html:513-530
+    ld_disp = limit_down if _is_num(limit_down) else "—"
+    drop_disp = drop_over_9pct if _is_num(drop_over_9pct) else "—"
+    ld_color = "#ef4444" if (_is_num(limit_down) and limit_down > 5) else "#10b981"
+    drop_color = "#ef4444" if (_is_num(drop_over_9pct) and drop_over_9pct > 9) else "#10b981"
+
+    arrow_html = ""
+    if _is_num(limit_down) and _is_num(prev_day_limit_down):
+        if limit_down > prev_day_limit_down:
+            arrow, ar_color = "↑", "#ef4444"
+        elif limit_down < prev_day_limit_down:
+            arrow, ar_color = "↓", "#10b981"
+        else:
+            arrow, ar_color = "→", "#6b7280"
+        arrow_html = (
+            f'<span style="font-size:13px;color:{ar_color};margin-left:6px;">{arrow}</span>'
+        )
+
+    if _is_num(prev_day_limit_down):
+        if _is_num(limit_down):
+            diff = limit_down - prev_day_limit_down
+            diff_str = ("+" if diff > 0 else "") + str(diff)
+            ld_sub_html = (
+                f'<div style="font-size:10px;color:#999;margin-top:1px;">'
+                f'昨日跌停 {prev_day_limit_down}（差值{diff_str}）</div>'
+            )
+        else:
+            ld_sub_html = (
+                f'<div style="font-size:10px;color:#999;margin-top:1px;">'
+                f'昨日跌停 {prev_day_limit_down}</div>'
+            )
+    else:
+        ld_sub_html = (
+            '<div style="font-size:10px;color:#999;margin-top:1px;">昨日跌停 —</div>'
+        )
+
+    # 主值整体颜色：任一维触发警戒 → 红，否则绿
+    if (_is_num(limit_down) and limit_down > 5) or (_is_num(drop_over_9pct) and drop_over_9pct > 9):
+        main1_color = "#ef4444"
+    elif _is_num(limit_down) or _is_num(drop_over_9pct):
+        main1_color = "#10b981"
+    else:
+        main1_color = "#6b7280"
+
+    cell1_html = (
+        '<td style="background:#f8f9fa;border:1px solid #e5e7eb;padding:6px 10px;'
+        'border-radius:6px;width:33%;vertical-align:top;">'
+        '<div style="font-size:11px;color:#888;">竞价跌停 (&gt;5⚠) / 跌&gt;9% (&gt;9⚠)</div>'
+        f'<div style="font-size:16px;font-weight:700;color:{main1_color};margin-top:2px;">'
+        f'{ld_disp} / {drop_disp}{arrow_html}</div>'
+        f'{ld_sub_html}</td>'
+    )
+
+    # === 第 4 格：接力情绪 + title + 细分子项 ===
+    # 真源 src/static/index.html:556-568
+    sample = y_avg.get("sample_count")
+    avg_chg = y_avg.get("avg_change_pct")
+    pos_cnt = y_avg.get("positive_count")
+    neg_cnt = y_avg.get("negative_count")
+    ld_cnt = y_avg.get("limit_down_count")
+    median_chg = y_avg.get("median_change_pct")
+    high5 = y_avg.get("high5_count")
+    flat2 = y_avg.get("flat2_count")
+    low5 = y_avg.get("low5_count")
+
+    if _is_num(sample) and sample > 0:
+        title4 = (
+            f"昨日涨停 {sample} 只 · "
+            f"高开 {pos_cnt if _is_num(pos_cnt) else '—'} / "
+            f"低开 {neg_cnt if _is_num(neg_cnt) else '—'}"
+        )
+        if _is_num(ld_cnt) and ld_cnt > 0:
+            title4 += f" / 跌停 {ld_cnt}"
+        main4 = fmt_pct(avg_chg) if _is_num(avg_chg) else "—"
+        main4_color = num_color(avg_chg) if _is_num(avg_chg) else "#6b7280"
+        median_str = (f"{'+' if median_chg >= 0 else ''}{median_chg}%") if _is_num(median_chg) else "—"
+        sub4_str = (
+            f"中位数 {median_str} · "
+            f"高开>5%:{high5 if _is_num(high5) else '—'} · "
+            f"平开±2%:{flat2 if _is_num(flat2) else '—'} · "
+            f"低开<-5%:{low5 if _is_num(low5) else '—'}"
+        )
+    else:
+        title4 = "昨日涨停 — 只"
+        main4 = "—"
+        main4_color = "#6b7280"
+        sub4_str = "中位数 — · 高开>5%:— · 平开±2%:— · 低开<-5%:—"
+
+    cell4_html = (
+        '<td style="background:#f8f9fa;border:1px solid #e5e7eb;padding:6px 10px;'
+        'border-radius:6px;width:33%;vertical-align:top;">'
+        '<div style="font-size:11px;color:#888;">接力情绪</div>'
+        f'<div style="font-size:10px;color:#6b7280;margin-top:1px;">{title4}</div>'
+        f'<div style="font-size:16px;font-weight:700;color:{main4_color};margin-top:2px;">{main4}</div>'
+        f'<div style="font-size:10px;color:#999;margin-top:1px;">{sub4_str}</div>'
+        '</td>'
+    )
+
     # 连板高标：去掉emoji，缩短文字
     lb_val = lianban['label']
     lb_sub = lianban['detail'][:30] + ('…' if len(lianban['detail']) > 30 else '')
@@ -239,16 +373,15 @@ def _build_html(
     metrics_html = f"""
     <table style="width:100%;border-collapse:separate;border-spacing:6px 4px;margin-top:8px;">
       <tr>
-        {_metric_cell('竞价跌停(&gt;5⚠)', limit_down if limit_down is not None else '—', num_color(limit_down, True))}
+        {cell1_html}
         {_metric_cell('梯队加权竞价', fmt_pct(w_avg), num_color(w_avg))}
         {_metric_cell('连板高标竞价', lb_val, lianban['color'], lb_sub)}
       </tr>
       <tr>
-        {_metric_cell('昨日涨停溢价', fmt_pct(y_avg.get('avg_change_pct')), num_color(y_avg.get('avg_change_pct')),
-                       f"{y_avg.get('sample_count','')}只 高{y_avg.get('positive_count',0)}/低{y_avg.get('negative_count',0)}" if y_avg.get('sample_count') else '')}
+        {cell4_html}
         {_metric_cell('昨日炸板今日', fmt_pct(y_zb.get('avg_change_pct')), num_color(y_zb.get('avg_change_pct')),
                        f"{y_zb.get('sample_count','')}只" if y_zb.get('sample_count') else '')}
-        {_metric_cell('昨日跌停今日', fmt_pct(y_ld.get('avg_change_pct')), num_color(y_ld.get('avg_change_pct')),
+        {_metric_cell('昨日跌停平均反馈', fmt_pct(y_ld.get('avg_change_pct')), num_color(y_ld.get('avg_change_pct')),
                        f"{y_ld.get('sample_count','')}只" if y_ld.get('sample_count') else '')}
       </tr>
     </table>
