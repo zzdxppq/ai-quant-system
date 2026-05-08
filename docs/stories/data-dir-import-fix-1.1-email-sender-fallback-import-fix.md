@@ -335,7 +335,7 @@ deliverable_bindings:
 | Files | `src/notify/email_sender.py` (imports +2 lines), `tests/notify/test_email_fallback_industry_concept.py` (new, 5 tests) |
 | Tests | Pass (51/51 in `tests/notify/`, `-W error` clean) |
 | QA | Verified 2026-05-08 by Turing (gate=PASS, LOW risk, automated_only) |
-| Commit | 8ab7abf (Dev) + (pending QA finalize-commit) |
+| Commit | 8ab7abf (Dev: production code) + 5a59dcd (QA: gate=PASS + Story Done) |
 
 ---
 
