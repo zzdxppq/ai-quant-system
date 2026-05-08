@@ -37,11 +37,9 @@ def _fetch_screener_data():
     # 2. 拉涨停历史（内部会再拉 spot，但有缓存/去重）
     limit_up_hist = fetch_limit_up_history(days=5)
 
-    # 3. 强制走新浪全市场（~5200 只）：eastmoney clist 默认 page_size=100，
-    #    返回值正好等于 100，旧阈值 <100 永远不触发，导致 spot_df 只剩涨幅前 100，
-    #    主板二连板候选大多落在 100 名外，screener 0 命中。阈值抬到 1000 即可强制兜底新浪。
-    if len(spot_df) < 1000:
-        print(f"  spot 只有 {len(spot_df)} 只（非全市场），重试新浪...")
+    # 3. 如果 spot 拿到的是 mock（<100只），再试一次新浪
+    if len(spot_df) < 100:
+        print(f"  spot 只有 {len(spot_df)} 只，疑似 mock，重试新浪...")
         try:
             from src.data.sina_spot_api import fetch_a_share_list_sina
             df = fetch_a_share_list_sina()
