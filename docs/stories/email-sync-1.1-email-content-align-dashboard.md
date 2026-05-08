@@ -525,6 +525,7 @@ deliverable_bindings:
 | 2026-05-08 | QA | AwaitingTestDesign → TestDesignComplete → Approved | Test Design Doc: [docs/qa/assessments/email-sync-1.1-test-design-20260508.md](../qa/assessments/email-sync-1.1-test-design-20260508.md)；46 scenarios (UNIT 32 / INT 7 / BLIND 7；P0 29 / P1 12 / P2 5)；测试骨架 [tests/notify/test_email_decision_alignment.py](../../tests/notify/test_email_decision_alignment.py)；QA 两阶段状态转换；Tasks 区已追加 Test Specs Quick Reference；Ready for Dev implementation |
 | 2026-05-08 | Dev | Approved → InProgress → Review | T0 探查：上游字段全部就绪（sentiment_pool/leader_feedback 已写入 prev_day_* / drop_over_9pct / median 等 5 项细分子字段），无需升级 Architect。实现：`src/notify/email_sender.py` 重构 `_calc_daily_advice`（四维 + 升 4 层 + 文案三连）+ `_build_html` 第 1/4/6 格改造（双数+箭头+昨日对比 / 接力情绪 + 细分子项 / 标签改名）。测试：46/46 pass（UNIT 32 + INT 7 + BLIND 7），`-W error` 严格模式通过。Dev Log: [docs/dev/logs/email-sync-1.1-dev-log.md](../dev/logs/email-sync-1.1-dev-log.md) |
 | 2026-05-08 | QA | Review → Done | Round 1, Gate: PASS, Tests: 100% (46/46). 9/9 ACs verified, 7/7 blind spots covered, dashboard 真源未动。Gate file: [docs/qa/gates/email-sync-1.1-email-content-align-dashboard.yml](../qa/gates/email-sync-1.1-email-content-align-dashboard.yml). 1 LOW (line-number drift, non-blocking) + 1 out-of-scope observation (preexisting `DATA_DIR`/json 未 import in `email_sender.py:419-451`, commit 45baa67 引入). |
+| 2026-05-08 | QA | finalize-commit | git commit `eb4e883` — feat(email): 9:27 推送内容逐字段对齐首页看板（4维警戒 + 升4层 + 6指标格新版）。仅 stage 7 路径白名单，operational dirty files (data/auction_cache/, logs/) 维持 untracked。 |
 
 ---
 
