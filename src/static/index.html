@@ -600,6 +600,33 @@
                         </div>
                     </div>
                     <div class="hm-cell hm-primary">
+                        <div class="hm-label">加权接力情绪指数</div>
+                        <div class="hm-value"
+                             :class="relayIndexClass"
+                             :title="relayIndexTooltip">
+                            {{ relayIndex == null ? '—' : ((relayIndex >= 0 ? '+' : '') + relayIndex.toFixed(2) + '%') }}
+                            <span v-if="relayIndexPrev != null && relayIndex != null"
+                                  style="font-size:14px;margin-left:4px;"
+                                  :style="{color: relayIndex > relayIndexPrev ? '#ef4444' : relayIndex < relayIndexPrev ? '#10b981' : '#6b7280'}">
+                                {{ relayIndex > relayIndexPrev ? '↑' : relayIndex < relayIndexPrev ? '↓' : '→' }}
+                            </span>
+                        </div>
+                        <div class="mb-sub" v-if="relayIndexInfo">
+                            <span :style="{color: relayVerdictColor}">{{ relayIndexInfo.verdict }}</span>
+                            <span v-if="relayIndexPrev != null">
+                                · 昨日 {{ (relayIndexPrev >= 0 ? '+' : '') + relayIndexPrev.toFixed(2) }}%
+                                （{{ (relayIndex - relayIndexPrev) >= 0 ? '+' : '' }}{{ (relayIndex - relayIndexPrev).toFixed(2) }}）
+                            </span>
+                        </div>
+                    </div>
+                    <div class="hm-cell hm-primary">
+                        <div class="hm-label">昨日连板高标竞价</div>
+                        <div class="hm-value" :class="lianbanLeaderState.cls"
+                             :title="lianbanLeaderState.detail">
+                            {{ lianbanLeaderState.icon }} {{ lianbanLeaderState.label }}
+                        </div>
+                    </div>
+                    <div class="hm-cell hm-secondary">
                         <div class="hm-label">梯队加权竞价</div>
                         <div class="hm-value" :class="(sentiment.weighted_auction_gain||0) >= 0 ? 'hm-good' : 'hm-bad'">
                             {{ sentiment.weighted_auction_gain == null ? '—' : ((sentiment.weighted_auction_gain >= 0 ? '+' : '') + sentiment.weighted_auction_gain + '%') }}
@@ -614,26 +641,6 @@
                             <span v-if="sentiment.weighted_auction_gain != null">
                                 （{{ (sentiment.weighted_auction_gain - sentiment.prev_day_weighted_auction_gain) >= 0 ? '+' : '' }}{{ (sentiment.weighted_auction_gain - sentiment.prev_day_weighted_auction_gain).toFixed(2) }}）
                             </span>
-                        </div>
-                    </div>
-                    <div class="hm-cell hm-primary">
-                        <div class="hm-label">昨日连板高标竞价</div>
-                        <div class="hm-value" :class="lianbanLeaderState.cls"
-                             :title="lianbanLeaderState.detail">
-                            {{ lianbanLeaderState.icon }} {{ lianbanLeaderState.label }}
-                        </div>
-                    </div>
-                    <div class="hm-cell hm-secondary">
-                        <div class="hm-label">接力情绪</div>
-                        <div class="hm-value" :class="(ydayAvg?.avg_change_pct||0) >= 0 ? 'hm-good' : 'hm-bad'"
-                             :title="ydayAvg ? `昨日涨停 ${ydayAvg.sample_count} 只 · 高开 ${ydayAvg.positive_count} / 低开 ${ydayAvg.negative_count}${ydayAvg.limit_down_count ? ' / 跌停 ' + ydayAvg.limit_down_count : ''}` : ''">
-                            {{ ydayAvg?.avg_change_pct == null ? '—' : ((ydayAvg.avg_change_pct >= 0 ? '+' : '') + ydayAvg.avg_change_pct + '%') }}
-                        </div>
-                        <div class="mb-sub" v-if="ydayAvg && ydayAvg.median_change_pct != null">
-                            中位数 {{ ydayAvg.median_change_pct >= 0 ? '+' : '' }}{{ ydayAvg.median_change_pct }}%
-                            · 高开&gt;5%:{{ ydayAvg.high5_count }}
-                            · 平开±2%:{{ ydayAvg.flat2_count }}
-                            · 低开&lt;-5%:{{ ydayAvg.low5_count }}
                         </div>
                     </div>
                     <div class="hm-cell hm-secondary">
@@ -1234,6 +1241,41 @@ createApp({
 
         // 昨日主板涨停股 今日平均竞价
         const ydayAvg = computed(() => leader.value.yesterday_main_board_avg_auction || null)
+
+        // 加权接力情绪指数（用户新口径：首板×0.2 + 2板×0.5 + 3板+×0.3）
+        const relayIndexInfo = computed(() => sentiment.value?.relay_sentiment_index || null)
+        const relayIndex = computed(() => {
+            const i = relayIndexInfo.value
+            return i && typeof i.index === 'number' ? i.index : null
+        })
+        const relayIndexPrev = computed(() => {
+            const i = relayIndexInfo.value
+            return i && typeof i.prev_index === 'number' ? i.prev_index : null
+        })
+        const relayIndexClass = computed(() => {
+            const v = relayIndex.value
+            if (v == null) return ''
+            if (v >= 1.5) return 'hm-good'
+            if (v >= 0) return 'hm-ok'
+            return 'hm-bad'
+        })
+        const relayVerdictColor = computed(() => {
+            const v = relayIndex.value
+            if (v == null) return '#6b7280'
+            if (v >= 1.5) return '#ef4444'
+            if (v >= 0) return '#fbbf24'
+            return '#10b981'
+        })
+        const relayIndexTooltip = computed(() => {
+            const i = relayIndexInfo.value
+            if (!i) return ''
+            const fmt = (b) => `${b.avg >= 0 ? '+' : ''}${b.avg}%（${b.count}只）`
+            return `公式: 首板×0.2 + 2板×0.5 + 3板+×0.3\n` +
+                `首板溢价 ${fmt(i.first_board)}\n` +
+                `2板溢价  ${fmt(i.two_board)}\n` +
+                `3板+溢价 ${fmt(i.three_plus)}\n` +
+                `阈值: ≥1.5% 良好 / 0~1.5% 一般 / <0% 差`
+        })
         // 昨日炸板股 今日竞价均价（接力反向锚定）
         const yZbAvg = computed(() => leader.value.yesterday_zb_today_auction || null)
         // 昨日竞价跌停股 今日竞价均价（弱势反弹/续跌信号）
@@ -2045,6 +2087,7 @@ createApp({
             screenerHits, screenerDate, signals,
             leader, leaderList, mainBoardLeadersGroup,
             ydayAvg, ydayAvgVerdict, ydayAvgClass, ydayAvgBadge, yZbAvg, yLdAvg,
+            relayIndexInfo, relayIndex, relayIndexPrev, relayIndexClass, relayVerdictColor, relayIndexTooltip,
             deviations, btResult, auctionScores, top30Stats, top30Verdict, relayVerdict, dailyAdvice,
             lianbanLeaderState,
             auctionX, auctionColor, vrWidth,

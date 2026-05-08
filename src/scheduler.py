@@ -11,7 +11,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from src.config import DATA_DIR, now_cn
+from src.config import DATA_DIR, SCREENER_CRON_HOUR, SCREENER_CRON_MINUTE, now_cn
 from src.engine.cycle import CycleEngine, calc_gain_10d
 from src.engine.screener import run_screener
 from src.engine.cross_validator import cross_validate
@@ -322,7 +322,35 @@ def _maybe_rebuild_concept_cache() -> None:
         print(f"  概念缓存重建调度失败（不影响周期）: {e}")
 
 
-def run_screener_update() -> dict:
+def _in_927_window(now_dt) -> bool:
+    """9:27 ± 5min 邮件窗口（含端点 9:22:00 ~ 9:32:00）。
+
+    窗口中心读 SCREENER_CRON_HOUR/SCREENER_CRON_MINUTE，避免硬编码。
+    """
+    center = now_dt.replace(
+        hour=SCREENER_CRON_HOUR,
+        minute=SCREENER_CRON_MINUTE,
+        second=0,
+        microsecond=0,
+    )
+    return abs((now_dt - center).total_seconds()) <= 300
+
+
+def _should_send_email(skip_email: bool | None) -> bool:
+    """邮件推送守卫（story anti-duplicate-email-2.5）。
+
+    - skip_email is True  → False（强制跳过，手动 refresh 用）
+    - skip_email is False → True （强制发送，push2 恢复等场景预留）
+    - skip_email is None  → 按 now_cn() 时间窗口判断（仅 9:27±5min 内发邮件）
+    """
+    if skip_email is True:
+        return False
+    if skip_email is False:
+        return True
+    return _in_927_window(now_cn())
+
+
+def run_screener_update(skip_email: bool | None = None) -> dict:
     """执行选股（9:27调用）
 
     1. 拉取实时竞价数据
@@ -468,7 +496,7 @@ def run_screener_update() -> dict:
         if pool_codes:
             pool_sent = compute_pool_sentiment(pool_codes, spot_df)
             if pool_sent:
-                save_sentiment(pool_sent, market_stats)
+                save_sentiment(pool_sent, market_stats, spot_df=spot_df)
                 print(f"梯队情绪: {pool_sent.verdict} · {pool_sent.reason}")
             else:
                 print("梯队情绪: 无有效样本")
@@ -652,47 +680,54 @@ def run_screener_update() -> dict:
         print(f"[决策追踪] 异常: {e}")
 
     # 8c. 邮件推送（紧接选股结果，不等看板数据刷新，确保9:30前送达）
-    try:
-        from src.notify.email_sender import send_screener_report
-        leader_data = None
-        leader_file = DATA_DIR / "latest_leader.json"
-        if leader_file.exists():
-            leader_data = json.loads(leader_file.read_text())
+    # story anti-duplicate-email-2.5: skip_email 守卫（防盘中重复邮件）
+    if _should_send_email(skip_email):
+        try:
+            from src.notify.email_sender import send_screener_report
+            leader_data = None
+            leader_file = DATA_DIR / "latest_leader.json"
+            if leader_file.exists():
+                leader_data = json.loads(leader_file.read_text())
 
-        dev_data = None
-        dev_file = DATA_DIR / "latest_deviation.json"
-        if dev_file.exists():
-            dev_data = json.loads(dev_file.read_text()).get("results")
+            dev_data = None
+            dev_file = DATA_DIR / "latest_deviation.json"
+            if dev_file.exists():
+                dev_data = json.loads(dev_file.read_text()).get("results")
 
-        # 新版邮件需要的额外数据：sentiment（含 market 风向）、ranking（板块查表）
-        sentiment_email = None
-        sent_file = DATA_DIR / "latest_sentiment.json"
-        if sent_file.exists():
-            try:
-                sentiment_email = json.loads(sent_file.read_text())
-            except Exception:
-                pass
-        ranking_email = None
-        rank_file = DATA_DIR / "latest_ranking.json"
-        if rank_file.exists():
-            try:
-                ranking_email = json.loads(rank_file.read_text())
-            except Exception:
-                pass
+            # 新版邮件需要的额外数据：sentiment（含 market 风向）、ranking（板块查表）
+            sentiment_email = None
+            sent_file = DATA_DIR / "latest_sentiment.json"
+            if sent_file.exists():
+                try:
+                    sentiment_email = json.loads(sent_file.read_text())
+                except Exception:
+                    pass
+            ranking_email = None
+            rank_file = DATA_DIR / "latest_ranking.json"
+            if rank_file.exists():
+                try:
+                    ranking_email = json.loads(rank_file.read_text())
+                except Exception:
+                    pass
 
-        send_screener_report(
-            cycle_phase=cycle_snapshot.get("phase", "孕育期") if cycle_snapshot else "孕育期",
-            cycle_day=cycle_snapshot.get("phase_day", 0) if cycle_snapshot else 0,
-            representative=cycle_snapshot.get("representative") if cycle_snapshot else None,
-            leader=leader_data,
-            hits=[asdict(h) for h in hits],
-            signals=signals_data.get("signals", []),
-            deviations=dev_data,
-            sentiment_data=sentiment_email,
-            ranking_data=ranking_email,
+            send_screener_report(
+                cycle_phase=cycle_snapshot.get("phase", "孕育期") if cycle_snapshot else "孕育期",
+                cycle_day=cycle_snapshot.get("phase_day", 0) if cycle_snapshot else 0,
+                representative=cycle_snapshot.get("representative") if cycle_snapshot else None,
+                leader=leader_data,
+                hits=[asdict(h) for h in hits],
+                signals=signals_data.get("signals", []),
+                deviations=dev_data,
+                sentiment_data=sentiment_email,
+                ranking_data=ranking_email,
+            )
+        except Exception as e:
+            print(f"[邮件] 推送异常: {e}")
+    else:
+        print(
+            f"[邮件] 已按 skip_email={skip_email} 跳过推送"
+            f"（now={now_cn().strftime('%H:%M:%S')}）"
         )
-    except Exception as e:
-        print(f"[邮件] 推送异常: {e}")
 
     # 9. 异步后台任务（不阻塞选股返回）
     import threading

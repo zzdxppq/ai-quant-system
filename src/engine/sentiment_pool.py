@@ -389,9 +389,93 @@ def load_pool_from_ranking() -> list[str]:
         return []
 
 
+def compute_relay_sentiment_index(spot_df) -> Optional[dict]:
+    """加权接力情绪指数（用户口径，主板 2 板以上接力专员）
+
+    公式: 加权情绪 = 首板溢价×0.2 + 2板溢价×0.5 + 3板及以上溢价×0.3
+      · 溢价 = 当日竞价涨幅 = (open/pre_close - 1) * 100
+      · 首板 = continuous_limit_up == 1
+      · 2板 = continuous_limit_up == 2
+      · 3板+ = continuous_limit_up >= 3
+
+    阈值:
+      ≥1.5%  → 良好
+      0%~1.5% → 一般
+      <0%    → 差（空仓或试错）
+
+    Returns: {
+        index: float,
+        verdict: '良好'/'一般'/'差',
+        first_board: {avg, count}, two_board: {...}, three_plus: {...},
+    } 或 None（无样本）
+    """
+    if spot_df is None or spot_df.empty:
+        return None
+
+    # 拉今日涨停池，含 continuous_limit_up
+    try:
+        from src.data.zt_pool_api import fetch_zt_pool
+        pool = fetch_zt_pool() or {}
+    except Exception:
+        pool = {}
+    if not pool:
+        return None
+
+    # spot 索引
+    spot_map: dict = {}
+    try:
+        for _, r in spot_df.iterrows():
+            spot_map[str(r["code"])] = r
+    except Exception:
+        return None
+
+    by_tier: dict[int, list[float]] = {1: [], 2: [], 3: []}  # 3 表示 ≥3
+    for code, info in pool.items():
+        board = int(info.get("lbc", 0) or 0)
+        if board <= 0:
+            continue
+        # 主板过滤：用户口径专员主板 2 板以上接力
+        # 但首板/2板/3板+ 计算包括所有股票池，便于市场温度感知
+        row = spot_map.get(str(code).zfill(6))
+        if row is None:
+            continue
+        try:
+            op = float(row.get("open", 0) or 0)
+            pc = float(row.get("pre_close", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if op <= 0 or pc <= 0:
+            continue
+        ag = (op / pc - 1) * 100
+        bucket = 1 if board == 1 else (2 if board == 2 else 3)
+        by_tier[bucket].append(ag)
+
+    def _avg(lst: list[float]) -> float:
+        return round(sum(lst) / len(lst), 2) if lst else 0.0
+
+    a1, a2, a3 = _avg(by_tier[1]), _avg(by_tier[2]), _avg(by_tier[3])
+    index_val = round(a1 * 0.2 + a2 * 0.5 + a3 * 0.3, 2)
+
+    if index_val >= 1.5:
+        verdict = "良好"
+    elif index_val >= 0:
+        verdict = "一般"
+    else:
+        verdict = "差"
+
+    return {
+        "index": index_val,
+        "verdict": verdict,
+        "first_board": {"avg": a1, "count": len(by_tier[1])},
+        "two_board": {"avg": a2, "count": len(by_tier[2])},
+        "three_plus": {"avg": a3, "count": len(by_tier[3])},
+    }
+
+
 def save_sentiment(
     sentiment: PoolSentiment,
     market_stats: MarketAuctionStats | None = None,
+    spot_df=None,
 ) -> None:
     # 写盘前先把昨日竞价跌停数注入 market_stats
     if market_stats is not None:
@@ -404,11 +488,19 @@ def save_sentiment(
     # 注入昨日梯队加权竞价
     prev_wavg = _get_prev_day_weighted_auction(sentiment.date)
     data["prev_day_weighted_auction_gain"] = prev_wavg
+
+    # 加权接力情绪指数（新口径）+ 昨日值
+    rsi = compute_relay_sentiment_index(spot_df) if spot_df is not None else None
+    if rsi is not None:
+        prev_rsi = _get_prev_day_relay_sentiment_index(sentiment.date)
+        rsi["prev_index"] = prev_rsi
+        data["relay_sentiment_index"] = rsi
+
     path = DATA_DIR / "latest_sentiment.json"
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
     # 追加到 sentiment_history.json（用于明日对比）
     if market_stats:
-        _append_sentiment_history(market_stats)
+        _append_sentiment_history(market_stats, rsi)
 
 
 def _history_file() -> "Path":
@@ -426,11 +518,14 @@ def _load_sentiment_history() -> list:
         return []
 
 
-def _append_sentiment_history(stats: MarketAuctionStats) -> None:
+def _append_sentiment_history(
+    stats: MarketAuctionStats,
+    relay_sentiment_index: Optional[dict] = None,
+) -> None:
     history = _load_sentiment_history()
     today_d = stats.date[:10]
     history = [h for h in history if h.get("date", "")[:10] != today_d]
-    history.append({
+    entry = {
         "date": stats.date,
         "limit_down": stats.limit_down,
         "drop_over_9pct": stats.drop_over_9pct,
@@ -440,7 +535,11 @@ def _append_sentiment_history(stats: MarketAuctionStats) -> None:
         "limit_down_codes": [s["code"] for s in (stats.limit_down_list or [])],
         # 保存梯队加权竞价，明日可展示对比
         "weighted_auction_gain": getattr(stats, "_weighted_auction_gain", None),
-    })
+    }
+    # 加权接力情绪指数（用户新口径）— 含明日 prev 比较
+    if relay_sentiment_index is not None:
+        entry["relay_sentiment_index"] = float(relay_sentiment_index.get("index") or 0)
+    history.append(entry)
     history = history[-60:]
     _history_file().write_text(json.dumps(history, ensure_ascii=False, indent=2))
 
@@ -455,6 +554,19 @@ def _get_prev_day_limit_down(today_date: str) -> Optional[int]:
     if not past:
         return None
     return past[-1].get("limit_down")
+
+
+def _get_prev_day_relay_sentiment_index(today_date: str) -> Optional[float]:
+    """从 sentiment_history.json 读取上一交易日的加权接力情绪指数"""
+    history = _load_sentiment_history()
+    if not history:
+        return None
+    today_d = today_date[:10]
+    past = [h for h in history if h.get("date", "")[:10] != today_d]
+    if not past:
+        return None
+    v = past[-1].get("relay_sentiment_index")
+    return float(v) if v is not None else None
 
 
 def _get_prev_day_weighted_auction(today_date: str) -> Optional[float]:
