@@ -1,0 +1,119 @@
+schema: 1
+story: "watch-pool-snapshot-2.2"
+story_title: "次日观察池读 review_history 快照，不再实时重算（复盘页时序对齐）"
+gate: PASS
+status_reason: |
+  独立 pytest 133/133 全绿；AC1-AC5 全部 VERIFIED；46/46 复选框与交付物 100% 一致；
+  9/9 BLIND-SPOT 全覆盖（4 BOUNDARY + 3 ERROR + 1 FLOW + 1 DATA）；4 个 frozen
+  文件 SHA256 baseline 全部锁定；Architect 3 项 Low Issue 全部以 mitigation
+  测试守护（L-1/L-2/L-3）。0 critical / 0 high / 0 medium / 0 low 待办。
+reviewer: "Turing (Test Engineer & Quality Architect)"
+updated: "2026-05-08T07:32:43Z"
+
+review_round: 1
+review_mode_type: full
+issues_from_previous_round: 0
+issues_resolved: 0
+improvement_percentage: 0
+
+incremental_context:
+  cached_risk_level: MEDIUM
+  cached_review_mode: automated_plus_spot_check
+  cached_project_type: web_backend
+  failed_acs: []
+  failed_e2e_scenarios: []
+  missing_blind_spots: []
+  checkbox_issues: []
+
+waiver: { active: false }
+
+architecture_concern: false
+escalation_reason: ""
+
+top_issues: []
+
+test_results:
+  automated:
+    executed: true
+    passed: true
+    total: 133
+    passed_count: 133
+    failed_count: 0
+    skipped_count: 0
+    pass_rate: 100
+    coverage_percentage: 0   # pytest 未配置 --cov；按 scenario 计 100% AC
+    failed_tests: []
+    test_command: "pytest tests/ -W error"
+    execution_time_seconds: 0.82
+    breakdown:
+      story_specific: 34            # tests/test_review_watch_pool_snapshot.py
+      decision_consistency_2_1: 48
+      email_sync_1_1: 46
+      fallback: 5
+  e2e:
+    executed: false
+    passed: true
+    skipped: true
+    skip_reason: "review_mode=automated_plus_spot_check; 后端 Python 项目无 UI 改动；spot-check 通过 INT-007/008/009/010 4 时段时序矩阵覆盖"
+    scenarios_tested: 0
+    scenarios_passed: 0
+    scenarios_failed: 0
+    console_errors_found: false
+    network_errors_found: false
+
+evidence:
+  directory: ""
+  issues: []
+
+risk_assessment:
+  risk_level: MEDIUM
+  review_mode: automated_plus_spot_check
+  complexity_count: 2
+  security_sensitive: false
+  dev_gate_score: 95
+
+risk_summary:
+  totals: { critical: 0, high: 0, medium: 0, low: 0 }
+  recommendations:
+    must_fix: []
+    monitor: []
+
+ac_coverage:
+  total_acs: 5
+  fully_verified: 5
+  partially_verified: 0
+  not_verified: 0
+  coverage_rate: 100.0
+  details:
+    AC1: { status: VERIFIED, tests: 6, passed: 6 }
+    AC2: { status: VERIFIED, tests: 4, passed: 4 }
+    AC3: { status: VERIFIED, tests: 4, passed: 4 }
+    AC4: { status: VERIFIED, tests: 3, passed: 3 }
+    AC5: { status: VERIFIED, tests: 8, passed: 8 }   # 含 T5 4 时段时序
+
+task_checkbox_verification:
+  total: 46
+  checked: 46
+  unchecked: 0
+  consistency_rate: 100.0
+  issues: []
+
+blind_spot_verification:
+  total_scenarios: 9
+  covered: 9
+  missing_code: 0
+  missing_test: 0
+  missing_both: 0
+  coverage_rate: 100.0
+  by_category:
+    BOUNDARY: { total: 4, covered: 4 }
+    ERROR: { total: 3, covered: 3 }
+    FLOW: { total: 1, covered: 1 }
+    DATA: { total: 1, covered: 1 }
+
+architect_review_followup:
+  score: 9.5
+  low_issues_resolved:
+    L-1_docstring_stale: "RESOLVED — docstring 重写 line 286-298；UNIT-003 反射断言守护"
+    L-2_import_decision: "RESOLVED — 删除 line 296 import；UNIT-002 grep 断言守护"
+    L-3_baseline_hardcode: "MITIGATED — UNIT-013 EXPECTED_TOTAL=133 跨 Story collect 总数 baseline guard"

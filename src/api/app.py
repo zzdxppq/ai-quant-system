@@ -289,15 +289,18 @@ async def get_review():
     实现：
       · now < 15:00：从 review_history.json 取最近一条 date != today 的记录
       · now >= 15:00：返回 latest_review.json（今日 cron 在 15:45 跑完）
-    无论哪种情况，watch_pool（次日观察池）始终用 latest_ranking 重算 —
-    "次日观察池"是面向 next-day 的语义，应反映最新已知的 ranking 状态。
+
+    watch_pool（次日观察池）= review_history / latest_review.json 中 15:45
+    冻结快照（_save_review 已持久化）；不再实时重算 — 看板需与"昨晚定的
+    明日关注股"保持一致（watch-pool-snapshot-2.2）。
+
+    scorecard / promotion_summary 仍用当前公式重算（用户要求"历史快照也
+    用新公式"），仅 watch_pool 是冻结快照。
     """
     from src.config import now_cn
-    from src.engine.daily_review import build_watch_pool_from_ranking
 
     latest_file = DATA_DIR / "latest_review.json"
     history_file = DATA_DIR / "review_history.json"
-    ranking_file = DATA_DIR / "latest_ranking.json"
 
     n = now_cn()
     today_str = n.strftime("%Y-%m-%d")
@@ -332,15 +335,6 @@ async def get_review():
 
     # 整站只取真概念：剔除历史快照中遗留的元标签
     _strip_meta_concepts_inplace(review_data)
-
-    # watch_pool 始终用最新 ranking 重算（按当前规则：top30+45%+≥2连板+主板）
-    if ranking_file.exists():
-        try:
-            ranking_payload = json.loads(ranking_file.read_text())
-            ranking_rows = ranking_payload.get("ranking") or []
-            review_data["watch_pool"] = build_watch_pool_from_ranking(ranking_rows)
-        except Exception:
-            pass
 
     # scorecard / promotion_summary 用当前代码重算（确保历史快照也用新公式 / 标签）
     try:

@@ -1,0 +1,26 @@
+{
+  "_comment": "SHA256 baselines for character-level frozen files (Story watch-pool-snapshot-2.2). Update only when story explicitly modifies the corresponding file.",
+  "review.html": "209b33ecba0b5b17dac37772054e2137dd610c52766d685963e680dbc8317624",
+  "main.py": "6f5224315dddcd9e6b10cc157056c1ca2a5bb015ced2ec50bf5142f87a866ee3",
+  "scheduler.py": "940936c3f4e3cd566ce8ab17c8817e8a1f43cb8280b938fcd5afec89d7639f4b",
+  "daily_review.py": "393cdcbcb19fa7007d7e569272d053e0531837d69865b071806dc5672b0c635c",
+  "api_review_top_keys": [
+    "concept_zt_stats",
+    "date",
+    "failed_promotion_list",
+    "highest_board",
+    "lianban_ladder",
+    "limit_up_count",
+    "main_board_limit_up",
+    "main_theme",
+    "market_summary",
+    "prev_board_groups",
+    "promotion_summary",
+    "relay_env",
+    "scorecard",
+    "sector_groups",
+    "sector_zt_stats",
+    "theme_strength",
+    "watch_pool"
+  ]
+}
