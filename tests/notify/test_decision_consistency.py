@@ -729,8 +729,9 @@ def test_2_1_int_016_refresh_screener_path_also_writes_advice():
     assert refresh, "refresh_screener handler not located"
     assert "run_screener_update" in refresh.group()
     # run_screener_update 内必须含决策快照写入
+    # Story anti-duplicate-email-2.5: 签名加 skip_email 参数（regex 放宽以匹配可选参数）
     rsu = re.search(
-        r"def run_screener_update\(\).*?(?=\ndef [^_]|\Z)",
+        r"def run_screener_update\([^)]*\).*?(?=\ndef [^_]|\Z)",
         sched_src, re.DOTALL,
     )
     assert rsu, "run_screener_update not located"

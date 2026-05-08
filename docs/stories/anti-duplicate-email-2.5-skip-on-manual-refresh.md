@@ -8,7 +8,7 @@ Story:
   title: run_screener_update 加 skip_email 参数 + /api/refresh-screener 默认 skip_email=True（防盘中重复邮件）
   epic: iteration-2 brownfield (virtual epic — 真源为 docs/prd/iteration-2-scope.md)
   tier: simple
-  status: Approved
+  status: Review
   mode: quick
   repository: monolith
   priority: P3
@@ -36,13 +36,13 @@ scope 原文（逐字）：
 
 ## Acceptance Criteria
 
-- [ ] **AC1**: `src/scheduler.py` `run_screener_update` 函数签名改为 `def run_screener_update(skip_email: bool | None = None) -> dict:`；其余行为完全不变。
-- [ ] **AC2**: 当 `skip_email is True` → 跳过 `send_screener_report(...)` 调用块（`src/scheduler.py:654-695` 的 "8c. 邮件推送" 块），日志打印 `"[邮件] 已按 skip_email=True 跳过推送"`；不抛错；其余流程（决策快照、复盘记录、后台任务）继续执行。
-- [ ] **AC3**: 当 `skip_email is False` → 强制执行 `send_screener_report(...)`（即原有行为，不论时间）。
-- [ ] **AC4**: 当 `skip_email is None`（缺省）→ 按 `now_cn()` 时间判断：仅当当前北京时间落在 `[SCREENER_CRON_HOUR:SCREENER_CRON_MINUTE - 5min, SCREENER_CRON_HOUR:SCREENER_CRON_MINUTE + 5min]` 区间内才发邮件，区间外跳过；即等价于 9:22:00 ≤ now ≤ 9:32:00（含端点）则发，否则跳过。区间判断不依赖服务器时区，必须用 `now_cn()`（项目已强制 UTC+8）。
-- [ ] **AC5**: `src/api/app.py` `/api/refresh-screener` endpoint 改为 `result = run_screener_update(skip_email=True)`；endpoint 行为：用户/Yuri 在浏览器或脚本里手动触发**永远不会**发邮件（哪怕在 9:27 窗口内）。
-- [ ] **AC6**: `main.py` 的 9:27 cron job 注册（`scheduler.add_job(run_screener_update, ...)`，line 37-45）**不需要修改**：APScheduler 调用零参，触发 `skip_email=None` → 走 AC4 时间窗口判断 → 9:27 必然落在窗口内 → 正常发邮件（cron job 行为字符级一致）。
-- [ ] **AC7**: 自动化测试 `tests/scheduler/test_run_screener_skip_email.py` 覆盖 4 种分支：
+- [x] **AC1**: `src/scheduler.py` `run_screener_update` 函数签名改为 `def run_screener_update(skip_email: bool | None = None) -> dict:`；其余行为完全不变。
+- [x] **AC2**: 当 `skip_email is True` → 跳过 `send_screener_report(...)` 调用块（`src/scheduler.py:654-695` 的 "8c. 邮件推送" 块），日志打印 `"[邮件] 已按 skip_email=True 跳过推送"`；不抛错；其余流程（决策快照、复盘记录、后台任务）继续执行。
+- [x] **AC3**: 当 `skip_email is False` → 强制执行 `send_screener_report(...)`（即原有行为，不论时间）。
+- [x] **AC4**: 当 `skip_email is None`（缺省）→ 按 `now_cn()` 时间判断：仅当当前北京时间落在 `[SCREENER_CRON_HOUR:SCREENER_CRON_MINUTE - 5min, SCREENER_CRON_HOUR:SCREENER_CRON_MINUTE + 5min]` 区间内才发邮件，区间外跳过；即等价于 9:22:00 ≤ now ≤ 9:32:00（含端点）则发，否则跳过。区间判断不依赖服务器时区，必须用 `now_cn()`（项目已强制 UTC+8）。
+- [x] **AC5**: `src/api/app.py` `/api/refresh-screener` endpoint 改为 `result = run_screener_update(skip_email=True)`；endpoint 行为：用户/Yuri 在浏览器或脚本里手动触发**永远不会**发邮件（哪怕在 9:27 窗口内）。
+- [x] **AC6**: `main.py` 的 9:27 cron job 注册（`scheduler.add_job(run_screener_update, ...)`，line 37-45）**不需要修改**：APScheduler 调用零参，触发 `skip_email=None` → 走 AC4 时间窗口判断 → 9:27 必然落在窗口内 → 正常发邮件（cron job 行为字符级一致）。
+- [x] **AC7**: 自动化测试 `tests/scheduler/test_run_screener_skip_email.py` 覆盖 4 种分支：
   - (a) `skip_email=True` → mock `send_screener_report` 未被调用
   - (b) `skip_email=False` → `send_screener_report` 被调用
   - (c) `skip_email=None` 且 mock `now_cn()` 返回 09:27:30 → 被调用
@@ -53,14 +53,14 @@ scope 原文（逐字）：
 
 ## Tasks
 
-- [ ] **T1** 修改 `src/scheduler.py:325` `run_screener_update` 签名加 `skip_email: bool | None = None`；在 `# 8c. 邮件推送` 块（约 654-695）外层包一个 `_should_send_email(skip_email)` 守卫：
+- [x] **T1** 修改 `src/scheduler.py:325` `run_screener_update` 签名加 `skip_email: bool | None = None`；在 `# 8c. 邮件推送` 块（约 654-695）外层包一个 `_should_send_email(skip_email)` 守卫：
   - `skip_email is True` → return False
   - `skip_email is False` → return True
   - `skip_email is None` → 返回 `_in_927_window(now_cn())`，窗口 = `[9:22:00, 9:32:00]`（含端点）
   - 守卫返回 False 时 print `"[邮件] 已按 skip_email={skip_email} 跳过推送（now={now_cn().strftime('%H:%M:%S')}）"` 并跳过整个 try 块
-- [ ] **T2** 修改 `src/api/app.py:308` `result = run_screener_update()` → `result = run_screener_update(skip_email=True)`；endpoint docstring 加一行 `"默认 skip_email=True（防盘中重复邮件，story anti-duplicate-email-2.5）"`
-- [ ] **T3** 新建 `tests/scheduler/test_run_screener_skip_email.py` 覆盖 AC7 四分支（mock `send_screener_report` + `now_cn`，构造最小 fixture 即可，不需要真实 spot_df）
-- [ ] **T4** 跑现有测试集 `pytest tests/ -x -q` 确认无回归；重点关注 `tests/notify/test_decision_consistency.py`（2.1）+ `tests/test_screener_display_2_4.py`（2.4）
+- [x] **T2** 修改 `src/api/app.py:308` `result = run_screener_update()` → `result = run_screener_update(skip_email=True)`；endpoint docstring 加一行 `"默认 skip_email=True（防盘中重复邮件，story anti-duplicate-email-2.5）"`
+- [x] **T3** 新建 `tests/scheduler/test_run_screener_skip_email.py` 覆盖 AC7 四分支（mock `send_screener_report` + `now_cn`，构造最小 fixture 即可，不需要真实 spot_df）
+- [x] **T4** 跑现有测试集 `pytest tests/ -x -q` 确认无回归；重点关注 `tests/notify/test_decision_consistency.py`（2.1）+ `tests/test_screener_display_2_4.py`（2.4）
 
 ---
 
@@ -117,11 +117,21 @@ deliverable_bindings:
 
 | Field | Value |
 |-------|-------|
-| Dev | - |
-| Files | - |
-| Tests | - |
+| Dev | Linus (Opus 4.7) |
+| Files | src/scheduler.py (signature + `_in_927_window`/`_should_send_email` helpers + 8c 守卫); src/api/app.py (`/api/refresh-screener` → `skip_email=True`); tests/scheduler/__init__.py (新建); tests/scheduler/test_run_screener_skip_email.py (新建, 10 tests) |
+| Tests | tests/scheduler/test_run_screener_skip_email.py 10/10 PASS；全量 pytest tests/ --ignore=tests/engine: 190 passed / 35 failed（35 失败均为 pre-existing in-progress story 基线: relay-sentiment-2.3 + dashboard-hits-table-display-2.4 模板 SHA 漂移 + email_decision_alignment 1 项；与本 Story 无关，对比 stash 验证） |
 | QA | - |
 | Commit | - |
+
+### Rebaselined frozen tests (necessary side-effect of AC1 authorized signature change)
+
+Story 2.5 AC1 显式授权修改 `run_screener_update` 签名 + scheduler.py 邮件块；以下 3 处旧基线（来自前序 Story）与新签名/新 SHA 冲突，按"故事授权 → 同步基线"原则做最小更新：
+
+1. `tests/fixtures/watch_pool_snapshot_baselines.json` — `scheduler.py` SHA 从 `acbbae7…77e6` → `481832c…636b`；`_comment` 追加本 Story 鉴权说明（沿用 2.4 同样模式）。
+2. `tests/test_screener_display_2_4.py:768` — 旧断言 `parameters == []` 改为 `parameters == ['skip_email']` + default is None（直接反映 AC1）。
+3. `tests/notify/test_decision_consistency.py:733` — regex `def run_screener_update\(\)` 放宽为 `def run_screener_update\([^)]*\)`，意图（验证 `run_screener_update → write_advice_snapshot` 链）保持不变。
+
+意图未削弱、范围最小、与 AC1 一一对应。
 
 ---
 
@@ -130,3 +140,5 @@ deliverable_bindings:
 | Date | Agent | Status | Details |
 |------|-------|--------|---------|
 | 2026-05-08 | SM (Phil) | Approved | Quick story created (tier=simple, mode=quick); scope 与代码无差异；HANDOFF → dev *quick-develop |
+| 2026-05-08 | Dev (Linus) | Approved -> InProgress | Quick development started |
+| 2026-05-08 | Dev (Linus) | InProgress -> Review | T1-T4 完成；新测 10/10 PASS；3 处前序 Story 基线（2.2 SHA / 2.4 签名 / 2.1 regex）按 AC1 授权同步更新；HANDOFF → qa *quick-verify |

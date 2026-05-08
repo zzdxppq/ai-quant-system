@@ -765,8 +765,13 @@ def test_2_4_unit_044_run_screener_signature_baseline():
     assert sig_rs.parameters["cycle_codes"].default is None
 
     sig_ru = inspect.signature(run_screener_update)
-    assert list(sig_ru.parameters) == [], \
-        f"run_screener_update must remain parameterless; got {list(sig_ru.parameters)}"
+    # Story anti-duplicate-email-2.5 AC1: 加 skip_email 参数（缺省 None → 9:27 时间窗口判断）
+    # cron job (main.py:37-45) 仍零参调用，AC6 保证字符级行为一致
+    ru_params = list(sig_ru.parameters)
+    assert ru_params == ["skip_email"], \
+        f"run_screener_update signature drift: expected ['skip_email'], got {ru_params}"
+    assert sig_ru.parameters["skip_email"].default is None, \
+        "skip_email must default to None (per AC1, AC4, AC6)"
 
 
 def test_2_4_unit_045_latest_screener_json_schema_15_fields(tmp_path, monkeypatch):

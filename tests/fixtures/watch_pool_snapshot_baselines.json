@@ -1,8 +1,8 @@
 {
-  "_comment": "SHA256 baselines for character-level frozen files (Story watch-pool-snapshot-2.2). Update only when a story explicitly modifies the corresponding file. scheduler.py rebaselined 2026-05-08 by Story dashboard-hits-table-display-2.4 — AC3 inserts an authorized enrich-helper block at line 535-552 (architect-approved) that does not touch any of Story 2.2's leader_feedback / daily_review / review.html scope.",
+  "_comment": "SHA256 baselines for character-level frozen files (Story watch-pool-snapshot-2.2). Update only when a story explicitly modifies the corresponding file. scheduler.py rebaselined 2026-05-08 by Story dashboard-hits-table-display-2.4 — AC3 inserts an authorized enrich-helper block at line 535-552 (architect-approved) that does not touch any of Story 2.2's leader_feedback / daily_review / review.html scope. Re-rebaselined 2026-05-08 by Story anti-duplicate-email-2.5 — AC1 adds skip_email parameter + _should_send_email/_in_927_window guard helpers; touches only run_screener_update signature + 8c email block (does not touch Story 2.2 scope).",
   "review.html": "209b33ecba0b5b17dac37772054e2137dd610c52766d685963e680dbc8317624",
   "main.py": "6f5224315dddcd9e6b10cc157056c1ca2a5bb015ced2ec50bf5142f87a866ee3",
-  "scheduler.py": "acbbae758038ea6bf5ab05451d0edee0cd0b2eaf41d91cf9794ca23a01ad77e6",
+  "scheduler.py": "481832cbdee69f16ad43f35ac27dfe66a36f279f423f663cc11d9e238906636b",
   "daily_review.py": "393cdcbcb19fa7007d7e569272d053e0531837d69865b071806dc5672b0c635c",
   "api_review_top_keys": [
     "concept_zt_stats",

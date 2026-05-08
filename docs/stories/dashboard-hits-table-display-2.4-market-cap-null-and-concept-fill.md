@@ -7,7 +7,7 @@ Story:
   id: dashboard-hits-table-display-2.4
   title: 看板今日选股表显示修复（市值空值不再渲染"亿" + 板块以"概念A/概念B (行业)"格式）
   epic: iteration-2 brownfield (virtual epic — 真源为 docs/prd/iteration-2-scope.md)
-  status: Review
+  status: InProgress
   mode: plan
   repository: monolith
   priority: P1
@@ -618,6 +618,7 @@ deliverable_bindings:
 | 2026-05-08 | Architect (Wright) | AwaitingArchReview → AwaitingTestDesign | Score: 8.5/10, 0 critical / 1 major (AC3 ranking_data 来源未在 Story 显式说明，已在本 Review T0.2 给出代码片段)；T0 决策：选项 A（新建 `src/engine/screener_concept_enrich.py`）；2 medium / 3 low 改进项已记录。HANDOFF 至 qa \*test-design。 |
 | 2026-05-08 | QA (Turing) | AwaitingTestDesign → TestDesignComplete → Approved | Test Design 完成（standard 层级，2-phase transition）。Test Design Doc: [docs/qa/assessments/dashboard-hits-table-display-2.4-test-design-20260508.md](../qa/assessments/dashboard-hits-table-display-2.4-test-design-20260508.md)；Test Skeleton: [tests/test_screener_display_2_4.py](../../tests/test_screener_display_2_4.py)（56 用例 / P0:23 P1:28 P2:5 / 18 BLIND-SPOT）。覆盖 AC1-AC5 全部 + Architect 1H/2M/3L 风险映射。回归基线锚点：99 邮件/决策测试 + send_screener_report/run_screener 签名 freeze。pytest --collect-only 验证 56 测试可被收集。HANDOFF 至 dev \*develop-story。 |
 | 2026-05-08 | Dev (Linus) | Approved → InProgress → Review | TDD 完整实施 5 个 AC（T0-T7）。新建 `src/engine/screener_concept_enrich.py`（Architect 选项 A）。修改 `src/engine/screener.py` (新增 `_safe_round` + 类型扩展)、`src/scheduler.py` (line 537-552 enrich 集成)、`src/static/index.html` (line 675 市值列 v-if + line 1512-1517 industryOf + line 1543-1548 topConceptsOf hit-first)。冻结 `tests/fixtures/screener_display_baselines.json` SHA baseline。修复 pre-existing Story 2.1 baseline drift (commit ba52314 引起，行号 505/595/657 → 541/631/694) + Story 2.2 scheduler.py SHA + collect count rebaseline。最终验收：tests/test_screener_display_2_4.py 56/56 + 邮件&决策回归 99/99 + Story 2.2 34/34 = 189 passed (含 -W error)。HANDOFF 至 qa \*review。 |
+| 2026-05-08 20:00 | QA (Turing) | Review → InProgress | Round 1 full review · Gate: **CONCERNS** · Tests: 50/56 own (89.3%) · Blind-spots: 18/18 (100%) · 4/5 ACs fully verified, AC5 partial-by-external-cause. **0 critical / 2 high / 2 medium**, ALL attributable to post-Story-2.4 drift (commits 37076ac + a037247 + uncommitted Story 2.5 scheduler.py). Story 2.4 implementation **functionally correct at HEAD**; user's reported display issues solved. Recommend Dev \*apply-qa-fixes for SHA256 fixture rebase + UNIT-044 relax. Gate: docs/qa/gates/dashboard-hits-table-display-2.4-market-cap-null-and-concept-fill.yml. HANDOFF 至 dev \*apply-qa-fixes. |
 
 ---
 
@@ -795,5 +796,37 @@ helper 必须容错 `ranking_data=None`（已在 BR-3.5 / Error Handling 表覆�
 
 ---
 
-## QA Results
-TBD（QA \*review 阶段填写）
+## QA Review
+
+- **Round**: 1
+- **Risk Level**: MEDIUM
+- **Review Mode**: automated_plus_spot_check
+- **Gate**: CONCERNS
+- **Tests**: 50/56 own (Story 2.4) automated · 0/0 E2E (skipped, no Playwright)
+- **Blind Spots**: 18/18 covered (100%) — BOUNDARY 7 / ERROR 6 / FLOW 3 / DATA 2
+- **Issues**: 0 critical / 2 high / 2 medium — **ZERO attributable to Story 2.4 implementation**
+- **Gate File**: `docs/qa/gates/dashboard-hits-table-display-2.4-market-cap-null-and-concept-fill.yml`
+- **Evidence**: `docs/qa/evidence/dashboard-hits-table-display-2.4/baseline-drift-evidence.md`
+
+### 核心结论
+
+Story 2.4 **实现完全正确**（5/5 AC 在 HEAD 功能性验证通过；50 个 substantive 测试全绿；
+18 个 blind-spot 全覆盖）。6 个 freeze-baseline 测试在 HEAD 失败的根因均在 Story 2.4 之外：
+
+| 失败测试 | 根因 | Story 2.4 是否过失 |
+|---|---|---|
+| UNIT-021/022/023/038 (4× SHA256) | 后续 commit `37076ac` + `a037247` 修改 index.html 引入"操作建议 + Modal"功能 | 否 |
+| UNIT-044 (signature freeze) | 未提交的 Story 2.5 工作给 `run_screener_update` 增 `skip_email` kwarg | 否 |
+| UNIT-042 (cascading) | Story 2.1/2.3 fixtures 同源漂移 + Story 2.3 实现尚未完成 | 否 |
+
+用户 2026-05-08 实盘反馈（市值"亿" + 板块缺概念）在 HEAD 已被 Story 2.4 实现解决：
+- AC1: `_safe_round` 收口 NaN/None/<=0 → None（screener.py:22, 232）
+- AC2: index.html:709 `v-if="hit.market_cap != null"` + `<template v-else>—</template>`
+- AC3: `enrich_screener_hits_with_concepts` (screener_concept_enrich.py + scheduler.py:565-580)
+- AC4: `industryOf` (line 1608) / `topConceptsOf` (line 1663) hit-first + ranking fallback
+
+### 推荐修复（Dev *apply-qa-fixes 阶段）
+
+1. Rebase `tests/fixtures/screener_display_baselines.json` 4 个 region SHA256 → 当前 HEAD index.html 状态
+2. 调整 UNIT-044 断言为 `params <= ['skip_email']`（保持 BR-5.1 精神：默认参数兼容旧 caller）
+3. 协调 Story 2.5 + Story 2.3 落定后做单次 bulk rebase，减少重复维护成本
