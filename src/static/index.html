@@ -763,6 +763,51 @@
             <div v-else class="empty-state">暂无结果，点击"执行选股"或等待9:27自动执行</div>
         </div>
 
+        <!-- ===== 昨日选股今日竞价（9:27 后 backfill 回填，仅当昨日有命中时显示） ===== -->
+        <div class="card full-width" v-if="yesterdaySelections.length">
+            <div class="card-title">
+                <span class="icon">⏪</span> 昨日选股今日竞价（{{ yesterdayDate }}）
+                <span style="margin-left:auto;font-size:11px;color:#6b7280;font-weight:400;">
+                    昨日 {{ yesterdaySelections.length }} 只 · 今日 9:27 竞价反馈
+                </span>
+            </div>
+            <table>
+                <thead><tr>
+                    <th>代码</th><th>名称</th><th>昨日板</th>
+                    <th>昨日竞价</th><th>昨日收盘</th><th>昨日 day%</th>
+                    <th>今日开盘</th><th>今日竞价 vs 昨收</th>
+                    <th>结果</th>
+                </tr></thead>
+                <tbody>
+                    <tr v-for="r in yesterdaySelections" :key="r.code">
+                        <td>{{ r.code }}</td>
+                        <td>{{ r.name }}</td>
+                        <td><b>{{ r.continuous_limit_up }}板</b></td>
+                        <td :class="(r.auction_gain||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                            {{ r.auction_gain != null ? ((r.auction_gain >= 0 ? '+' : '') + r.auction_gain + '%') : '-' }}
+                        </td>
+                        <td>{{ r.close_price ?? '-' }}</td>
+                        <td :class="(r.day_change||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                            {{ r.day_change != null ? ((r.day_change >= 0 ? '+' : '') + r.day_change + '%') : '-' }}
+                        </td>
+                        <td>{{ r.next_day_open ?? '—' }}</td>
+                        <td :class="r.next_day_auction_gain == null ? '' : (r.next_day_auction_gain >= 0 ? 'gain-pos' : 'gain-neg')">
+                            <b v-if="r.next_day_auction_gain != null">{{ (r.next_day_auction_gain >= 0 ? '+' : '') + r.next_day_auction_gain }}%</b>
+                            <span v-else style="color:#6b7280;">⏳ 等待 9:27</span>
+                        </td>
+                        <td>
+                            <span v-if="r.next_day_auction_gain == null" style="color:#6b7280;font-size:11px;">—</span>
+                            <span v-else-if="r.next_day_auction_gain >= 5" class="tag" style="background:#3b0a0a;color:#ef4444;padding:1px 6px;border-radius:4px;font-size:11px;">🚀 强高开</span>
+                            <span v-else-if="r.next_day_auction_gain >= 2" class="tag" style="background:#2a1f0a;color:#fbbf24;padding:1px 6px;border-radius:4px;font-size:11px;">↑ 高开</span>
+                            <span v-else-if="r.next_day_auction_gain >= 0" class="tag" style="background:#1a1a2e;color:#a0aec0;padding:1px 6px;border-radius:4px;font-size:11px;">→ 平开</span>
+                            <span v-else-if="r.next_day_auction_gain >= -3" class="tag" style="background:#0a2a1a;color:#10b981;padding:1px 6px;border-radius:4px;font-size:11px;">↓ 低开</span>
+                            <span v-else class="tag" style="background:#0a3a1a;color:#34d399;padding:1px 6px;border-radius:4px;font-size:11px;">⛔ 深水</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
         <!-- ===== K 线图 Modal ===== -->
         <div v-if="klineModal.open" class="kline-modal-mask" @click="closeKline">
             <div class="kline-modal" @click.stop>
@@ -1144,6 +1189,24 @@ createApp({
         const sentiment = ref({})
         const market = ref(null)
         const screenerHits = ref([])
+        const screenerHistory = ref([])
+
+        // 昨日选股 + 今日竞价表（9:27 后 backfill_next_day_auction 回填 next_day_*）
+        // 取 history 中最近一个 < today 的日期；若无数据返回空数组（前端不渲染卡片）
+        const yesterdaySelections = computed(() => {
+            const list = screenerHistory.value || []
+            if (!list.length) return []
+            const todayISO = new Date().toISOString().slice(0, 10)
+            const dates = [...new Set(list.map(r => r.date).filter(d => d && d < todayISO))]
+            if (!dates.length) return []
+            dates.sort()
+            const ysd = dates[dates.length - 1]
+            return list.filter(r => r.date === ysd)
+        })
+        const yesterdayDate = computed(() => {
+            const arr = yesterdaySelections.value
+            return arr.length ? arr[0].date : ''
+        })
         const screenerDate = ref('')
         const signals = ref([])
         const leader = ref({})
@@ -1780,7 +1843,7 @@ createApp({
 
         async function loadData() {
             try {
-                const [snapRes, rankRes, scrRes, sigRes, leaderRes, devRes, sentRes, scoreRes, adviceRes] = await Promise.all([
+                const [snapRes, rankRes, scrRes, sigRes, leaderRes, devRes, sentRes, scoreRes, adviceRes, histRes] = await Promise.all([
                     fetch('/api/snapshot').then(r => r.json()),
                     fetch('/api/gain-ranking').then(r => r.json()),
                     fetch('/api/screener').then(r => r.json()),
@@ -1790,6 +1853,7 @@ createApp({
                     fetch('/api/sentiment').then(r => r.json()),
                     fetch('/api/auction-scores').then(r => r.json()),
                     fetch('/api/daily-advice').then(r => r.json()),
+                    fetch('/api/screener-history').then(r => r.json()).catch(() => ({ records: [] })),
                 ])
                 snapshot.value = snapRes
                 ranking.value = rankRes.ranking || []
@@ -1804,6 +1868,7 @@ createApp({
                 advice.value = adviceRes
                 deviations.value = devRes.results || []
                 auctionScores.value = Array.isArray(scoreRes) ? scoreRes : []
+                screenerHistory.value = histRes?.records || []
             } catch (e) { console.error('加载数据失败:', e) }
             if (isTradingTime()) loadRankingLive()
         }
@@ -2088,6 +2153,7 @@ createApp({
         return {
             snapshot, ranking, rankingUpdatedAt, rankingLive, sentiment, market,
             screenerHits, screenerDate, signals,
+            screenerHistory, yesterdaySelections, yesterdayDate,
             leader, leaderList, mainBoardLeadersGroup,
             ydayAvg, ydayAvgVerdict, ydayAvgClass, ydayAvgBadge, yZbAvg, yLdAvg,
             relayIndexInfo, relayIndex, relayIndexPrev, relayIndexClass, relayVerdictColor, relayIndexTooltip,
