@@ -7,7 +7,7 @@ Story:
   id: dashboard-hits-table-display-2.4
   title: 看板今日选股表显示修复（市值空值不再渲染"亿" + 板块以"概念A/概念B (行业)"格式）
   epic: iteration-2 brownfield (virtual epic — 真源为 docs/prd/iteration-2-scope.md)
-  status: InProgress
+  status: Done
   mode: plan
   repository: monolith
   priority: P1
@@ -619,6 +619,9 @@ deliverable_bindings:
 | 2026-05-08 | QA (Turing) | AwaitingTestDesign → TestDesignComplete → Approved | Test Design 完成（standard 层级，2-phase transition）。Test Design Doc: [docs/qa/assessments/dashboard-hits-table-display-2.4-test-design-20260508.md](../qa/assessments/dashboard-hits-table-display-2.4-test-design-20260508.md)；Test Skeleton: [tests/test_screener_display_2_4.py](../../tests/test_screener_display_2_4.py)（56 用例 / P0:23 P1:28 P2:5 / 18 BLIND-SPOT）。覆盖 AC1-AC5 全部 + Architect 1H/2M/3L 风险映射。回归基线锚点：99 邮件/决策测试 + send_screener_report/run_screener 签名 freeze。pytest --collect-only 验证 56 测试可被收集。HANDOFF 至 dev \*develop-story。 |
 | 2026-05-08 | Dev (Linus) | Approved → InProgress → Review | TDD 完整实施 5 个 AC（T0-T7）。新建 `src/engine/screener_concept_enrich.py`（Architect 选项 A）。修改 `src/engine/screener.py` (新增 `_safe_round` + 类型扩展)、`src/scheduler.py` (line 537-552 enrich 集成)、`src/static/index.html` (line 675 市值列 v-if + line 1512-1517 industryOf + line 1543-1548 topConceptsOf hit-first)。冻结 `tests/fixtures/screener_display_baselines.json` SHA baseline。修复 pre-existing Story 2.1 baseline drift (commit ba52314 引起，行号 505/595/657 → 541/631/694) + Story 2.2 scheduler.py SHA + collect count rebaseline。最终验收：tests/test_screener_display_2_4.py 56/56 + 邮件&决策回归 99/99 + Story 2.2 34/34 = 189 passed (含 -W error)。HANDOFF 至 qa \*review。 |
 | 2026-05-08 20:00 | QA (Turing) | Review → InProgress | Round 1 full review · Gate: **CONCERNS** · Tests: 50/56 own (89.3%) · Blind-spots: 18/18 (100%) · 4/5 ACs fully verified, AC5 partial-by-external-cause. **0 critical / 2 high / 2 medium**, ALL attributable to post-Story-2.4 drift (commits 37076ac + a037247 + uncommitted Story 2.5 scheduler.py). Story 2.4 implementation **functionally correct at HEAD**; user's reported display issues solved. Recommend Dev \*apply-qa-fixes for SHA256 fixture rebase + UNIT-044 relax. Gate: docs/qa/gates/dashboard-hits-table-display-2.4-market-cap-null-and-concept-fill.yml. HANDOFF 至 dev \*apply-qa-fixes. |
+| 2026-05-08 22:05 | QA (Turing) | Done (committed) | Git commit `f42052b` — Round 2 PASS gate + fixture rebase + Story 2.4 Done finalized. 3 files: story md + screener_display_baselines.json + gate yml. |
+| 2026-05-08 22:00 | QA (Turing) | Review → Done | Round 2 incremental review · Gate: **PASS** · Tests: 55/56 own (98.2%) · all 5 must_fix HIGHs from Round 1 RESOLVED (UNIT-021/022/023/038 SHA256 + UNIT-044 signature). 0c / 0h / 1m / 0l. AC5 PARTIAL → VERIFIED (BR-5.1 forward-compatible + BR-5.4 fixture aligned). Sole red: UNIT-042 cascade (Story 1.1 test_email_decision_alignment::test_1_1_int_001 functional regression `仓位—↛仓位1.5层` + Story 2.1 line-range drift) — out of Story 2.4 scope per Round 1 monitor classification. Gate: docs/qa/gates/dashboard-hits-table-display-2.4-market-cap-null-and-concept-fill.yml. HANDOFF 至 sm \*draft 2.5. |
+| 2026-05-08 21:30 | Dev (Linus) | InProgress → Review | **Applied QA review round 1 fixes (apply-qa-fixes).** must_fix items completed: (1) Rebased `tests/fixtures/screener_display_baselines.json` 4 region SHA256 → current HEAD `src/static/index.html` state (table_header 692-703 / before_board 706-717 / board_column 719-727 / after_board 728-760); content of before_board + board_column unchanged (only line numbers shifted), table_header + after_board content drifted from 决策↔操作 column-order swap (commit 37076ac) + decision-cell HTML rewrite (commit a037247). (2) UNIT-044 already passes at HEAD — `tests/test_screener_display_2_4.py:771` expects `['skip_email']` and `src/scheduler.py:353` defines `def run_screener_update(skip_email: bool \| None = None)` (Story 2.5 work now committed in current HEAD context). HEAD-state own-suite retest: **55/56 passed** (UNIT-021/022/023/038/044 all green). UNIT-042 cascading failure left as canary per QA gate `monitor` recommendation: 3 failing subprocess tests are Story 1.1 `test_email_decision_alignment` (functional regression: 仓位 — vs 1.5层 — out of Story 2.4 scope) + Story 2.1 `test_decision_consistency` × 2 (line-range baseline drift — same root cause as 2.4's own SHA drift, fix belongs to Story 2.1 maintainer). HANDOFF 至 qa \*review. |
 
 ---
 
@@ -642,6 +645,39 @@ deliverable_bindings:
 7. **Pre-existing baseline drift 修复**：检测并修正 commit ba52314 引入的 Story 2.1 `tests/notify/fixtures/index_template_baseline.json` 行号漂移（505/595/657 → 541/631/694），断言内容字符级不变；同步更新 Story 2.2 sister 项目 `tests/fixtures/watch_pool_snapshot_baselines.json` scheduler.py SHA + collect count。
 
 最终：56/56 Story 2.4 测试 + 99/99 邮件&决策回归 + 34/34 Story 2.2 = **189 passed**（含 -W error 严格模式）。
+
+### QA Review Round 1 — apply-qa-fixes (2026-05-08 21:30)
+
+**Based on QA review round 1.** Round 1 gate file: `docs/qa/gates/dashboard-hits-table-display-2.4-market-cap-null-and-concept-fill.yml` (CONCERNS, 0 critical / 2 high / 2 medium, 0 attributable to Story 2.4 implementation).
+
+**must_fix items applied:**
+
+1. **UNIT-021/022/023/038 SHA256 drift (HIGH) — RESOLVED.** Rebased `tests/fixtures/screener_display_baselines.json` 4 regions to current HEAD `src/static/index.html` state:
+   - `table_header`: 649-660 → **692-703** (SHA `b3ae3e26…` → `0771256c…`) — content drifted: 决策/操作 column-order swap (commit `37076ac`)
+   - `before_board`: 663-674 → **706-717** (SHA `262bb02a…` unchanged) — line numbers only
+   - `board_column`: 676-684 → **719-727** (SHA `c640876d…` unchanged) — line numbers only
+   - `after_board`: 685-717 → **728-760** (SHA `2500703a…` → `8f4e1604…`) — content drifted: column-swap + decision-cell HTML rewrite (commit `a037247`)
+   - Added `_rebase_history` audit array to fixture for future drift traceability
+2. **UNIT-044 signature drift (HIGH) — VERIFIED RESOLVED at HEAD.** No code change needed: test file (line 771) already asserts `ru_params == ["skip_email"]` and `src/scheduler.py:353` already defines `def run_screener_update(skip_email: bool | None = None) -> dict`. Test passes deterministically at HEAD.
+
+**monitor items (out of Story 2.4 scope per gate guidance):**
+
+- **UNIT-042 cascading regression** — left as canary. Subprocess runs 3 tests/notify/* files (99 total tests); 3 fail at HEAD all from external story drift:
+  - `test_email_decision_alignment.py::test_1_1_int_001_subject_renders_position_short_15` — Story 1.1 functional regression (email subject renders `仓位—` instead of `仓位1.5层`); not a fixture rebase, real bug introduced by external work.
+  - `test_decision_consistency.py::test_2_1_int_005_template_html_unchanged_in_lines_505_to_666` — Story 2.1 line-range baseline drift (post-2.4 commits added new lines); same root cause as Story 2.4's own SHA drift, fix belongs to Story 2.1 maintainer.
+  - `test_decision_consistency.py::test_2_1_int_015_dashboard_template_html_unchanged_vs_baseline` — same as above (lines 541-545).
+  - QA gate explicitly classifies these as `monitor` (not `must_fix`) and notes "Story 2.4 不应作为级联依赖宿主". Test left intact (test integrity sacred — no weakening).
+
+**HEAD-state retest results:**
+
+```
+$ python3 -m pytest tests/test_screener_display_2_4.py -q
+55 passed, 1 failed in 0.95s
+```
+
+- 5 must_fix tests verified individually: **UNIT-021, UNIT-022, UNIT-023, UNIT-038, UNIT-044** — all PASS (5/5).
+- UNIT-042 (cascading) remains red — by design per gate `monitor` classification.
+- Net: gate's `must_fix` 100% complete; `monitor` deferred to Story 2.1 / Story 1.1 ownership.
 
 ### Database Changes (Structured)
 ```yaml
@@ -669,6 +705,7 @@ deliverable_bindings:
 - `tests/notify/fixtures/index_template_baseline.json` — keys lines_505_509 → lines_541_545 等（同上）
 - `tests/fixtures/watch_pool_snapshot_baselines.json` — scheduler.py SHA 940936... → acbbae758...（rebaseline 反映 AC3 授权改动）
 - `tests/test_review_watch_pool_snapshot.py` — line 566 EXPECTED_TOTAL 133 → 232（含 Story 2.4 + 2.3 平行开发）
+- **`tests/fixtures/screener_display_baselines.json`** *(modified during QA round 1 apply-qa-fixes — rebase only, no semantic change)* — 4 regions rebased to HEAD line ranges (table_header 649-660→692-703 + before_board 663-674→706-717 + board_column 676-684→719-727 + after_board 685-717→728-760); table_header + after_board SHA256 also updated to reflect post-2.4 commits 37076ac + a037247; before_board + board_column SHA256 unchanged (content stable); added `_rebase_history` audit array.
 
 **Created**:
 - `src/engine/screener_concept_enrich.py` — 161 行新模块（4 cache loaders + 主 enrich 函数）
@@ -798,15 +835,22 @@ helper 必须容错 `ranking_data=None`（已在 BR-3.5 / Error Handling 表覆�
 
 ## QA Review
 
-- **Round**: 1
-- **Risk Level**: MEDIUM
-- **Review Mode**: automated_plus_spot_check
-- **Gate**: CONCERNS
-- **Tests**: 50/56 own (Story 2.4) automated · 0/0 E2E (skipped, no Playwright)
-- **Blind Spots**: 18/18 covered (100%) — BOUNDARY 7 / ERROR 6 / FLOW 3 / DATA 2
-- **Issues**: 0 critical / 2 high / 2 medium — **ZERO attributable to Story 2.4 implementation**
+- **Round**: 2
+- **Risk Level**: MEDIUM (cached from Round 1)
+- **Review Mode**: automated_plus_spot_check (incremental)
+- **Gate**: PASS
+- **Tests**: 55/56 own (Story 2.4) — 98.2% pass rate
+- **Blind Spots**: 18/18 covered (100%) — cached from Round 1
+- **Issues**: 0 critical / 0 high / 1 medium / 0 low
+- **Resolved from Round 1**: 2 HIGH (UNIT-021/022/023/038 SHA256 + UNIT-044 signature) + 1 MEDIUM (dev-claim-stale)
+- **Remaining (monitor)**: UNIT-042 cascade (Story 1.1 + 2.1 ownership; explicitly not Story 2.4's blocker per Round 1 guidance)
 - **Gate File**: `docs/qa/gates/dashboard-hits-table-display-2.4-market-cap-null-and-concept-fill.yml`
 - **Evidence**: `docs/qa/evidence/dashboard-hits-table-display-2.4/baseline-drift-evidence.md`
+
+### Round 1 (Historical)
+
+- Round: 1 · Gate: CONCERNS · Tests: 50/56 · Issues: 0c / 2h / 2m
+- Outcome: handed off to Dev *apply-qa-fixes; all must_fix items closed in Round 2.
 
 ### 核心结论
 

@@ -1,32 +1,41 @@
 {
-  "_comment": "SHA256 baselines for character-level frozen regions of src/static/index.html (Story dashboard-hits-table-display-2.4). Update only when story explicitly modifies the corresponding region. The market-cap cell at line 675 is intentionally NOT included — it is the single change point of this story (BR-2.1 v-if/v-else).",
+  "_comment": "SHA256 baselines for character-level frozen regions of src/static/index.html (Story dashboard-hits-table-display-2.4). Update only when story explicitly modifies the corresponding region. The market-cap cell at line 718 is intentionally NOT included — it is the single change point of this story (BR-2.1 v-if/v-else).",
+  "_rebase_history": [
+    {
+      "date": "2026-05-08",
+      "round": "QA round 1 — apply-qa-fixes",
+      "reason": "Post-2.4 commits 37076ac (操作列日K按钮左对齐) + a037247 (操作建议 1进2 否决) modified index.html: column order swap (决策↔操作) + decision cell HTML rewrite. before_board / board_column content unchanged (line numbers only shifted). table_header / after_board content drifted.",
+      "regions_drifted": ["table_header", "after_board"],
+      "regions_line_only_shifted": ["before_board", "board_column"]
+    }
+  ],
   "frozen_at": "2026-05-08",
   "story": "dashboard-hits-table-display-2.4",
   "source_file": "src/static/index.html",
   "regions": {
     "table_header": {
-      "start": 649,
-      "end": 660,
-      "description": "Screener-table <th> header rows (12 columns)",
-      "sha256": "b3ae3e263be806633467771a187d2d2ea0426e097f8fef07164d7820dad6c843"
+      "start": 692,
+      "end": 703,
+      "description": "Screener-table <th> header rows (12 columns) — current order: 代码/名称/价格/涨幅/竞价涨幅/市值/板块/连板/10日涨幅/周期股/操作/决策 (post-37076ac column swap)",
+      "sha256": "0771256c4bf1248dff82c578dadb0355272a4b8960189b078b41c5b0ff18f041"
     },
     "before_board": {
-      "start": 663,
-      "end": 674,
+      "start": 706,
+      "end": 717,
       "description": "tr-open + first 5 columns (代码 / 名称 / 价格 / 涨幅 / 竞价涨幅) — frozen by BR-2.2",
       "sha256": "262bb02a738e59c70b27b100a2ecab88e484f504441201d124cda6f358cfc021"
     },
     "board_column": {
-      "start": 676,
-      "end": 684,
+      "start": 719,
+      "end": 727,
       "description": "板块列 td (v-if/v-else template) — frozen by BR-2.3 / BR-4.3 (only helper bodies move)",
       "sha256": "c640876d13883d935df765928cf98ca52d0d066a2448c00363f25b72c276cde9"
     },
     "after_board": {
-      "start": 685,
-      "end": 717,
-      "description": "Last 5 columns (连板 / 10日涨幅 / 周期股 / 决策 / 操作) + closing </tr> — frozen by BR-2.2",
-      "sha256": "2500703a763ac31f9c888ed9c5741134aa48f7307615949410a2897112883edc"
+      "start": 728,
+      "end": 760,
+      "description": "Last 5 columns (连板 / 10日涨幅 / 周期股 / 操作 / 决策) + closing </tr> — frozen by BR-2.2 (decision-cell HTML rewritten by a037247 1进2否决 commit; column order swap by 37076ac)",
+      "sha256": "8f4e160465cdad679204635873e922853a5306ceb2207d444cadbcae9c22391e"
     }
   }
 }
