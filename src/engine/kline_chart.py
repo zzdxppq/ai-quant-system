@@ -553,6 +553,30 @@ def analyze_stock_action(
     b1_rate = float(market_ctx.get("b1_rate") or 0)
     phase = str(market_ctx.get("attack_phase") or "")
 
+    # ── 硬性否决：1进2 成功率 < 20% → 直接空仓 ──
+    # 主板 2 板以上接力策略，1进2 是新进资金动能的核心指标，
+    # 低于 20% 表示接力赚钱效应已枯竭，无论双线突破或板块多强都不开仓。
+    if b1_rate > 0 and b1_rate < 20:
+        reversal = (
+            f"1进2 成功率回升 ≥ 20%（当前 {b1_rate:.1f}%）；"
+            "且板块集中度 ≥ 30% + 个股保持双线之上"
+        )
+        out.update({
+            "operable": False,
+            "position": "空仓",
+            "buy_condition": "禁止开仓（1进2 成功率不足，接力生态枯竭）",
+            "stop_loss": "—",
+            "reversal_condition": reversal,
+            "summary": (
+                f"1进2 成功率 {b1_rate:.1f}% < 20%，主板 2 板以上接力策略硬性禁止开仓；"
+                f"逆转条件：{reversal}"
+            ),
+            "bonus_notes": [],
+            "penalty_notes": [f"1进2 仅 {b1_rate:.1f}%（< 20% 硬性否决）"],
+            "veto_b1": True,
+        })
+        return out
+
     # 加分
     bonus = 0
     bonus_notes: list[str] = []
@@ -623,6 +647,21 @@ def analyze_stock_action(
     else:
         stop_loss = "跌破今日开盘价 -3% 即清仓"
 
+    # ── 逆转条件（空仓时给出，非硬性否决场景）──
+    reversal: Optional[str] = None
+    if not operable:
+        missing = []
+        if not above_qiba: missing.append("起拔线")
+        if not above_mixian: missing.append("秘线")
+        bits = []
+        if missing:
+            bits.append("个股突破" + " + ".join(missing))
+        if concentration < 30:
+            bits.append(f"板块集中度回升 ≥ 30%（当前 {concentration:.0f}%）")
+        if lb_index <= 0:
+            bits.append("昨日连板指数 > 0")
+        reversal = "；".join(bits) if bits else "市场环境改善 + 量能配合"
+
     # ── 一句话总结 ────────────────────────────────
     if operable and above_both:
         summary = (
@@ -642,15 +681,19 @@ def analyze_stock_action(
             summary = "未突破起拔线 + 秘线，主动攻击信号缺失，空仓观察"
         else:
             summary = f"双线未同时突破 + 市场环境偏弱（{phase or '未知'}），空仓回避"
+        if reversal:
+            summary += f"；逆转条件：{reversal}"
 
     out.update({
         "operable": operable,
         "position": position,
         "buy_condition": buy_condition,
         "stop_loss": stop_loss,
+        "reversal_condition": reversal,
         "summary": summary,
         "bonus_notes": bonus_notes,
         "penalty_notes": penalty_notes,
+        "veto_b1": False,
     })
     return out
 

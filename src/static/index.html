@@ -816,7 +816,11 @@
                                 <div class="ka-row"><span class="ka-label">是否可操作</span><span class="ka-val" :class="klineModal.analysis.operable ? 'pos' : 'neg'">{{ klineModal.analysis.operable ? '✅ 是' : '⛔ 否' }}</span></div>
                                 <div class="ka-row"><span class="ka-label">建议仓位</span><span class="ka-val pos">{{ klineModal.analysis.position }}</span></div>
                                 <div class="ka-row"><span class="ka-label">买入条件</span><span class="ka-val" style="font-size:11px;">{{ klineModal.analysis.buy_condition }}</span></div>
-                                <div class="ka-row"><span class="ka-label">止损位</span><span class="ka-val warn" style="font-size:11px;">{{ klineModal.analysis.stop_loss }}</span></div>
+                                <div class="ka-row" v-if="klineModal.analysis.stop_loss && klineModal.analysis.stop_loss !== '—'"><span class="ka-label">止损位</span><span class="ka-val warn" style="font-size:11px;">{{ klineModal.analysis.stop_loss }}</span></div>
+                                <div class="ka-row" v-if="!klineModal.analysis.operable && klineModal.analysis.reversal_condition">
+                                    <span class="ka-label">逆转条件</span>
+                                    <span class="ka-val" style="font-size:11px;color:#fbbf24;">⏳ {{ klineModal.analysis.reversal_condition }}</span>
+                                </div>
                             </div>
 
                             <div class="ka-section" v-if="(klineModal.analysis.bonus_notes||[]).length || (klineModal.analysis.penalty_notes||[]).length">
