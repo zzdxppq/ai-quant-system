@@ -70,6 +70,31 @@ def run_screener(
     if not qualified_codes:
         return []
 
+    # Step 1.5: 定向补齐缺失候选行情
+    # 背景：东方财富 clist 默认只返回涨幅前 100 只，二连板候选大多落在 100 名外（不在 realtime_df 中），
+    # 导致 Step 2 遍历时 0 命中。这里只对"qualified 但缺行情"的 ~N 只调用新浪批量接口补齐，
+    # 比拉全市场 5200 只快照节省 ~99% 数据源压力。
+    # 字段差异：新浪批量缺 turnover / market_cap / volume_ratio，
+    # Step 2 对这些字段已是"有值才过滤、无值放行"的软处理，不影响准入逻辑。
+    if not realtime_df.empty and "code" in realtime_df.columns:
+        existing_codes = set(realtime_df["code"].astype(str))
+    else:
+        existing_codes = set()
+    missing_codes = [c for c in qualified_codes if c not in existing_codes]
+    if missing_codes:
+        try:
+            from src.data.fetcher import fetch_realtime_batch
+            patch_df = fetch_realtime_batch(missing_codes)
+            if not patch_df.empty:
+                realtime_df = pd.concat(
+                    [realtime_df, patch_df], ignore_index=True, sort=False,
+                )
+                print(f"  [screener] 定向补齐 {len(patch_df)}/{len(missing_codes)} 只候选行情")
+            else:
+                print(f"  [screener] 定向补齐 0/{len(missing_codes)}（新浪返回空）")
+        except Exception as e:
+            print(f"  [screener] 定向补齐失败: {e}")
+
     # Step 2: 从实时行情中筛选
     results = []
     for _, row in realtime_df.iterrows():
