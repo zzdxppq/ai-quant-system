@@ -257,6 +257,8 @@
             letter-spacing: 0.5px;
         }
         .hm-cell.hm-primary .hm-value { font-size: 26px; }
+        /* 文字定性单元（昨日连板高标竞价等）— 文字本身比数字占位多，单独缩小 */
+        .hm-cell.hm-primary .hm-value.lb-state { font-size: 17px; line-height: 1.3; }
 
         /* 参考项（后 3 个）：淡化 + 与重点项之间加分隔线 */
         .hm-cell.hm-secondary {
@@ -621,7 +623,7 @@
                     </div>
                     <div class="hm-cell hm-primary">
                         <div class="hm-label">昨日连板高标竞价</div>
-                        <div class="hm-value" :class="lianbanLeaderState.cls"
+                        <div class="hm-value lb-state" :class="lianbanLeaderState.cls"
                              :title="lianbanLeaderState.detail">
                             {{ lianbanLeaderState.icon }} {{ lianbanLeaderState.label }}
                         </div>
@@ -1401,11 +1403,12 @@ createApp({
                 `${x.leader_name}(${x.board_count || x.leader_gain_10d}板) ${x.auction_change_pct >= 0 ? '+' : ''}${x.auction_change_pct}%`
             ).join(' · ')
 
-            if (limitDown.length) return { label: '弱(跌停)', cls: 'hm-bad', icon: '🛑', detail: detailNames }
-            if (negative.length) return { label: '弱', cls: 'hm-bad', icon: '🌧️', detail: detailNames }
-            if (strong.length === list.length) return { label: '强', cls: 'hm-good', icon: '🚀', detail: detailNames }
-            if (strong.length || positive.length) return { label: '一般', cls: 'hm-ok', icon: '☁️', detail: detailNames }
-            return { label: '一般', cls: 'hm-ok', icon: '☁️', detail: detailNames }
+            // A股惯例：弱→绿，一般→黄，强→红
+            if (limitDown.length) return { label: '弱(跌停)', cls: 'hm-bad', icon: '🟢', detail: detailNames }
+            if (negative.length) return { label: '弱', cls: 'hm-bad', icon: '🟢', detail: detailNames }
+            if (strong.length === list.length) return { label: '强', cls: 'hm-good', icon: '🔴', detail: detailNames }
+            if (strong.length || positive.length) return { label: '一般', cls: 'hm-ok', icon: '🟡', detail: detailNames }
+            return { label: '一般', cls: 'hm-ok', icon: '🟡', detail: detailNames }
         })
 
         // 当日操作建议 — 读 9:27 决策快照 latest_advice.json (decision-consistency-2.1)
