@@ -7,7 +7,7 @@ Story:
   id: data-dir-import-fix-1.1
   title: email_sender.py fallback 路径 import 修复（DATA_DIR / json）
   epic: data-dir-import-fix (brownfield, virtual epic — 真源为 docs/prd/iteration-data-dir-import-fix-scope.md)
-  status: Review
+  status: Done
   mode: quick
   repository: monolith
   priority: P2
@@ -323,6 +323,7 @@ deliverable_bindings:
 | 2026-05-08 | SM | (new) → Approved | Brownfield 单 Story 起草（quick mode）；衍生自 email-sync-1.1 QA review observation；root cause analysis 修正 scope 归因（首次引入是 `45baa67`，非 `bbe8c16`）；scope 文件 [docs/prd/iteration-data-dir-import-fix-scope.md](../prd/iteration-data-dir-import-fix-scope.md) 作为真源；偏离标准流程 8 条沿用 email-sync-1.1 已确认偏差；test_design_level=skip（用户指令） |
 | 2026-05-08 | Dev | Approved → InProgress | Quick development started（Linus / Opus 4.7 1M） |
 | 2026-05-08 | Dev | InProgress → Review | T1 import 修复（`import json` + `from src.config import DATA_DIR, now_cn`）+ T2 新增 5 个 fallback 测试（test_email_fallback_industry_concept.py）+ T3 回归 51/51 全绿（46 baseline + 5 new，-W error 0 warning）+ send_screener_report 签名零变更 |
+| 2026-05-08 | QA | Review → Done | Quick-verify 通过：AC1 静态核验（py_compile + 模块 import smoke）+ AC2/AC3/AC4 联合测试 51/51 PASSED -W error 0 warning + send_screener_report 签名字符级保持。Gate=PASS（LOW risk, automated_only），见 [docs/qa/gates/data-dir-import-fix-1.1-email-sender-fallback-import-fix.yml](../qa/gates/data-dir-import-fix-1.1-email-sender-fallback-import-fix.yml) |
 
 ---
 
@@ -333,8 +334,8 @@ deliverable_bindings:
 | Dev | Linus (Claude Opus 4.7, 1M context) |
 | Files | `src/notify/email_sender.py` (imports +2 lines), `tests/notify/test_email_fallback_industry_concept.py` (new, 5 tests) |
 | Tests | Pass (51/51 in `tests/notify/`, `-W error` clean) |
-| QA | - (handoff: `*quick-verify data-dir-import-fix-1.1`) |
-| Commit | (pending — committed as part of this Dev handoff) |
+| QA | Verified 2026-05-08 by Turing (gate=PASS, LOW risk, automated_only) |
+| Commit | 8ab7abf (Dev) + (pending QA finalize-commit) |
 
 ---
 

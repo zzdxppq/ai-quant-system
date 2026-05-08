@@ -1,0 +1,134 @@
+schema: 1
+story: "data-dir-import-fix-1.1"
+story_title: "email_sender.py fallback 路径 import 修复（DATA_DIR / json）"
+gate: PASS
+status_reason: |
+  Quick-mode trivial 修复（仅 +1 行 import json + 1 行合并 from src.config import
+  DATA_DIR, now_cn）。AC1 静态核验通过；AC2/AC3 fallback 主路径与降级路径 5 个新
+  测试全绿；AC4 现有 46 baseline 测试零回归；51/51 passed -W error 0 warning；
+  send_screener_report 签名字符级保持。Root cause（commit 45baa67 起 8 天 dead-code）
+  根除。
+reviewer: "Turing (Test Engineer)"
+updated: "2026-05-08T11:30:00+08:00"
+
+review_round: 1
+review_mode_type: full
+issues_from_previous_round: 0
+issues_resolved: 0
+improvement_percentage: 0
+
+incremental_context:
+  cached_risk_level: LOW
+  cached_review_mode: automated_only
+  cached_project_type: web_backend
+  failed_acs: []
+  failed_e2e_scenarios: []
+  missing_blind_spots: []
+  checkbox_issues: []
+
+waiver: { active: false }
+
+architecture_concern: false
+escalation_reason: ""
+
+top_issues: []
+
+test_results:
+  automated:
+    executed: true
+    passed: true
+    total: 51
+    passed_count: 51
+    failed_count: 0
+    skipped_count: 0
+    pass_rate: 100
+    coverage_percentage: 100  # 4/4 ACs with code+test traceability
+    failed_tests: []
+    breakdown:
+      fallback_new: 5     # tests/notify/test_email_fallback_industry_concept.py
+      baseline_regression: 46  # tests/notify/test_email_decision_alignment.py
+    strict_mode_passed: true  # -W error 0 warning
+    test_command: "pytest tests/notify/test_email_fallback_industry_concept.py tests/notify/test_email_decision_alignment.py -W error"
+  e2e:
+    executed: false
+    passed: true
+    skipped: true
+    skip_reason: "Quick mode + LOW risk（trivial 1 行 import 修复，无函数体变更）；fallback 路径单测已直接验证 HTML 渲染输出，等价覆盖。"
+    scenarios_tested: 0
+    scenarios_passed: 0
+    scenarios_failed: 0
+    console_errors_found: false
+    network_errors_found: false
+
+evidence:
+  directory: ""  # No issues found
+  issues: []
+
+risk_assessment:
+  risk_level: LOW
+  review_mode: automated_only
+  complexity_count: 0  # trivial：纯 import 加法，函数体零变更
+  security_sensitive: false
+  dev_gate_score: 100  # 51/51 + 0 warning + 签名零变更 + 模块导入 smoke 通过
+
+risk_summary:
+  totals: { critical: 0, high: 0, medium: 0, low: 0 }
+  recommendations:
+    must_fix: []
+    monitor: []
+
+ac_verification:
+  - ac_id: AC1
+    title: "Import 完整性"
+    verification_type: static_check
+    status: verified
+    evidence:
+      - "src/notify/email_sender.py:19 → `import json` (标准库分组、字母序 json < os ✓)"
+      - "src/notify/email_sender.py:25 → `from src.config import DATA_DIR, now_cn` (合并同源、字母序 DATA_DIR < now_cn ✓)"
+      - "python3 -c 'from src.notify.email_sender import _build_html, DATA_DIR, json' → import_ok"
+      - "python3 -m py_compile src/notify/email_sender.py → py_compile_ok"
+      - "BR-1.1（仅追加）/ BR-1.2（合并同源）/ BR-1.3（字母序）全部满足"
+  - ac_id: AC2
+    title: "Fallback 路径走通（industry_cache.json）"
+    verification_type: unit_test
+    status: verified
+    evidence:
+      - "test_ac2_industry_cache_fallback_renders_real_industry → PASSED（主路径：mock DATA_DIR + 写 cache → HTML 含 '白酒'）"
+      - "test_ac2_industry_cache_missing_degrades_to_dash → PASSED（BR-2.1 降级：无 cache → 不抛错 + '-' 占位）"
+      - "test_ac2_ranking_industry_overrides_cache_fallback → PASSED（BR-2.2 ranking 优先级覆盖 cache fallback）"
+  - ac_id: AC3
+    title: "Fallback 路径走通（limit_up_cache.json → top_concepts）"
+    verification_type: unit_test
+    status: verified
+    evidence:
+      - "test_ac3_limit_up_cache_fallback_renders_top_concepts → PASSED（主路径：limit_up_cache + load_stock_to_concepts mock → 概念列含 '白酒'）"
+      - "test_ac3_limit_up_cache_missing_degrades_silently → PASSED（BR-3.1 降级：无 cache → 不抛错 + 概念位降级）"
+  - ac_id: AC4
+    title: "不引入回归"
+    verification_type: regression_baseline
+    status: verified
+    evidence:
+      - "tests/notify/test_email_decision_alignment.py: 46/46 PASSED -W error 0 warning"
+      - "tests/notify/ 整体目录 51/51 PASSED in 0.08s"
+      - "send_screener_report 签名字符级保持（Story L411-412 已记录）"
+      - "_build_html 函数体零变更（diff 仅在 import 区域 +2 行）"
+
+traceability_summary:
+  ac_count: 4
+  ac_verified: 4
+  ac_gaps: []
+  test_count: 51
+  new_tests_count: 5
+  baseline_regression_passed: true
+  signature_unchanged: true
+  root_cause_eradicated: true  # commit 45baa67 起的 dead-code 修复
+
+quick_mode:
+  enabled: true
+  skipped_steps:
+    - "Architect *review (per scope 第 65 行 + 用户指令)"
+    - "QA *test-design 前置流程 (Dev 自行设计 fallback 覆盖)"
+    - "Risk profile 文档"
+    - "E2E browser testing (LOW risk + 单测等价覆盖)"
+    - "Evidence collection (无 issue)"
+  rationale: "Trivial 1 行 import 纯加法修复 + 函数体零变更 + 现有 46 测试零回归 + 5 新测试覆盖 fallback 主路径 / 降级 / ranking 优先级。LOW risk 满足 automated_only review mode。"
