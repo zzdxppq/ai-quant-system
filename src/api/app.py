@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from src.config import BASE_DIR, DATA_DIR, now_cn
 from src.engine.cycle import CycleEngine, CycleSnapshot, calc_gain_10d
@@ -128,6 +128,53 @@ async def get_signals():
     if signal_file.exists():
         return JSONResponse(json.loads(signal_file.read_text()))
     return JSONResponse({"date": "", "signals": []})
+
+
+@app.get("/api/kline/{code}")
+async def get_kline_chart(code: str, days: int = 60):
+    """K 线图 PNG（含通达信防线 + 形态标注）
+
+    Args:
+        code: 6 位股票代码
+        days: 显示最近 N 个交易日，默认 60
+    Returns:
+        image/png
+    """
+    from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
+    from src.engine.kline_chart import render_kline_chart
+
+    code = (code or "").strip()
+    if not (code.isdigit() and len(code) == 6):
+        return JSONResponse({"error": "invalid code"}, status_code=400)
+
+    # 拉 120 根日 K（指标计算需 ≥35 根，120 充裕）
+    try:
+        df = fetch_kline(code, SCALE_DAILY, datalen=120)
+    except Exception as e:
+        return JSONResponse({"error": f"fetch_kline failed: {e}"}, status_code=502)
+
+    if df is None or df.empty:
+        return JSONResponse({"error": "no kline data"}, status_code=404)
+
+    # 名称：先从 latest_ranking / latest_screener 查
+    name = ""
+    for src_file in ("latest_ranking.json", "latest_screener.json"):
+        try:
+            payload = json.loads((DATA_DIR / src_file).read_text())
+            rows = payload.get("ranking") or payload.get("hits") or []
+            for r in rows:
+                if str(r.get("code")) == code:
+                    name = r.get("name") or ""
+                    break
+            if name:
+                break
+        except Exception:
+            continue
+
+    png = render_kline_chart(code, name, df, days=max(20, min(180, int(days))))
+    return Response(content=png, media_type="image/png", headers={
+        "Cache-Control": "public, max-age=300",
+    })
 
 
 @app.get("/api/gain-ranking")

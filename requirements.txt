@@ -7,3 +7,6 @@ apscheduler>=3.10.0
 aiosqlite>=0.20.0
 sqlalchemy>=2.0.0
 httpx>=0.27.0
+MyTT>=1.0
+mplfinance>=0.12.10b0
+matplotlib>=3.7.0

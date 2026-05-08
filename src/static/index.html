@@ -335,6 +335,42 @@
         .decision-cell.dc-avoid  { background: #2a1a1a; border-left-color: #ef4444; }
         .decision-cell.dc-avoid .dc-action  { color: #ef4444; }
 
+        /* K 线按钮 */
+        .btn-kline {
+            background: #1a2332; color: #60a5fa; border: 1px solid #2a3a55;
+            padding: 4px 10px; border-radius: 4px; cursor: pointer;
+            font-size: 12px; font-weight: 600;
+        }
+        .btn-kline:hover { background: #1e3a5f; color: #93c5fd; }
+        .btn-kline-close {
+            background: transparent; color: #a0aec0; border: none;
+            padding: 4px 10px; cursor: pointer; font-size: 18px;
+        }
+        .btn-kline-close:hover { color: #ef4444; }
+
+        /* K 线 Modal */
+        .kline-modal-mask {
+            position: fixed; top:0; left:0; right:0; bottom:0;
+            background: rgba(0,0,0,0.75); z-index: 1000;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .kline-modal {
+            background: #0a0e1a; border: 1px solid #1e2a45; border-radius: 8px;
+            width: min(95vw, 1100px); max-height: 92vh; overflow: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+        }
+        .kline-modal-header {
+            display: flex; align-items: center; gap: 10px;
+            padding: 12px 16px; border-bottom: 1px solid #1e2a45;
+            color: #e0e6ed; font-size: 14px;
+        }
+        .kline-modal-body { padding: 8px; min-height: 200px; }
+        .kline-modal-legend {
+            display: flex; flex-wrap: wrap; gap: 12px;
+            padding: 10px 16px; border-top: 1px solid #1e2a45;
+            font-size: 11px; color: #a0aec0;
+        }
+
         /* 市场风向条 — 首屏关键指标 */
         .market-banner { padding: 14px 18px; }
         .market-banner .mb-row {
@@ -621,6 +657,7 @@
                     <th>10日涨幅</th>
                     <th>周期股</th>
                     <th>决策</th>
+                    <th>操作</th>
                 </tr></thead>
                 <tbody>
                     <tr v-for="hit in screenerHits" :key="hit.code">
@@ -672,10 +709,49 @@
                                 </div>
                             </div>
                         </td>
+                        <td style="text-align:center;">
+                            <button class="btn-kline" @click="openKline(hit.code, hit.name)" title="查看日K + 防线">
+                                📈 日K
+                            </button>
+                        </td>
                     </tr>
                 </tbody>
             </table>
             <div v-else class="empty-state">暂无结果，点击"执行选股"或等待9:27自动执行</div>
+        </div>
+
+        <!-- ===== K 线图 Modal ===== -->
+        <div v-if="klineModal.open" class="kline-modal-mask" @click="closeKline">
+            <div class="kline-modal" @click.stop>
+                <div class="kline-modal-header">
+                    <span><b>{{ klineModal.code }} {{ klineModal.name }}</b> · 日K + 防线</span>
+                    <span style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+                        <select v-model.number="klineModal.days" @change="reloadKline" style="background:#0d1220;color:#e0e6ed;border:1px solid #2a3050;border-radius:4px;padding:2px 6px;font-size:12px;">
+                            <option :value="60">近60日</option>
+                            <option :value="90">近90日</option>
+                            <option :value="120">近120日</option>
+                            <option :value="180">近180日</option>
+                        </select>
+                        <button class="btn-kline-close" @click="closeKline">✕</button>
+                    </span>
+                </div>
+                <div class="kline-modal-body">
+                    <div v-if="klineModal.loading" style="text-align:center;color:#6b7280;padding:60px;">加载中…</div>
+                    <img v-else-if="klineModal.url" :src="klineModal.url" style="width:100%;display:block;border-radius:4px;">
+                    <div v-else style="text-align:center;color:#ef4444;padding:60px;">{{ klineModal.error || '加载失败' }}</div>
+                </div>
+                <div class="kline-modal-legend">
+                    <span style="color:#d946ef;">━ VARAB 综合均线</span>
+                    <span style="color:#ef4444;">━ 起拔线</span>
+                    <span style="color:#22c55e;">┄ 最近涨停高</span>
+                    <span style="color:#dc2626;">┄ 最近涨停低</span>
+                    <span style="color:#ec4899;">━ 秘线（T3顶）</span>
+                    <span style="color:#fb7185;">▲ 钝化</span>
+                    <span style="color:#fbbf24;">◆ 突破</span>
+                    <span style="color:#10b981;">● 拉升</span>
+                    <span style="color:#60a5fa;">▼ 超跌</span>
+                </div>
+            </div>
         </div>
 
         <!-- 折叠：今日一字涨停个股（独立模块）-->
@@ -1438,6 +1514,32 @@ createApp({
             return r?.industry || '-'
         }
         // 取该股的 top_concepts（涨停股最多的1-2个概念）
+        // ===== K 线图 Modal =====
+        const klineModal = ref({
+            open: false, code: '', name: '', days: 60,
+            url: '', loading: false, error: '',
+        })
+        function openKline(code, name) {
+            klineModal.value.open = true
+            klineModal.value.code = code
+            klineModal.value.name = name || ''
+            klineModal.value.days = 60
+            reloadKline()
+        }
+        function closeKline() { klineModal.value.open = false; klineModal.value.url = '' }
+        function reloadKline() {
+            const m = klineModal.value
+            m.loading = true
+            m.error = ''
+            const ts = Date.now()
+            const url = `/api/kline/${m.code}?days=${m.days}&_=${ts}`
+            // 用 Image 预加载，避免空白闪烁
+            const img = new Image()
+            img.onload = () => { m.url = url; m.loading = false }
+            img.onerror = () => { m.error = '加载失败（K线接口异常）'; m.loading = false }
+            img.src = url
+        }
+
         function topConceptsOf(code) {
             const r = (ranking.value || []).find(x => String(x.code) === String(code))
             return r?.top_concepts || []
@@ -1828,6 +1930,7 @@ createApp({
             miniTicksOf, miniPreCloseY, miniPricePath, miniVolBars, miniOpenPoint,
             today, phaseClass, phaseColor, progressPct, progressClass,
             industryOf, topConceptsOf, isCycleStock, signalOf, scoreOf, decisionLevelClass, decisionIcon,
+            klineModal, openKline, closeKline, reloadKline,
             leaderClass, leaderIcon, leaderBadgeClass,
             getLeaderClass, getLeaderIcon, getLeaderBadgeClass,
             sentimentClass, sentimentIcon, marketClass, marketIcon,
