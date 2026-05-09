@@ -718,7 +718,7 @@
                         </td>
                         <td class="gain-pos"><b>{{ hit.auction_gain }}%</b></td>
                         <td>{{ hit.auction_turnover != null ? hit.auction_turnover + '%' : '—' }}</td>
-                        <td>{{ hit.auction_volume_ratio != null ? hit.auction_volume_ratio.toFixed(1) : '—' }}</td>
+                        <td>{{ hit.auction_volume_ratio != null ? hit.auction_volume_ratio.toFixed(1) + '%' : '—' }}</td>
                         <td><template v-if="hit.market_cap != null">{{ hit.market_cap }}亿</template><template v-else>—</template></td>
                         <td style="font-size:12px;">
                             <template v-if="topConceptsOf(hit.code).length">

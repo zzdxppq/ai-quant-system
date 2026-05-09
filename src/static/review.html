@@ -569,7 +569,7 @@
                     <!-- 观察要点 6 字段（用户新口径） -->
                     <div v-if="w.observation" class="watch-obs">
                         <div class="watch-obs-row">
-                            <span class="wo-label">今日收盘</span>
+                            <span class="wo-label">当日收盘</span>
                             <span class="wo-val"><b>{{ w.observation.close }}</b></span>
                         </div>
                         <div class="watch-obs-row">
@@ -921,7 +921,7 @@
                                 <td>{{ r.open_price || '-' }}</td>
                                 <td :class="numClass(r.auction_gain)">{{ fmtPct(r.auction_gain) }}</td>
                                 <td>{{ r.auction_turnover != null ? r.auction_turnover + '%' : '—' }}</td>
-                                <td>{{ r.auction_volume_ratio != null ? Number(r.auction_volume_ratio).toFixed(1) : '—' }}</td>
+                                <td>{{ r.auction_volume_ratio != null ? Number(r.auction_volume_ratio).toFixed(1) + '%' : '—' }}</td>
                                 <td>{{ r.limit_up_time || '—' }}</td>
                                 <td>{{ r.close_price || '-' }}</td>
                                 <td :class="numClass(r.day_change)">{{ fmtPct(r.day_change) }}</td>

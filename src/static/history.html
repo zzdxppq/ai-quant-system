@@ -294,7 +294,7 @@
                                 <td>{{ r.open_price || '-' }}</td>
                                 <td :class="numClass(r.auction_gain)">{{ fmtPct(r.auction_gain) }}</td>
                                 <td>{{ r.auction_turnover != null ? r.auction_turnover + '%' : '—' }}</td>
-                                <td>{{ r.auction_volume_ratio != null ? Number(r.auction_volume_ratio).toFixed(1) : '—' }}</td>
+                                <td>{{ r.auction_volume_ratio != null ? Number(r.auction_volume_ratio).toFixed(1) + '%' : '—' }}</td>
                                 <td>{{ r.limit_up_time || '—' }}</td>
                                 <td>{{ r.close_price || '-' }}</td>
                                 <td :class="numClass(r.day_change)">{{ fmtPct(r.day_change) }}</td>
