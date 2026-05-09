@@ -755,17 +755,15 @@ def _generate_watch_pool(
 
 
 def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
-    """次日观察池（从10日涨幅榜 top30 中筛主板候选 — 两条规则并列）
+    """次日观察池（用户口径，主板专员）
 
-    入选规则（满足任一即可），均要求 主板 + 在 top30：
-      A) 高位接力：gain_10d ≥ 45% AND continuous_limit_up ≥ 2
-      B) 首板新标：gain_10d ≥ 40% AND continuous_limit_up == 1
-         （第一次涨停且已挤进 top30，主线候补来源）
+    入选规则（满足任一即可，均要求 主板 + 在 top30 数据源内）：
+      A) 小盘高位接力：流通市值 < 100亿 AND continuous_limit_up ≥ 2
+      B) 首板新标：    gain_10d ≥ 45%  AND continuous_limit_up == 1
+         （第一次涨停就挤进 top30，主线候补来源）
 
     Args:
         ranking: {code: ranking_row} 或 [ranking_row, ...]
-                 row 含 gain_10d / continuous_limit_up / is_main_board /
-                       market_cap_yi / industry / concepts / close
     """
     if not ranking:
         return []
@@ -777,16 +775,17 @@ def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
         gain = float(r.get("gain_10d") or 0)
         clu = int(r.get("continuous_limit_up") or 0)
         is_main = bool(r.get("is_main_board"))
+        mc = float(r.get("market_cap_yi") or 0)
         if not is_main:
             continue
-        # 规则 A: 高位接力
-        rule_a = (gain >= 45 and clu >= 2)
-        # 规则 B: 首板新标
-        rule_b = (gain >= 40 and clu == 1)
+        # 规则 A: 小盘高位接力（流通市值<100亿 + ≥2连板，不限 gain）
+        rule_a = (mc > 0 and mc < 100 and clu >= 2)
+        # 规则 B: 首板新标（gain≥45% + 首板）
+        rule_b = (gain >= 45 and clu == 1)
         if not (rule_a or rule_b):
             continue
         row = dict(r)
-        row["_pool_tag"] = "高位接力" if rule_a else "首板新标"
+        row["_pool_tag"] = "小盘接力" if rule_a else "首板新标"
         qualified.append(row)
 
     if not qualified:
@@ -800,6 +799,17 @@ def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
         ),
     )
 
+    # 加载 concept_zt_stats（用于板块助攻）
+    concept_zt_map: dict[str, dict] = {}
+    try:
+        review_file = DATA_DIR / "latest_review.json"
+        if review_file.exists():
+            review_data = json.loads(review_file.read_text())
+            for c in (review_data.get("concept_zt_stats") or []):
+                concept_zt_map[c.get("name", "")] = c
+    except Exception:
+        pass
+
     out: list[dict] = []
     for s in qualified:
         ind = s.get("industry") or "未知"
@@ -808,10 +818,8 @@ def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
         tag = s.get("_pool_tag") or ""
         if tag == "首板新标":
             reason = f"首板·10日涨幅 {gain}%·主板（首板新标）"
-            watch_points = "竞价 3~6% 介入；首板高度未确认，破开盘价快出；优先红盘高开+缩量"
         else:
-            reason = f"{clu}连板·10日涨幅 {gain}%·主板（高位接力）"
-            watch_points = "竞价 4~7.5% 介入；竞价回落破开盘价不接；同板块跟风缩量则减仓"
+            reason = f"{clu}连板·流通市值{s.get('market_cap_yi','-')}亿·主板（小盘接力）"
         candidate = asdict(WatchCandidate(
             code=str(s.get("code", "")),
             name=s.get("name", ""),
@@ -821,15 +829,161 @@ def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
             market_cap_yi=float(s.get("market_cap_yi") or 0),
             total_gain_pct=gain,
             reason=reason,
-            watch_points=watch_points,
-            auction_range=_calc_auction_range(float(s.get("close") or 0)),
+            watch_points="",  # 不再使用，由 observation 字段替代
+            auction_range="",  # 去掉竞价区间
         ))
         # 透传 top_concepts / is_main_board / pool_tag 给前端展示
         candidate["top_concepts"] = list(s.get("top_concepts") or [])
         candidate["is_main_board"] = bool(s.get("is_main_board", True))
         candidate["pool_tag"] = tag
+        # 计算 6 字段观察要点
+        candidate["observation"] = _compute_watch_observation(s, concept_zt_map)
         out.append(candidate)
     return out
+
+
+# ── 观察要点 6 字段（用户口径） ───────────────────────────────────
+
+def _qual_lbt(lbt: str) -> str:
+    """封板时间定性"""
+    if not lbt:
+        return "—"
+    t = str(lbt)
+    if t < "10:00:00":
+        return "早封板，强势"
+    if t < "13:00:00":
+        return "盘中板，正常"
+    if t < "14:00:00":
+        return "下午板，犹豫"
+    return "尾盘板，谨慎"
+
+
+def _qual_turnover(rate: float | None) -> str:
+    if rate is None:
+        return "—"
+    if rate >= 20:
+        return "极充分"
+    if rate >= 10:
+        return "充分"
+    if rate >= 5:
+        return "一般"
+    return "偏低"
+
+
+def _qual_concept(lu_count: int, ladder_2plus: int) -> str:
+    if lu_count >= 5 and ladder_2plus >= 2:
+        return "助攻强"
+    if lu_count >= 3:
+        return "助攻中"
+    if lu_count >= 2:
+        return "助攻弱"
+    return "无助攻"
+
+
+def _compute_watch_observation(row: dict, concept_zt_map: dict) -> dict:
+    """6 字段观察要点"""
+    code = str(row.get("code", ""))
+    close = float(row.get("close", 0) or 0)
+    lbt = str(row.get("last_limit_up_time") or "")
+    turnover = row.get("turnover_rate") or row.get("turnover")
+    if turnover is not None:
+        try:
+            turnover = float(turnover)
+        except (TypeError, ValueError):
+            turnover = None
+
+    # 板块助攻：top_concepts[0] 在 concept_zt_stats 里查
+    top_concepts = row.get("top_concepts") or []
+    concept_name = top_concepts[0] if top_concepts else None
+    concept_info = concept_zt_map.get(concept_name) if concept_name else None
+    if concept_info:
+        lu_count = int(concept_info.get("limit_up_count") or 0)
+        ladder = concept_info.get("ladder") or {}
+        # 同概念 ≥2板 数量
+        ladder_2plus = sum(int(v) for k, v in ladder.items() if int(k) >= 2)
+        ladder_1 = int(ladder.get("1", 0))
+        concept_q = _qual_concept(lu_count, ladder_2plus)
+        # 文案：新能源车今日涨停5只（2板2只），助攻强
+        ladder_desc = []
+        for board in sorted([int(k) for k in ladder.keys()], reverse=True):
+            cnt = int(ladder.get(str(board), 0))
+            if cnt > 0 and board >= 2:
+                ladder_desc.append(f"{board}板{cnt}只")
+        ladder_str = "（" + "/".join(ladder_desc) + "）" if ladder_desc else ""
+        concept_text = f"{concept_name}今日涨停{lu_count}只{ladder_str}，{concept_q}"
+    else:
+        lu_count = 0
+        ladder_2plus = 0
+        concept_q = "—"
+        concept_text = f"{concept_name or '—'}（无聚合数据）"
+
+    # 双线突破 + 压力位 — 拉 K线 计算
+    qiba: float | None = None
+    mixian: float | None = None
+    resistance: float | None = None
+    above_both = False
+    try:
+        from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
+        from src.engine.kline_chart import compute_indicators
+        df = fetch_kline(code, SCALE_DAILY, datalen=120)
+        if df is not None and not df.empty and len(df) >= 35:
+            ind = compute_indicators(df)
+            qiba_arr = ind.get("qiba")
+            if qiba_arr is not None and len(qiba_arr):
+                last_q = qiba_arr[-1]
+                if last_q is not None and not (isinstance(last_q, float) and (last_q != last_q)):  # NaN check
+                    qiba = round(float(last_q), 2)
+            mx = ind.get("mixian_y")
+            if mx is not None:
+                mixian = round(float(mx), 2)
+            # 关键压力位：60 日内排除今日的 max(high)
+            try:
+                import numpy as _np
+                highs = df["high"].astype(float).values[-60:-1]
+                if len(highs) > 0:
+                    resistance = round(float(_np.max(highs)), 2)
+            except Exception:
+                pass
+            # 双线突破判定：两条线都有数据时取 close 同时高于；
+            # 一边有/一边无 → 看有的那条；都 None → 视为历史新高，已突破
+            if qiba is not None and mixian is not None:
+                above_both = close > qiba and close > mixian
+            elif qiba is not None:
+                above_both = close > qiba
+            elif mixian is not None:
+                above_both = close > mixian
+            else:
+                above_both = True  # 历史新高，无更老高点可回溯
+    except Exception:
+        pass
+
+    distance_pct = None
+    if resistance is not None and close > 0:
+        distance_pct = round((resistance / close - 1) * 100, 1)
+
+    return {
+        "close": close,
+        "lbt": lbt or None,
+        "lbt_qualitative": _qual_lbt(lbt),
+        "turnover": turnover,
+        "turnover_qualitative": _qual_turnover(turnover),
+        "concept": {
+            "name": concept_name,
+            "lu_count": lu_count,
+            "ladder_2plus_count": ladder_2plus,
+            "qualitative": concept_q,
+            "text": concept_text,
+        },
+        "double_break": {
+            "qiba": qiba,
+            "mixian": mixian,
+            "above_both": above_both,
+        },
+        "resistance": {
+            "price": resistance,
+            "distance_pct": distance_pct,
+        },
+    }
 
 
 def _lbt_to_sec(lbt: str) -> int:

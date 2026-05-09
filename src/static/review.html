@@ -32,6 +32,47 @@
         .tab-btn:hover { color: #a0aec0; }
         .tab-btn.active { color: #60a5fa; border-bottom-color: #60a5fa; }
 
+        /* 观察要点 6 字段 */
+        .watch-obs { background: #0d1220; border-radius: 6px; padding: 10px 12px; margin-top: 6px; }
+        .watch-obs-row { display: flex; align-items: baseline; padding: 3px 0; font-size: 13px; line-height: 1.6; gap: 8px; }
+        .watch-obs-row .wo-label { color: #6b7280; min-width: 64px; flex-shrink: 0; }
+        .watch-obs-row .wo-val { color: #e0e6ed; flex: 1; }
+        .wo-good { color: #ef4444; font-size: 11px; }
+        .wo-ok { color: #60a5fa; font-size: 11px; }
+        .wo-warn { color: #fbbf24; font-size: 11px; }
+        .wo-bad { color: #10b981; font-size: 11px; }
+
+        /* K 线按钮 */
+        .btn-kline {
+            background: #1a2332; color: #60a5fa; border: 1px solid #2a3a55;
+            padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
+        }
+        .btn-kline:hover { background: #1e3a5f; color: #93c5fd; }
+        .btn-kline-close {
+            background: transparent; color: #a0aec0; border: none;
+            padding: 4px 10px; cursor: pointer; font-size: 18px;
+        }
+        .btn-kline-close:hover { color: #ef4444; }
+
+        /* K 线 Modal — 复用 index.html 风格 */
+        .kline-modal-mask {
+            position: fixed; top:0; left:0; right:0; bottom:0;
+            background: rgba(0,0,0,0.75); z-index: 1000;
+            display: flex; align-items: center; justify-content: center;
+            padding: 16px;
+        }
+        .kline-modal {
+            background: #0a0e1a; border: 1px solid #1e2a45; border-radius: 8px;
+            width: min(95vw, 1100px); max-height: 92vh; overflow: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+        }
+        .kline-modal-header {
+            display: flex; align-items: center; gap: 10px;
+            padding: 12px 16px; border-bottom: 1px solid #1e2a45;
+            color: #e0e6ed; font-size: 14px;
+        }
+        .kline-modal-body { padding: 8px; min-height: 200px; }
+
         /* 市场洞察四维面板 */
         .insight-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
         .insight-box { background: #0d1220; border-radius: 10px; padding: 14px 16px; border: 1px solid #1e2a45; }
@@ -295,6 +336,14 @@
         </div>
 
         <div v-show="activeTab === 'daily'">
+        <!-- 今日复盘内 3 个 sub-tab -->
+        <div class="tabs" style="border-bottom: 1px solid #1e2a45; margin-bottom: 12px;">
+            <button class="tab-btn" :class="{active: dailySubTab === 'relay'}" @click="dailySubTab = 'relay'">📊 接力情绪</button>
+            <button class="tab-btn" :class="{active: dailySubTab === 'pool'}" @click="dailySubTab = 'pool'">🎯 次日关注标的池</button>
+            <button class="tab-btn" :class="{active: dailySubTab === 'ladder'}" @click="dailySubTab = 'ladder'">🪜 连板天梯</button>
+        </div>
+
+        <div v-show="dailySubTab === 'relay'">
         <!-- 市场广度（上证指数 + 涨跌家数）-->
         <div v-if="insight.breadth" class="breadth-bar">
             <div class="breadth-cell">
@@ -450,20 +499,23 @@
                 重点关注：2进3 成功率 &lt;40% 或 失败票均价 &lt;-3% → 次日暂停接力
             </div>
         </div>
+        </div><!-- end relay sub-tab -->
 
-        <!-- ============ 区域 D：次日关注标的池（仅条件筛选） ============ -->
+        <!-- ============ Sub-tab 2: 次日关注标的池 ============ -->
+        <div v-show="dailySubTab === 'pool'">
         <div class="card">
             <div class="card-title">🎯 次日关注标的池
                 <span style="margin-left:auto;font-size:11px;color:#6b7280;font-weight:400;">
-                    主板 + (10日榜top30·gain≥45%·≥2连板) 或 (top30·gain≥40%·首板)
+                    主板 + (流通市值&lt;100亿 AND ≥2连板) 或 (top30·gain≥45% AND 首板)
                 </span>
             </div>
             <div v-if="watchPool.length">
                 <div v-for="(w, i) in watchPool" :key="w.code" class="watch-item">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
                         <span style="color:#fbbf24;font-weight:700;font-size:14px;">{{ i+1 }}. {{ w.name }}</span>
                         <span style="color:#6b7280;font-size:12px;">{{ w.code }}</span>
                         <span style="background:#92400e;color:#fbbf24;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:700;">{{ w.board_count }}板</span>
+                        <span v-if="w.pool_tag" style="background:#1e3a5f;color:#60a5fa;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;">{{ w.pool_tag }}</span>
                         <span style="font-size:12px;">
                             <template v-if="(w.top_concepts || []).length">
                                 <span style="color:#ef4444;font-weight:600;">{{ (w.top_concepts || []).join('/') }}</span>
@@ -474,19 +526,74 @@
                             </template>
                         </span>
                         <span style="color:#a0aec0;font-size:12px;margin-left:auto;">市值 {{ Math.round(w.market_cap_yi) }}亿</span>
+                        <a :href="'/' + '#' + w.code" @click.prevent="openKline(w.code, w.name)"
+                           class="btn-kline" style="margin-left:4px;cursor:pointer;text-decoration:none;">
+                            📈 日K
+                        </a>
                     </div>
-                    <div style="font-size:12px;color:#c9d1d9;line-height:1.6;">
+                    <!-- 观察要点 6 字段（用户新口径） -->
+                    <div v-if="w.observation" class="watch-obs">
+                        <div class="watch-obs-row">
+                            <span class="wo-label">今日收盘</span>
+                            <span class="wo-val"><b>{{ w.observation.close }}</b></span>
+                        </div>
+                        <div class="watch-obs-row">
+                            <span class="wo-label">封板</span>
+                            <span class="wo-val">
+                                {{ w.observation.lbt || '—' }}
+                                <span :class="lbtQualClass(w.observation.lbt_qualitative)">（{{ w.observation.lbt_qualitative }}）</span>
+                            </span>
+                        </div>
+                        <div class="watch-obs-row" v-if="w.observation.turnover != null || w.observation.turnover_qualitative !== '—'">
+                            <span class="wo-label">换手</span>
+                            <span class="wo-val">
+                                {{ w.observation.turnover != null ? w.observation.turnover + '%' : '—' }}
+                                <span :class="turnoverQualClass(w.observation.turnover_qualitative)">（{{ w.observation.turnover_qualitative }}）</span>
+                            </span>
+                        </div>
+                        <div class="watch-obs-row">
+                            <span class="wo-label">板块</span>
+                            <span class="wo-val">{{ w.observation.concept.text }}</span>
+                        </div>
+                        <div class="watch-obs-row">
+                            <span class="wo-label">双线突破</span>
+                            <span class="wo-val">
+                                <template v-if="w.observation.double_break.above_both">
+                                    <span style="color:#ef4444;font-weight:600;">是</span>
+                                    <span v-if="w.observation.double_break.qiba != null && w.observation.double_break.mixian != null" style="color:#a0aec0;">
+                                        (起拔线:{{ w.observation.double_break.qiba }}, 秘线:{{ w.observation.double_break.mixian }})
+                                    </span>
+                                    <span v-else style="color:#a0aec0;">（历史新高）</span>
+                                </template>
+                                <span v-else style="color:#10b981;font-weight:600;">否</span>
+                            </span>
+                        </div>
+                        <div class="watch-obs-row">
+                            <span class="wo-label">压力位</span>
+                            <span class="wo-val">
+                                <template v-if="w.observation.resistance.price != null">
+                                    {{ w.observation.resistance.price }}
+                                    <span :style="{color: (w.observation.resistance.distance_pct||0) > 0 ? '#fbbf24' : '#10b981'}">
+                                        （距收盘{{ (w.observation.resistance.distance_pct||0) >= 0 ? '+' : '' }}{{ w.observation.resistance.distance_pct }}%）
+                                    </span>
+                                </template>
+                                <span v-else style="color:#6b7280;">—</span>
+                            </span>
+                        </div>
+                    </div>
+                    <div v-else style="font-size:11px;color:#8892a8;margin-top:2px;">
                         <span style="color:#34d399;">逻辑：</span>{{ w.reason }}
-                    </div>
-                    <div style="font-size:11px;color:#8892a8;margin-top:2px;">
-                        竞价区间 <b style="color:#60a5fa;">{{ w.auction_range }}</b> · {{ w.watch_points }}
                     </div>
                 </div>
             </div>
             <div v-else class="empty-state" style="padding:24px;font-size:13px;">
-                无 — 今日所有候选都不满足三项严格条件，明日不主动开仓
+                无 — 今日所有候选都不满足两条入选规则，明日不主动开仓
             </div>
         </div>
+        </div><!-- end pool sub-tab -->
+
+        <!-- ============ Sub-tab 3: 连板天梯 ============ -->
+        <div v-show="dailySubTab === 'ladder'">
 
         <!-- 连板天梯（按昨日板数分组）— 默认折叠 -->
         <div class="card">
@@ -602,6 +709,7 @@
                 </div>
             </div>
         </div>
+        </div><!-- end ladder sub-tab -->
 
         </div><!-- end v-show daily -->
 
@@ -808,6 +916,27 @@
 
         </div><!-- end v-show monthly -->
     </div>
+
+    <!-- ===== K 线图 Modal ===== -->
+    <div v-if="klineModal.open" class="kline-modal-mask" @click="closeKline">
+        <div class="kline-modal" @click.stop>
+            <div class="kline-modal-header">
+                <span><b>{{ klineModal.code }} {{ klineModal.name }}</b> · 日K + 防线</span>
+                <span style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+                    <select v-model.number="klineModal.days" @change="reloadKline" style="background:#0d1220;color:#e0e6ed;border:1px solid #2a3050;border-radius:4px;padding:2px 6px;font-size:12px;">
+                        <option :value="60">近60日</option>
+                        <option :value="90">近90日</option>
+                        <option :value="120">近120日</option>
+                        <option :value="180">近180日</option>
+                    </select>
+                    <button class="btn-kline-close" @click="closeKline">✕</button>
+                </span>
+            </div>
+            <div class="kline-modal-body">
+                <img v-if="klineModal.url" :src="klineModal.url" style="width:100%;display:block;border-radius:4px;">
+            </div>
+        </div>
+    </div>
 </div>
 
 <style>
@@ -847,6 +976,47 @@ createApp({
     setup() {
         const review = ref({})
         const activeTab = ref('daily')
+        const dailySubTab = ref('relay')  // relay / pool / ladder
+
+        // 观察要点定性 class（封板时间 / 换手）
+        function lbtQualClass(q) {
+            if (!q) return ''
+            if (q.includes('强势')) return 'wo-good'
+            if (q.includes('正常')) return 'wo-ok'
+            if (q.includes('犹豫')) return 'wo-warn'
+            if (q.includes('谨慎')) return 'wo-bad'
+            return ''
+        }
+        function turnoverQualClass(q) {
+            if (!q) return ''
+            if (q.includes('极充分')) return 'wo-good'
+            if (q.includes('充分')) return 'wo-good'
+            if (q.includes('一般')) return 'wo-ok'
+            if (q.includes('偏低')) return 'wo-bad'
+            return ''
+        }
+
+        // K 线 modal（复用看板逻辑）
+        const klineModal = ref({
+            open: false, code: '', name: '', days: 60,
+            url: '', loading: false, error: '',
+            analysis: null, analysisLoading: false, analysisError: '',
+        })
+        function openKline(code, name) {
+            klineModal.value.open = true
+            klineModal.value.code = code
+            klineModal.value.name = name || ''
+            klineModal.value.days = 60
+            const ts = Date.now()
+            klineModal.value.url = `/api/kline/${code}?days=60&_=${ts}`
+            klineModal.value.loading = false
+        }
+        function closeKline() { klineModal.value.open = false; klineModal.value.url = '' }
+        function reloadKline() {
+            const m = klineModal.value
+            const ts = Date.now()
+            m.url = `/api/kline/${m.code}?days=${m.days}&_=${ts}`
+        }
         const insight = ref({})
         const showFailed = ref(false)
         const ladderOpen = ref(false)   // 连板天梯默认折叠
@@ -1092,7 +1262,9 @@ createApp({
 
         onMounted(loadData)
         return {
-            review, insight, activeTab,
+            review, insight, activeTab, dailySubTab,
+            lbtQualClass, turnoverQualClass,
+            klineModal, openKline, closeKline, reloadKline,
             ladderOpen, sectorOpen, conceptOpen, showAllConcepts,
             conceptZtAll, conceptZtStatsFiltered, sortedLadder, conceptBoardCls,
             sectorStatsFiltered, watchPool, ladderArr,
