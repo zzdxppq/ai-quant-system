@@ -198,8 +198,15 @@ def write_advice_snapshot(sent: dict | None, leader: dict | None = None) -> dict
     本函数另独立计算 dimensions/bad_count/inputs（持久化扩展字段，BR-1.6）。
 
     Returns: 写入的 payload dict；写盘失败返回 None（不抛错给 caller）。
+
+    Guard: 当 4 维输入全部缺失（advice 走 loading 分支）时，**不覆盖磁盘**——
+    保留前一个有效快照不被盘外手动 refresh / 服务重启时的空数据污染。
     """
     advice = _calc_daily_advice(sent, leader)
+
+    # Guard: 全空输入不覆盖磁盘（前端 fallback 在文件缺失时同样显示占位文案）
+    if advice["text"] == _LOADING_TEXT:
+        return None
 
     sent = sent or {}
     market = sent.get("market") or {}

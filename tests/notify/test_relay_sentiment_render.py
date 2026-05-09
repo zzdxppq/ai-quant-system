@@ -269,11 +269,11 @@ class TestAC5Regression:
         )
 
     def test_2_3_int_004_total_test_count_anti_drift(self):
-        # Anti-drift: collect-only test count must match story-start baseline (242).
+        # Anti-drift: collect-only test count must match story-start baseline.
         # Baseline recorded in Dev Log on 2026-05-08 = 133 pre-existing + 56 dashboard-hits-2.4
-        # + 10 anti-duplicate-email-2.5 + 43 this story (skeleton already on disk at start).
-        # If a future Story adds/removes tests, this baseline must be updated.
-        EXPECTED_BASELINE = 242
+        # + 10 anti-duplicate-email-2.5 + 43 this story (skeleton already on disk at start) = 242.
+        # 2026-05-09 Class A guard fix (write_advice_snapshot empty-input no-overwrite) +1 → 243.
+        EXPECTED_BASELINE = 243
         result = subprocess.run(
             [sys.executable, "-m", "pytest", "--collect-only", "-q"],
             cwd=str(REPO_ROOT),
@@ -307,9 +307,12 @@ class TestAC5Regression:
     def test_2_3_int_005_latest_advice_json_schema_unchanged(self, tmp_path, monkeypatch):
         # Decision-consistency-2.1 contract: 9 top-level keys.
         # Source of truth: tests/notify/test_decision_consistency.py:111-112.
+        # 2026-05-09: switched to non-empty inputs after empty-input guard fix
+        # (write_advice_snapshot returns None on all-empty to avoid overwriting good snapshots).
         import src.notify.email_sender as es
         monkeypatch.setattr(es, "DATA_DIR", tmp_path)
-        payload = write_advice_snapshot(sent={"market": {}}, leader={})
+        sent = {"market": {"limit_down": 3}, "weighted_auction_gain": 1.0}
+        payload = write_advice_snapshot(sent=sent, leader={})
         assert payload is not None
         expected_keys = {
             "generated_at", "bucket", "text", "suggested_position",
@@ -365,7 +368,9 @@ class TestT5EndToEndIntegration:
         import src.notify.email_sender as es
         monkeypatch.setattr(es, "DATA_DIR", tmp_path)
 
-        advice_payload = write_advice_snapshot(sent={"market": {}}, leader={})
+        # 2026-05-09: switched to non-empty inputs; empty-input guard returns None.
+        sent = {"market": {"limit_down": 3}, "weighted_auction_gain": 1.0}
+        advice_payload = write_advice_snapshot(sent=sent, leader={})
         assert advice_payload is not None
         assert "bucket" in advice_payload  # 2.1 contract
 

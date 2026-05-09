@@ -229,14 +229,24 @@ def test_2_1_unit_010_main_board_leaders_summary_is_simplified(tmp_path, monkeyp
     assert "leader_gain_10d" not in summary[0]
 
 
-def test_2_1_unit_011_loading_branch_when_all_inputs_none(tmp_path, monkeypatch):
+def test_2_1_unit_011_no_overwrite_when_all_inputs_none(tmp_path, monkeypatch):
+    """Guard: 全空输入不写盘（避免盘外触发覆盖好快照）。
+    前端 / API 在文件缺失时已有 placeholder fallback，视觉等价。"""
     _patch_data_dir(monkeypatch, tmp_path)
     payload = write_advice_snapshot(None, None)
-    assert (tmp_path / "latest_advice.json").exists()
-    assert payload["bucket"] == "go"
-    assert payload["text"] == "— 数据加载中 —"
-    assert payload["suggested_position"] == "—"
-    assert payload["bad_count"] == 0
+    assert payload is None
+    assert not (tmp_path / "latest_advice.json").exists()
+
+
+def test_2_1_unit_011b_guard_preserves_existing_good_snapshot(tmp_path, monkeypatch):
+    """Guard: 已有好快照时，全空输入不应覆盖磁盘。"""
+    _patch_data_dir(monkeypatch, tmp_path)
+    good = _full_advice_payload()
+    _write_advice_file(tmp_path, good)
+    payload = write_advice_snapshot(None, None)
+    assert payload is None
+    on_disk = json.loads((tmp_path / "latest_advice.json").read_text(encoding="utf-8"))
+    assert on_disk == good
 
 
 def test_2_1_unit_012_reason_text_equivalence_with_calc(tmp_path, monkeypatch):
@@ -648,7 +658,8 @@ def test_2_1_int_012_smtp_missing_skips_send_but_advice_still_written(tmp_path, 
     assert (tmp_path / "latest_advice.json").exists()
 
 
-def test_2_1_int_013_all_none_inputs_loading_branch_full_chain(tmp_path, monkeypatch):
+def test_2_1_int_013_all_none_inputs_guard_email_still_sends(tmp_path, monkeypatch):
+    """Guard 不写盘后，邮件链路仍能正常发送（fallback 到实时计算 placeholder）。"""
     _patch_data_dir(monkeypatch, tmp_path)
 
     captured = {}
@@ -661,12 +672,9 @@ def test_2_1_int_013_all_none_inputs_loading_branch_full_chain(tmp_path, monkeyp
     monkeypatch.setattr(email_sender, "SMTP_USER", "u@x")
     monkeypatch.setattr(email_sender, "SMTP_PASSWORD", "p")
 
-    write_advice_snapshot(None, None)
-    payload_on_disk = json.loads((tmp_path / "latest_advice.json").read_text(encoding="utf-8"))
-    assert payload_on_disk["bucket"] == "go"
-    assert payload_on_disk["text"] == "— 数据加载中 —"
-    assert payload_on_disk["bad_count"] == 0
-    assert all(v is False for v in payload_on_disk["dimensions"].values())
+    result = write_advice_snapshot(None, None)
+    assert result is None
+    assert not (tmp_path / "latest_advice.json").exists()
 
     ok = send_screener_report(
         cycle_phase="孕育期", cycle_day=1, representative=None,
