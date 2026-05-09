@@ -705,6 +705,15 @@ def _get_lianban_ladder() -> list[dict]:
 
             is_main = not code.startswith(("300", "301", "688", "8", "4"))
             zt_info = zt_pool.get(code, {}) or zt_pool.get(str(code).zfill(6), {})
+
+            # 流通市值（亿）— spot 含 market_cap（单位 元），转亿
+            row = spot_map.get(str(code)) or {}
+            try:
+                mc_raw = float(row.get("market_cap", 0) or 0)
+            except (TypeError, ValueError):
+                mc_raw = 0.0
+            mc_yi = round(mc_raw / 1e8, 2) if mc_raw > 0 else None
+
             result.append({
                 "code": code,
                 "name": info.get("name", ""),
@@ -715,6 +724,7 @@ def _get_lianban_ladder() -> list[dict]:
                 "concepts": list(concept_map.get(code) or []),
                 "lbt": zt_info.get("lbt", ""),       # 最后封板时间 HH:MM:SS
                 "is_flat": _is_flat(code, is_main),  # 一字板
+                "market_cap_yi": mc_yi,              # 流通市值（亿）— 用于次日观察池 Rule A
             })
 
         result.sort(key=lambda x: (-x["board_count"], -x.get("change_pct", 0)))
@@ -751,10 +761,13 @@ def _generate_watch_pool(
     review: DailyReview,
 ) -> list[dict]:
     """次日观察池入口（向后兼容包装）— 复用 build_watch_pool_from_ranking"""
-    return build_watch_pool_from_ranking(ranking)
+    return build_watch_pool_from_ranking(ranking, lianban_ladder=lianban)
 
 
-def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
+def build_watch_pool_from_ranking(
+    ranking: dict | list,
+    lianban_ladder: list[dict] | None = None,
+) -> list[dict]:
     """次日观察池（用户口径，主板专员）
 
     入选规则（满足任一即可，均要求 主板 + 在 top30 数据源内）：
@@ -783,7 +796,7 @@ def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
             seen_codes.add(str(r.get("code", "")))
 
     # === 规则 A：从全市场涨停股扫描（不限 top30）===
-    qualified.extend(_scan_full_market_rule_a(rows, seen_codes))
+    qualified.extend(_scan_full_market_rule_a(rows, seen_codes, lianban_ladder))
 
     if not qualified:
         return []
@@ -841,14 +854,56 @@ def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
 
 # ── 观察要点 6 字段（用户口径） ───────────────────────────────────
 
-def _scan_full_market_rule_a(ranking_rows: list[dict], seen_codes: set[str]) -> list[dict]:
+def _scan_full_market_rule_a(
+    ranking_rows: list[dict],
+    seen_codes: set[str],
+    lianban_ladder: list[dict] | None = None,
+) -> list[dict]:
     """规则 A：从全市场今日涨停池筛 主板 + 流通市值<100亿 + ≥2连板
 
-    数据源：limit_up_cache 最近一天 + zt_pool 拿 lbc/lbt
-    流通市值兜底链：top30 ranking → tencent fetch_stock_details → 跳过该股
+    数据源优先级（用户偏好：复用连板天梯数据，避免重复抓接口）：
+      1. lianban_ladder 已含 code/name/board_count/industry/concepts/lbt/market_cap_yi
+         → 一站式 cover，全市场覆盖
+      2. zt_pool 兜底 + ranking/tencent 补市值（旧路径，应对 lianban_ladder 缺时）
     """
     out: list[dict] = []
 
+    # === 路径 1: lianban_ladder（如有）一站式 ===
+    if lianban_ladder:
+        for s in lianban_ladder:
+            code = str(s.get("code", ""))
+            board = int(s.get("board_count", 0) or 0)
+            is_main = bool(s.get("is_main_board", True))
+            mc = s.get("market_cap_yi")
+            if code in seen_codes:
+                continue
+            if not is_main or board < 2:
+                continue
+            try:
+                mc_f = float(mc) if mc is not None else 0
+            except (TypeError, ValueError):
+                continue
+            if not (0 < mc_f < 100):
+                continue
+            out.append({
+                "code": code,
+                "name": s.get("name", ""),
+                "continuous_limit_up": board,
+                "last_limit_up_time": s.get("lbt", ""),
+                "is_main_board": True,
+                "market_cap_yi": mc_f,
+                "industry": s.get("industry", "未知"),
+                "concepts": list(s.get("concepts") or []),
+                "top_concepts": [],  # API 层若需可后处理
+                "close": 0,  # lianban_ladder 没存 close；observation 重算时再补
+                "gain_10d": 0,
+                "_pool_tag": "小盘接力",
+            })
+            seen_codes.add(code)
+        if out:
+            return out
+
+    # === 路径 2: 兜底 — zt_pool + ranking + tencent ===
     # 1. 拉今日涨停池（含 lbc/lbt/zbc）
     try:
         from src.data.zt_pool_api import fetch_zt_pool
