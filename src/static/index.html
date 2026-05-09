@@ -1191,9 +1191,19 @@ createApp({
         const screenerHits = ref([])
         const screenerHistory = ref([])
 
+        // 今天是否交易日（北京时间周一到周五；A股节假日不展开实现，cron
+        // 不会在节假日跑选股，所以即使周中节假日 yesterdaySelections 也会
+        // 自然取到上一个真实交易日记录）
+        const isTradingDay = computed(() => {
+            const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }))
+            const d = now.getDay()
+            return d >= 1 && d <= 5
+        })
+
         // 昨日选股 + 今日竞价表（9:27 后 backfill_next_day_auction 回填 next_day_*）
-        // 取 history 中最近一个 < today 的日期；若无数据返回空数组（前端不渲染卡片）
+        // 仅在 (昨日有选股记录 AND 今天是交易日) 时展示
         const yesterdaySelections = computed(() => {
+            if (!isTradingDay.value) return []
             const list = screenerHistory.value || []
             if (!list.length) return []
             const todayISO = new Date().toISOString().slice(0, 10)
@@ -2153,7 +2163,7 @@ createApp({
         return {
             snapshot, ranking, rankingUpdatedAt, rankingLive, sentiment, market,
             screenerHits, screenerDate, signals,
-            screenerHistory, yesterdaySelections, yesterdayDate,
+            screenerHistory, yesterdaySelections, yesterdayDate, isTradingDay,
             leader, leaderList, mainBoardLeadersGroup,
             ydayAvg, ydayAvgVerdict, ydayAvgClass, ydayAvgBadge, yZbAvg, yLdAvg,
             relayIndexInfo, relayIndex, relayIndexPrev, relayIndexClass, relayVerdictColor, relayIndexTooltip,
