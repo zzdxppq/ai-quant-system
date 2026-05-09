@@ -706,13 +706,16 @@ def _get_lianban_ladder() -> list[dict]:
             is_main = not code.startswith(("300", "301", "688", "8", "4"))
             zt_info = zt_pool.get(code, {}) or zt_pool.get(str(code).zfill(6), {})
 
-            # 流通市值（亿）— spot 含 market_cap（单位 元），转亿
+            # 流通市值（亿）+ 当日收盘价 — spot 含 market_cap（单位元）+ close
             row = spot_map.get(str(code)) or {}
             try:
                 mc_raw = float(row.get("market_cap", 0) or 0)
+                close_p = float(row.get("close", 0) or 0)
             except (TypeError, ValueError):
                 mc_raw = 0.0
+                close_p = 0.0
             mc_yi = round(mc_raw / 1e8, 2) if mc_raw > 0 else None
+            close_p = round(close_p, 2) if close_p > 0 else None
 
             result.append({
                 "code": code,
@@ -724,7 +727,8 @@ def _get_lianban_ladder() -> list[dict]:
                 "concepts": list(concept_map.get(code) or []),
                 "lbt": zt_info.get("lbt", ""),       # 最后封板时间 HH:MM:SS
                 "is_flat": _is_flat(code, is_main),  # 一字板
-                "market_cap_yi": mc_yi,              # 流通市值（亿）— 用于次日观察池 Rule A
+                "market_cap_yi": mc_yi,              # 流通市值（亿）— Rule A 筛选用
+                "close_price": close_p,              # 当日收盘价 — watch_pool 冻结用
             })
 
         result.sort(key=lambda x: (-x["board_count"], -x.get("change_pct", 0)))
@@ -885,6 +889,11 @@ def _scan_full_market_rule_a(
                 continue
             if not (0 < mc_f < 100):
                 continue
+            cp = s.get("close_price")
+            try:
+                close_val = float(cp) if cp is not None else 0
+            except (TypeError, ValueError):
+                close_val = 0
             out.append({
                 "code": code,
                 "name": s.get("name", ""),
@@ -895,7 +904,7 @@ def _scan_full_market_rule_a(
                 "industry": s.get("industry", "未知"),
                 "concepts": list(s.get("concepts") or []),
                 "top_concepts": [],  # API 层若需可后处理
-                "close": 0,  # lianban_ladder 没存 close；observation 重算时再补
+                "close": close_val,  # 当日收盘价（lianban_ladder.close_price）
                 "gain_10d": 0,
                 "_pool_tag": "小盘接力",
             })
