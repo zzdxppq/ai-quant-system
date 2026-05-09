@@ -643,6 +643,36 @@ def _get_lianban_ladder() -> list[dict]:
     except Exception:
         pass
 
+    # cache 缺失（多见于北交所 920 系列）即时调 emweb 单股补，并写回 cache
+    def _fill_missing_industry(codes: list[str]) -> None:
+        miss = [c for c in codes if not industry_map.get(c)]
+        if not miss:
+            return
+        try:
+            from src.data.ranking_scanner import _fetch_industry_emweb
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            updated = 0
+            with ThreadPoolExecutor(max_workers=4) as ex:
+                futs = {ex.submit(_fetch_industry_emweb, c): c for c in miss}
+                for fut in as_completed(futs):
+                    code = futs[fut]
+                    try:
+                        ind = fut.result()
+                    except Exception:
+                        ind = ""
+                    if ind:
+                        industry_map[code] = ind
+                        updated += 1
+            if updated:
+                try:
+                    (DATA_DIR / "industry_cache.json").write_text(
+                        json.dumps(industry_map, ensure_ascii=False, indent=2)
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     # 概念映射（一对多）
     concept_map: dict[str, list[str]] = {}
     try:
@@ -659,6 +689,9 @@ def _get_lianban_ladder() -> list[dict]:
 
         latest_date = sorted_dates[0]
         latest_stocks = {r.get("code", ""): r for r in cache.get(latest_date, [])}
+
+        # industry_cache 缺失即时补（多见于北交所 920）
+        _fill_missing_industry(list(latest_stocks.keys()))
 
         # 拉今日 zt_pool 拿封板时间（lbt）
         zt_pool: dict = {}
@@ -1105,7 +1138,8 @@ def _compute_watch_observation(row: dict, concept_zt_map: dict) -> dict:
     try:
         from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
         from src.engine.kline_chart import compute_indicators
-        df = fetch_kline(code, SCALE_DAILY, datalen=120)
+        # 500 根日K（≈2 年）— 秘线/起拔线 需回溯到老历史顶
+        df = fetch_kline(code, SCALE_DAILY, datalen=500)
         if df is not None and not df.empty and len(df) >= 35:
             ind = compute_indicators(df)
             qiba_arr = ind.get("qiba")
