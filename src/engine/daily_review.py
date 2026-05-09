@@ -765,28 +765,25 @@ def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
     Args:
         ranking: {code: ranking_row} 或 [ranking_row, ...]
     """
-    if not ranking:
-        return []
-
-    rows = ranking.values() if isinstance(ranking, dict) else ranking
-
+    rows = list(ranking.values() if isinstance(ranking, dict) else (ranking or []))
     qualified: list[dict] = []
+    seen_codes: set[str] = set()
+
+    # === 规则 B：top30 内 首板新标 ===
     for r in rows:
         gain = float(r.get("gain_10d") or 0)
         clu = int(r.get("continuous_limit_up") or 0)
         is_main = bool(r.get("is_main_board"))
-        mc = float(r.get("market_cap_yi") or 0)
         if not is_main:
             continue
-        # 规则 A: 小盘高位接力（流通市值<100亿 + ≥2连板，不限 gain）
-        rule_a = (mc > 0 and mc < 100 and clu >= 2)
-        # 规则 B: 首板新标（gain≥45% + 首板）
-        rule_b = (gain >= 45 and clu == 1)
-        if not (rule_a or rule_b):
-            continue
-        row = dict(r)
-        row["_pool_tag"] = "小盘接力" if rule_a else "首板新标"
-        qualified.append(row)
+        if gain >= 45 and clu == 1:
+            row = dict(r)
+            row["_pool_tag"] = "首板新标"
+            qualified.append(row)
+            seen_codes.add(str(r.get("code", "")))
+
+    # === 规则 A：从全市场涨停股扫描（不限 top30）===
+    qualified.extend(_scan_full_market_rule_a(rows, seen_codes))
 
     if not qualified:
         return []
@@ -843,6 +840,125 @@ def build_watch_pool_from_ranking(ranking: dict | list) -> list[dict]:
 
 
 # ── 观察要点 6 字段（用户口径） ───────────────────────────────────
+
+def _scan_full_market_rule_a(ranking_rows: list[dict], seen_codes: set[str]) -> list[dict]:
+    """规则 A：从全市场今日涨停池筛 主板 + 流通市值<100亿 + ≥2连板
+
+    数据源：limit_up_cache 最近一天 + zt_pool 拿 lbc/lbt
+    流通市值兜底链：top30 ranking → tencent fetch_stock_details → 跳过该股
+    """
+    out: list[dict] = []
+
+    # 1. 拉今日涨停池（含 lbc/lbt/zbc）
+    try:
+        from src.data.zt_pool_api import fetch_zt_pool
+        zt_pool = fetch_zt_pool() or {}
+    except Exception:
+        zt_pool = {}
+    if not zt_pool:
+        return out
+
+    # 2. 候选 = lbc>=2 + 主板（非 300/301/688/8x/4x）
+    def _is_main(code: str) -> bool:
+        return not str(code).startswith(("300", "301", "688", "8", "4"))
+
+    cand_codes = []
+    for code, info in zt_pool.items():
+        if int(info.get("lbc", 0) or 0) < 2:
+            continue
+        if not _is_main(code):
+            continue
+        if str(code) in seen_codes:
+            continue
+        cand_codes.append((code, info))
+    if not cand_codes:
+        return out
+
+    # 3. ranking 内的市值优先用 ranking 数据
+    ranking_map = {str(r.get("code", "")): r for r in ranking_rows}
+    missing_mc: list[str] = []
+    cand_with_mc: list[tuple[dict, float]] = []  # (info_dict, market_cap_yi)
+    for code, zinfo in cand_codes:
+        r = ranking_map.get(code)
+        if r and r.get("market_cap_yi"):
+            cand_with_mc.append(({
+                "code": code,
+                "name": zinfo.get("name") or r.get("name", ""),
+                "continuous_limit_up": int(zinfo.get("lbc", 0) or 0),
+                "last_limit_up_time": zinfo.get("lbt", ""),
+                "is_main_board": True,
+                "market_cap_yi": float(r.get("market_cap_yi") or 0),
+                "industry": r.get("industry", "未知"),
+                "concepts": list(r.get("concepts") or []),
+                "top_concepts": list(r.get("top_concepts") or []),
+                "close": float(r.get("close", 0) or 0),
+                "gain_10d": float(r.get("gain_10d", 0) or 0),
+            }, float(r.get("market_cap_yi") or 0)))
+        else:
+            missing_mc.append(code)
+
+    # 4. ranking 没的从腾讯批量拉
+    tx_map: dict = {}
+    if missing_mc:
+        try:
+            from src.data.tencent_api import fetch_stock_details
+            df = fetch_stock_details(missing_mc)
+            if df is not None and not df.empty:
+                df["code"] = df["code"].astype(str)
+                for _, row in df.iterrows():
+                    tx_map[str(row["code"])] = row
+        except Exception:
+            pass
+
+    # 5. industry/concepts 对全市场涨停的 cache 兜底
+    industry_cache: dict = {}
+    try:
+        ic = DATA_DIR / "industry_cache.json"
+        if ic.exists():
+            industry_cache = json.loads(ic.read_text())
+    except Exception:
+        pass
+    concept_cache: dict = {}
+    try:
+        from src.data.concept_fetcher import load_stock_to_concepts
+        concept_cache = load_stock_to_concepts() or {}
+    except Exception:
+        pass
+
+    for code in missing_mc:
+        zinfo = next((z for c, z in cand_codes if c == code), {})
+        tx = tx_map.get(code)
+        if tx is None:
+            continue  # 拉不到市值就跳过
+        try:
+            mc = float(tx.get("market_cap_yi", 0) or 0)
+            close = float(tx.get("close", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if mc <= 0:
+            continue
+        cand_with_mc.append(({
+            "code": code,
+            "name": zinfo.get("name") or tx.get("name", ""),
+            "continuous_limit_up": int(zinfo.get("lbc", 0) or 0),
+            "last_limit_up_time": zinfo.get("lbt", ""),
+            "is_main_board": True,
+            "market_cap_yi": mc,
+            "industry": industry_cache.get(code, "未知"),
+            "concepts": list(concept_cache.get(code) or []),
+            "top_concepts": [],
+            "close": close,
+            "gain_10d": 0,
+        }, mc))
+
+    # 6. 过滤 流通市值<100亿
+    for info, mc in cand_with_mc:
+        if 0 < mc < 100:
+            info["_pool_tag"] = "小盘接力"
+            out.append(info)
+
+    return out
+
 
 def _qual_lbt(lbt: str) -> str:
     """封板时间定性"""
