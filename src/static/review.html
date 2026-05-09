@@ -591,16 +591,36 @@
                             <span class="wo-val">{{ w.observation.concept.text }}</span>
                         </div>
                         <div class="watch-obs-row">
+                            <span class="wo-label">起拔线</span>
+                            <span class="wo-val">
+                                <template v-if="w.observation.double_break.qiba != null">
+                                    {{ w.observation.double_break.qiba }}
+                                    <span :style="{color: w.observation.double_break.above_qiba ? '#ef4444' : '#10b981'}" style="margin-left:4px;font-size:11px;">
+                                        {{ w.observation.double_break.above_qiba ? '✓ 已突破' : '× 未突破' }}
+                                    </span>
+                                </template>
+                                <span v-else style="color:#6b7280;">—（历史新高）</span>
+                            </span>
+                        </div>
+                        <div class="watch-obs-row">
+                            <span class="wo-label">秘线</span>
+                            <span class="wo-val">
+                                <template v-if="w.observation.double_break.mixian != null">
+                                    {{ w.observation.double_break.mixian }}
+                                    <span :style="{color: w.observation.double_break.above_mixian ? '#ef4444' : '#10b981'}" style="margin-left:4px;font-size:11px;">
+                                        {{ w.observation.double_break.above_mixian ? '✓ 已突破' : '× 未突破' }}
+                                    </span>
+                                </template>
+                                <span v-else style="color:#6b7280;">—（历史新高）</span>
+                            </span>
+                        </div>
+                        <div class="watch-obs-row">
                             <span class="wo-label">双线突破</span>
                             <span class="wo-val">
                                 <template v-if="w.observation.double_break.above_both">
-                                    <span style="color:#ef4444;font-weight:600;">是</span>
-                                    <span v-if="w.observation.double_break.qiba != null && w.observation.double_break.mixian != null" style="color:#a0aec0;">
-                                        (起拔线:{{ w.observation.double_break.qiba }}, 秘线:{{ w.observation.double_break.mixian }})
-                                    </span>
-                                    <span v-else style="color:#a0aec0;">（历史新高）</span>
+                                    <span style="color:#ef4444;font-weight:600;">✅ 是</span>
                                 </template>
-                                <span v-else style="color:#10b981;font-weight:600;">否</span>
+                                <span v-else style="color:#fbbf24;font-weight:600;">⚠️ 否</span>
                             </span>
                         </div>
                         <div class="watch-obs-row">

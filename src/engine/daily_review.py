@@ -1124,18 +1124,18 @@ def _compute_watch_observation(row: dict, concept_zt_map: dict) -> dict:
                     resistance = round(float(_np.max(highs)), 2)
             except Exception:
                 pass
-            # 双线突破判定：两条线都有数据时取 close 同时高于；
-            # 一边有/一边无 → 看有的那条；都 None → 视为历史新高，已突破
-            if qiba is not None and mixian is not None:
-                above_both = close > qiba and close > mixian
-            elif qiba is not None:
-                above_both = close > qiba
-            elif mixian is not None:
-                above_both = close > mixian
-            else:
-                above_both = True  # 历史新高，无更老高点可回溯
     except Exception:
         pass
+
+    # 双线突破判定（与 analyze_stock_action 同口径，严格 AND）：
+    # 起拔/秘线必须都存在且 close 同时高于，才算双线突破；
+    # 只一条达标 → above_both=False；都不存在（历史新高）→ above_both=True
+    above_qiba = qiba is not None and close > qiba
+    above_mixian = mixian is not None and close > mixian
+    if qiba is None and mixian is None:
+        above_both = True   # 全无数据 → 视为历史新高
+    else:
+        above_both = above_qiba and above_mixian
 
     distance_pct = None
     if resistance is not None and close > 0:
@@ -1157,6 +1157,8 @@ def _compute_watch_observation(row: dict, concept_zt_map: dict) -> dict:
         "double_break": {
             "qiba": qiba,
             "mixian": mixian,
+            "above_qiba": above_qiba,
+            "above_mixian": above_mixian,
             "above_both": above_both,
         },
         "resistance": {
