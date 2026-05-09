@@ -743,20 +743,26 @@
                             </button>
                         </td>
                         <td>
-                            <div class="decision-cell" :class="dailyAdvice.cls" style="padding:4px 8px;border-radius:6px;">
+                            <div class="decision-cell" :class="perStockCls(hit)" style="padding:4px 8px;border-radius:6px;" :title="(hit.per_stock_decision || {}).reason || ''">
                                 <div class="dc-action" style="font-size:12px;font-weight:600;">
-                                    {{ dailyAdvice.text }}
-                                </div>
-                                <div style="font-size:11px;margin-top:2px;"
-                                     :style="{color: hit.matched_cycle ? '#60a5fa' : '#a0aec0'}">
-                                    <template v-if="dailyAdvice.cls === 'advice-go'">
-                                        {{ hit.matched_cycle ? '3层（🎯周期股）' : '2层（非周期降1层）' }}
-                                    </template>
-                                    <template v-else-if="dailyAdvice.cls === 'advice-warn'">
-                                        1.5层（谨慎）
+                                    <template v-if="hit.per_stock_decision">
+                                        {{ perStockActionLabel(hit) }}
                                     </template>
                                     <template v-else>
-                                        0层
+                                        {{ dailyAdvice.text }}
+                                    </template>
+                                </div>
+                                <div style="font-size:11px;margin-top:2px;color:#a0aec0;">
+                                    <template v-if="hit.per_stock_decision">
+                                        {{ hit.per_stock_decision.position_text }}
+                                        <span v-if="hit.per_stock_decision.ladder_label" style="color:#60a5fa;margin-left:3px;">{{ hit.per_stock_decision.ladder_label }}</span>
+                                    </template>
+                                    <template v-else>
+                                        <template v-if="dailyAdvice.cls === 'advice-go'">
+                                            {{ hit.matched_cycle ? '3层（🎯周期股）' : '2层（非周期降1层）' }}
+                                        </template>
+                                        <template v-else-if="dailyAdvice.cls === 'advice-warn'">1.5层（谨慎）</template>
+                                        <template v-else>0层</template>
                                     </template>
                                 </div>
                             </div>
@@ -1782,6 +1788,22 @@ createApp({
             }
         }
 
+        // 每股决策样式 + label
+        function perStockCls(hit) {
+            const d = hit.per_stock_decision
+            if (!d) return dailyAdvice.value.cls || 'advice-warn'
+            if (d.action === '开仓') return 'advice-go'
+            if (d.action === '观察') return 'advice-warn'
+            return 'advice-stop'
+        }
+        function perStockActionLabel(hit) {
+            const d = hit.per_stock_decision
+            if (!d) return '—'
+            if (d.action === '开仓') return '✅ 开仓'
+            if (d.action === '观察') return '👁 观察'
+            return '⛔ 空仓'
+        }
+
         function topConceptsOf(code) {
             const hit = (screenerHits.value || []).find(x => String(x.code) === String(code))
             if (hit?.top_concepts?.length) return hit.top_concepts
@@ -2178,6 +2200,7 @@ createApp({
             miniTicksOf, miniPreCloseY, miniPricePath, miniVolBars, miniOpenPoint,
             today, phaseClass, phaseColor, progressPct, progressClass,
             industryOf, topConceptsOf, isCycleStock, signalOf, scoreOf, decisionLevelClass, decisionIcon,
+            perStockCls, perStockActionLabel,
             klineModal, openKline, closeKline, reloadKline, loadAnalysis,
             leaderClass, leaderIcon, leaderBadgeClass,
             getLeaderClass, getLeaderIcon, getLeaderBadgeClass,

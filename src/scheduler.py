@@ -577,6 +577,38 @@ def run_screener_update(skip_email: bool | None = None) -> dict:
     except Exception as e:
         print(f"[选股富化] helper 调用失败: {e}")
 
+    # 6.2 每只 hit 注入 per_stock_decision（按梯队 + 竞价 + 环境出仓位建议）
+    try:
+        from src.engine.screener_decision import compute_per_stock_decision
+        # 加载市场环境 + 空间板 + 概念热度
+        market_env = {}
+        try:
+            from src.engine.screener_history import _load_daily_market_env
+            market_env = _load_daily_market_env()
+        except Exception:
+            pass
+        space_board_today = None
+        concept_zt_stats: list[dict] = []
+        market_highest_board = None
+        try:
+            review_file = DATA_DIR / "latest_review.json"
+            if review_file.exists():
+                rd = json.loads(review_file.read_text())
+                space_board_today = (rd.get("relay_env") or {}).get("prev_space_board_today")
+                concept_zt_stats = rd.get("concept_zt_stats") or []
+                market_highest_board = int(rd.get("highest_board") or 0) or None
+        except Exception:
+            pass
+        for h in hits_data.get("hits", []):
+            h["per_stock_decision"] = compute_per_stock_decision(
+                h, market_env,
+                concept_zt_stats=concept_zt_stats,
+                space_board_today=space_board_today,
+                market_highest_board=market_highest_board,
+            )
+    except Exception as e:
+        print(f"[选股决策] per_stock_decision 注入失败: {e}")
+
     (DATA_DIR / "latest_screener.json").write_text(
         json.dumps(hits_data, ensure_ascii=False, indent=2)
     )
