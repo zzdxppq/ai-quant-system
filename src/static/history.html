@@ -249,11 +249,16 @@
                             <th>连板</th>
                             <th>开盘价</th>
                             <th>竞价涨幅</th>
+                            <th title="竞价换手率(%)">竞价换手</th>
+                            <th title="竞价量比">竞价量比</th>
+                            <th title="封板时间（涨停时）">封板</th>
                             <th>收盘价</th>
                             <th>收盘涨幅</th>
                             <th>次日竞价</th>
                             <th>次日收盘涨幅</th>
                             <th>10日涨幅</th>
+                            <th title="当日复盘 1进2 成功率">1进2</th>
+                            <th title="当日板块/概念集中度">集中度</th>
                             <th>周期股</th>
                             <th>周期计数</th>
                             <th>胜负</th>
@@ -263,7 +268,7 @@
                     <tbody>
                         <template v-for="(group, date) in groupedRecords" :key="date">
                             <tr>
-                                <td colspan="15" class="date-group">
+                                <td colspan="20" class="date-group">
                                     {{ date }}（{{ group.length }} 只）
                                     <span v-if="dailyEnv(group)" style="margin-left:16px;font-weight:400;font-size:12px;color:#a0aec0;">
                                         <template v-if="dailyEnv(group).market_limit_down !== null && dailyEnv(group).market_limit_down !== undefined">
@@ -288,6 +293,9 @@
                                 <td>{{ r.continuous_limit_up }}板</td>
                                 <td>{{ r.open_price || '-' }}</td>
                                 <td :class="numClass(r.auction_gain)">{{ fmtPct(r.auction_gain) }}</td>
+                                <td>{{ r.auction_turnover != null ? r.auction_turnover + '%' : '—' }}</td>
+                                <td>{{ r.auction_volume_ratio != null ? Number(r.auction_volume_ratio).toFixed(1) : '—' }}</td>
+                                <td>{{ r.limit_up_time || '—' }}</td>
                                 <td>{{ r.close_price || '-' }}</td>
                                 <td :class="numClass(r.day_change)">{{ fmtPct(r.day_change) }}</td>
                                 <td :class="numClass(r.next_day_auction_gain)">{{ fmtPct(r.next_day_auction_gain) }}</td>
@@ -295,6 +303,8 @@
                                 <td :class="(r.gain_10d||0) >= 0 ? 'gain-pos' : 'gain-neg'">
                                     {{ r.gain_10d ? (r.gain_10d > 0 ? '+' : '') + r.gain_10d + '%' : '-' }}
                                 </td>
+                                <td>{{ r.b1_rate != null ? r.b1_rate + '%' : '—' }}</td>
+                                <td>{{ r.concentration != null ? r.concentration + '%' : '—' }}</td>
                                 <td>
                                     <span v-if="r.is_cycle_stock === true" class="tag" style="background:#3b0a0a;color:#ef4444;">是</span>
                                     <span v-else-if="r.is_cycle_stock === false" class="tag" style="background:#0a2a1a;color:#10b981;">否</span>

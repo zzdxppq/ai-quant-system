@@ -48,20 +48,41 @@ def _save(records: list[dict]):
     HISTORY_FILE.write_text(json.dumps(records, ensure_ascii=False, indent=2))
 
 
+def _lookup_limit_up_time(code: str) -> str | None:
+    """从 latest_review.lianban_ladder 查该 code 当日的封板时间（HH:MM:SS）；
+    未涨停或无数据返回 None"""
+    try:
+        rf = DATA_DIR / "latest_review.json"
+        if not rf.exists():
+            return None
+        rd = json.loads(rf.read_text())
+        for s in (rd.get("lianban_ladder") or []):
+            if str(s.get("code", "")) == str(code):
+                lbt = s.get("lbt") or s.get("last_limit_up_time")
+                return str(lbt) if lbt else None
+    except Exception:
+        pass
+    return None
+
+
 def _load_daily_market_env() -> dict:
-    """从 latest_sentiment / latest_leader 读取当日市场环境 3 项指标
+    """从 latest_sentiment / latest_leader / latest_review 读取当日市场环境指标
 
     Returns:
         {
-            "market_limit_down": 13,           # 全市场竞价跌停数
-            "weighted_auction_gain": -0.37,    # 梯队加权竞价(%)
-            "yesterday_lianban_today_avg": 1.41,  # 昨日(主板)连板股今日平均涨幅(%)
+            "market_limit_down": int,            # 全市场竞价跌停数
+            "weighted_auction_gain": float,      # 梯队加权竞价(%)
+            "yesterday_lianban_today_avg": float,# 昨日(主板)连板股今日平均涨幅(%)
+            "b1_rate": float,                    # 1进2成功率(%) — 当日复盘评分卡值
+            "concentration": float,              # 板块集中度(%) — 当日复盘评分卡值
         }
     """
     env = {
         "market_limit_down": None,
         "weighted_auction_gain": None,
         "yesterday_lianban_today_avg": None,
+        "b1_rate": None,
+        "concentration": None,
     }
     try:
         sf = DATA_DIR / "latest_sentiment.json"
@@ -78,6 +99,23 @@ def _load_daily_market_env() -> dict:
             ld = json.loads(lf.read_text())
             ya = ld.get("yesterday_main_board_avg_auction") or {}
             env["yesterday_lianban_today_avg"] = ya.get("avg_change_pct")
+    except Exception:
+        pass
+    # 1进2成功率 + 板块集中度（来自 latest_review.scorecard.indicators）
+    try:
+        rf = DATA_DIR / "latest_review.json"
+        if rf.exists():
+            rd = json.loads(rf.read_text())
+            sc = rd.get("scorecard") or {}
+            for ind in (sc.get("indicators") or []):
+                lbl = ind.get("label", "")
+                raw = ind.get("raw")
+                if raw is None:
+                    continue
+                if lbl == "1进2成功率":
+                    env["b1_rate"] = float(raw)
+                elif lbl == "板块集中度":
+                    env["concentration"] = float(raw)
     except Exception:
         pass
     return env
@@ -219,6 +257,8 @@ def archive_today_hits(hits: list[dict], spot_df=None):
         # 板块
         industry = h.get("industry", "") or _lookup_industry(code)
 
+        # 当日封板时间（若涨停）— 从 latest_review.lianban_ladder 查
+        lbt = _lookup_limit_up_time(code)
         records.append({
             "date": today,
             "code": code,
@@ -228,10 +268,13 @@ def archive_today_hits(hits: list[dict], spot_df=None):
             "open_price": h.get("open_price", 0),
             "pre_close": pre_close_map.get(code, 0),
             "auction_gain": h.get("auction_gain", 0),
+            "auction_turnover": h.get("auction_turnover"),       # 竞价换手率(%)
+            "auction_volume_ratio": h.get("auction_volume_ratio"),  # 竞价量比
             "market_cap": h.get("market_cap", 0),
             "gain_10d": h.get("gain_10d", 0) or _calc_gain_10d(code),
             "industry": industry,
             "market_highest_board": highest_board,
+            "limit_up_time": lbt,                                # 封板时间 HH:MM:SS（涨停时）
             "close_price": None,
             "close_gain": None,
             "day_change": None,
@@ -249,6 +292,8 @@ def archive_today_hits(hits: list[dict], spot_df=None):
             "market_limit_down": market_env["market_limit_down"],
             "weighted_auction_gain": market_env["weighted_auction_gain"],
             "yesterday_lianban_today_avg": market_env["yesterday_lianban_today_avg"],
+            "b1_rate": market_env.get("b1_rate"),
+            "concentration": market_env.get("concentration"),
         })
         existing.add(key)
         new_count += 1
@@ -594,7 +639,14 @@ def refresh_today_records() -> int:
         changed = False
 
         # 用最新市场环境覆盖（如果有值）
-        for k in ("market_limit_down", "weighted_auction_gain", "yesterday_lianban_today_avg"):
+        # 封板时间（涨停后才有）— 用 latest_review.lianban_ladder 兜底回填
+        new_lbt = _lookup_limit_up_time(r.get("code", ""))
+        if new_lbt and r.get("limit_up_time") != new_lbt:
+            r["limit_up_time"] = new_lbt
+            changed = True
+
+        for k in ("market_limit_down", "weighted_auction_gain", "yesterday_lianban_today_avg",
+                  "b1_rate", "concentration"):
             v = env.get(k)
             if v is not None and r.get(k) != v:
                 r[k] = v

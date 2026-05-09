@@ -694,6 +694,8 @@
                     <th>价格</th>
                     <th>涨幅</th>
                     <th>竞价涨幅</th>
+                    <th title="竞价换手率(%)">竞价换手</th>
+                    <th title="竞价量比">竞价量比</th>
                     <th>市值</th>
                     <th>板块</th>
                     <th>连板</th>
@@ -715,6 +717,8 @@
                             {{ hitLive(hit.code).pct != null ? ((hitLive(hit.code).pct >= 0 ? '+' : '') + hitLive(hit.code).pct + '%') : '-' }}
                         </td>
                         <td class="gain-pos"><b>{{ hit.auction_gain }}%</b></td>
+                        <td>{{ hit.auction_turnover != null ? hit.auction_turnover + '%' : '—' }}</td>
+                        <td>{{ hit.auction_volume_ratio != null ? hit.auction_volume_ratio.toFixed(1) : '—' }}</td>
                         <td><template v-if="hit.market_cap != null">{{ hit.market_cap }}亿</template><template v-else>—</template></td>
                         <td style="font-size:12px;">
                             <template v-if="topConceptsOf(hit.code).length">
