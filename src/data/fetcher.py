@@ -117,23 +117,27 @@ def fetch_limit_up_history(days: int = 5) -> dict[str, pd.DataFrame]:
         print("[MOCK] 使用模拟涨停数据")
         return generate_mock_limit_up_history()
 
-    from src.config import now_cn
+    from src.config import now_cn, is_trading_day
     today_str = now_cn().strftime("%Y%m%d")
+    today_is_trading = is_trading_day()
 
     # Step 1: 今日涨停池（东财主路径，新浪兜底）
+    # 非交易日：API 返回的"今日数据"实际是上一交易日的 close 价快照，
+    # 不能以 today_str 写入缓存（会产生伪涨停日污染连板判定）。
     today_df = None
-    try:
-        from src.data.eastmoney_api import fetch_limit_up_stocks
-        today_df = fetch_limit_up_stocks()
-    except Exception as e:
-        print(f"东方财富涨停池失败: {e}，尝试新浪")
-
-    if today_df is None or today_df.empty:
+    if today_is_trading:
         try:
-            from src.data.sina_spot_api import fetch_limit_up_stocks_sina
-            today_df = fetch_limit_up_stocks_sina()
+            from src.data.eastmoney_api import fetch_limit_up_stocks
+            today_df = fetch_limit_up_stocks()
         except Exception as e:
-            print(f"新浪涨停池失败: {e}")
+            print(f"东方财富涨停池失败: {e}，尝试新浪")
+
+        if today_df is None or today_df.empty:
+            try:
+                from src.data.sina_spot_api import fetch_limit_up_stocks_sina
+                today_df = fetch_limit_up_stocks_sina()
+            except Exception as e:
+                print(f"新浪涨停池失败: {e}")
 
     result: dict[str, pd.DataFrame] = {}
     if today_df is not None and not today_df.empty:
