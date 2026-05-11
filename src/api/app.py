@@ -195,7 +195,7 @@ async def get_kline_analysis(code: str):
     if df is None or df.empty or len(df) < 35:
         return JSONResponse({"error": "kline data insufficient"}, status_code=404)
 
-    # 取股票名称 + 竞价时段数据（优先 latest_screener，其次 latest_ranking）
+    # 取股票名称 + 竞价时段数据 + hit 字典（优先 latest_screener，其次 latest_ranking）
     name = ""
     auction_ctx: dict = {}
     for src_file in ("latest_screener.json", "latest_ranking.json"):
@@ -205,15 +205,21 @@ async def get_kline_analysis(code: str):
             for r in rows:
                 if str(r.get("code")) == code:
                     name = name or (r.get("name") or "")
-                    # screener: open_price / auction_gain / auction_volume_lots
                     if r.get("open_price") is not None:
                         auction_ctx["open_price"] = r["open_price"]
                     if r.get("auction_gain") is not None:
                         auction_ctx["auction_gain"] = r["auction_gain"]
                     if r.get("auction_volume_lots") is not None:
                         auction_ctx["auction_volume_lots"] = r["auction_volume_lots"]
+                    if r.get("auction_turnover") is not None:
+                        auction_ctx["auction_turnover"] = r["auction_turnover"]
+                    if r.get("auction_volume_ratio") is not None:
+                        auction_ctx["auction_volume_ratio"] = r["auction_volume_ratio"]
+                    # 整 hit 注入（含 prev_day_turnover / prev_volume_ratio / prev_day_yizi /
+                    # market_cap / continuous_limit_up），供 v3.3 决策映射器使用
+                    auction_ctx["hit_dict"] = dict(r)
                     break
-            if name and auction_ctx:
+            if name and auction_ctx.get("hit_dict"):
                 break
         except Exception:
             continue
@@ -232,6 +238,18 @@ async def get_kline_analysis(code: str):
                 market_ctx["b1_rate"] = float(raw)
             elif label == "昨日连板指数" and raw is not None:
                 market_ctx["lianban_index_pct"] = float(raw)
+        # v3.3 决策映射器需要：concept_zt_stats / space_board / market_highest_board
+        market_ctx["concept_zt_stats"] = review.get("concept_zt_stats") or []
+        market_ctx["space_board_today"] = (review.get("relay_env") or {}).get("prev_space_board_today")
+        mhb = int(review.get("highest_board") or 0)
+        if mhb > 0:
+            market_ctx["market_highest_board"] = mhb
+    except Exception:
+        pass
+    # market_limit_down 来自 sentiment（v3.3 用于跌停潮减半）
+    try:
+        sent = json.loads((DATA_DIR / "latest_sentiment.json").read_text())
+        market_ctx["market_limit_down"] = (sent.get("market") or {}).get("limit_down")
     except Exception:
         pass
     try:

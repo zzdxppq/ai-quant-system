@@ -1463,7 +1463,7 @@ def _build_scorecard(
     highest_board: int = 0,
 ) -> dict:
     """接力环境评分卡（区域 A）"""
-    # === 指标 1: 1进2 成功率 ≥40% ===
+    # === 指标 1: 1进2 成功率 ≥15%（v3.2 校准：常态门槛）===
     g1 = next((g for g in prev_board_groups if g.get("prev_board") == 1), None)
     if g1:
         b1_promoted = len(g1.get("promoted") or [])
@@ -1471,7 +1471,7 @@ def _build_scorecard(
         b1_rate = round(b1_promoted / b1_total * 100, 1) if b1_total else 0.0
     else:
         b1_promoted, b1_total, b1_rate = 0, 0, 0.0
-    score_1 = 1 if b1_rate >= 40 else 0
+    score_1 = 1 if b1_rate >= 15 else 0
 
     # === 指标 2: 2进3 成功率 ≥40% ===
     # 阈值与 _build_promotion_summary 中 2进3 warn 阈值一致（< 40% 即视为接力恶化）
@@ -1483,7 +1483,7 @@ def _build_scorecard(
         b2_rate = round(b2_promoted / b2_total * 100, 1) if b2_total else 0.0
     else:
         b2_promoted, b2_total, b2_rate = 0, 0, 0.0
-    score_2 = 1 if b2_rate >= 40 else 0
+    score_2 = 1 if b2_rate >= 25 else 0
 
     # === 指标 3: 板块集中度（前3概念覆盖的【独立】涨停股 / 总涨停数）≥50% ===
     # 一股多概念时只计一次，避免累加超 100%
@@ -1499,7 +1499,7 @@ def _build_scorecard(
         sec_concentration = round(top3_count / limit_up_count * 100, 1)
     else:
         sec_concentration = 0.0
-    score_3 = 1 if sec_concentration >= 50 else 0
+    score_3 = 1 if sec_concentration >= 35 else 0
 
     # === 指标 4: 空间板（红盘晋级 1.0 / 低开晋级 0.5 / 断板 0）===
     # 三级判定：今日涨停且开盘 ≥0% 为红盘强势；今日涨停但低开为犹豫；未涨停=断板
@@ -1534,37 +1534,67 @@ def _build_scorecard(
                 if tp is not None and (s.get("today_close") or 0) > 0:
                     pcts.append(float(tp))
     lianban_index_pct = round(sum(pcts) / len(pcts), 2) if pcts else 0.0
-    score_5 = 1 if lianban_index_pct > 2 else 0
+    score_5 = 1 if lianban_index_pct > 1 else 0
 
-    # === 指标 6: 高度突破（今日最高板 vs 昨日最高板）===
-    # 接力升温信号：高度有没有创新高
+    # === 指标 6: 高度突破（今日最高板 ≥ 昨日最高板 - 1 即达标）===
+    # 阈值放宽：连板高度可比昨日小幅回落 1 板，仍视为接力延续
     prev_max = int(prev_space.get("yesterday_board") or 0)
     today_max = int(highest_board or 0)
     if today_max > prev_max:
         score_6, height_text = 1.0, f"{today_max}板↑（昨{prev_max}板）"
     elif today_max == prev_max and today_max > 0:
-        score_6, height_text = 0.5, f"{today_max}板=（昨{prev_max}板）"
+        score_6, height_text = 1.0, f"{today_max}板=（昨{prev_max}板）"
+    elif prev_max > 0 and today_max == prev_max - 1:
+        score_6, height_text = 1.0, f"{today_max}板↓1（昨{prev_max}板，可接受）"
     else:
         score_6, height_text = 0.0, f"{today_max}板↓（昨{prev_max}板）"
 
     indicators = [
-        {"label": "1进2成功率",   "today": f"{b1_rate}%",          "target": "≥40%", "score": score_1, "raw": b1_rate, "detail": f"{b1_promoted}/{b1_total}"},
-        {"label": "2进3成功率",   "today": f"{b2_rate}%",          "target": "≥40%", "score": score_2, "raw": b2_rate, "detail": f"{b2_promoted}/{b2_total}"},
-        {"label": "板块集中度",   "today": f"{sec_concentration}%","target": "≥50%", "score": score_3, "raw": sec_concentration, "detail": "前3概念涨停占比"},
+        {"label": "1进2成功率",   "today": f"{b1_rate}%",          "target": "≥15%", "score": score_1, "raw": b1_rate, "detail": f"{b1_promoted}/{b1_total}"},
+        {"label": "2进3成功率",   "today": f"{b2_rate}%",          "target": "≥25%", "score": score_2, "raw": b2_rate, "detail": f"{b2_promoted}/{b2_total}"},
+        {"label": "板块集中度",   "today": f"{sec_concentration}%","target": "≥35%", "score": score_3, "raw": sec_concentration, "detail": "前3概念涨停占比"},
         {"label": "空间板",       "today": space_status_text,      "target": "红盘晋级", "score": score_4, "raw": (space_open_pct if space_open_pct is not None else 0), "detail": (f"昨{prev_space.get('yesterday_board')}板{prev_space.get('name','')}" if prev_space else "—")},
-        {"label": "昨日连板指数", "today": f"{lianban_index_pct:+.2f}%", "target": ">+2%", "score": score_5, "raw": lianban_index_pct, "detail": f"昨≥2板共{len(pcts)}只今日均值"},
-        {"label": "高度突破",     "today": height_text,            "target": "高度创新", "score": score_6, "raw": today_max - prev_max, "detail": f"今日最高{today_max}板 / 昨日{prev_max}板"},
+        {"label": "昨日连板指数", "today": f"{lianban_index_pct:+.2f}%", "target": ">+1%", "score": score_5, "raw": lianban_index_pct, "detail": f"昨≥2板共{len(pcts)}只今日均值"},
+        {"label": "高度突破",     "today": height_text,            "target": "≥昨高-1", "score": score_6, "raw": today_max - prev_max, "detail": f"今日最高{today_max}板 / 昨日{prev_max}板"},
     ]
     total_score = round(sum(ind["score"] for ind in indicators), 1)
-    # 6 项总分 0~6，含 0.5 fractional：≥5 重仓 / ≥4 正常 / ≥3 试错 / 否则空仓
-    if total_score >= 5:
+    # 决策映射（用户新口径）：
+    #   ≤2 → 空仓
+    #   3-4 → 轻仓 10-20%（仅 3进4 及以上）
+    #   5   → 正常 30%（可做 2进3）
+    #   6   → 重仓 50%+
+    if total_score >= 6:
         decision, color = "重仓", "#ef4444"
-    elif total_score >= 4:
+        today_action = {
+            "verdict": "重仓",
+            "position": "≥50%",
+            "ladders": "全梯队（2进3 / 3进4 / 4进5+）",
+            "note": "六维满分，全梯队接力"
+        }
+    elif total_score >= 5:
         decision, color = "正常", "#10b981"
+        today_action = {
+            "verdict": "正常",
+            "position": "30%",
+            "ladders": "2进3 / 3进4 / 4进5+",
+            "note": "5/6 维达标，可做 2进3 起"
+        }
     elif total_score >= 3:
         decision, color = "试错", "#fbbf24"
-    else:
+        today_action = {
+            "verdict": "轻仓",
+            "position": "10-20%",
+            "ladders": "3进4 及以上",
+            "note": "2进3 暂不参与"
+        }
+    else:  # total_score <= 2
         decision, color = "空仓", "#6b7280"
+        today_action = {
+            "verdict": "空仓",
+            "position": "0%",
+            "ladders": "无",
+            "note": "≤2 维达标，接力恶化，明日不开仓"
+        }
 
     headline = _build_decision_headline(
         total_score, decision, indicators, prev_board_groups,
@@ -1577,6 +1607,7 @@ def _build_scorecard(
         "decision": decision,
         "decision_color": color,
         "headline": headline,
+        "today_action": today_action,
     }
 
 
@@ -1666,8 +1697,8 @@ def _build_decision_headline(
                 "新进首板成功率太低，宁可错过不做错。"
             )
         line4 = (
-            "🚦 重启信号：明日竞价 ≥2 项达标——板块集中度>40% / 空间板红盘晋级 / 1进2>40% / "
-            "高度新增板，达 ≥2 恢复试错仓位。"
+            "🚦 重启信号：明日竞价 ≥2 项达标——板块集中度>35% / 空间板红盘晋级 / "
+            "1进2>15% / 今日最高≥昨日最高-1，达 ≥2 项恢复试错仓位。"
         )
         return "\n".join([line1, line2, line3, line4])
 
@@ -1689,9 +1720,9 @@ def _build_decision_headline(
         else:
             line2 = "🐯 龙头组：龙妖T仓 ≤10%；不持仓过夜，盘中只做最强龙头日内回撤反包。"
         line3 = (
-            f"🪜 接力组：仓位严控 ≤20%。仅做 1 只最强主线 2进3"
-            f"{'（首选红盘高开晋级）' if space_ok else '（必须竞价 5%+ 才接）'}；"
-            f"3 板及以上回避，高度未创新高时不打深水接力。"
+            f"🪜 接力组：仓位严控 ≤20%。只做 3进4+（竞价 4-8% / 换手>0.5%）"
+            f"{'，首选红盘高开+空间板未断' if space_ok else '，且昨日空间板今日不能跌停'}；"
+            f"2进3 不参与，避免被动接力。"
         )
         line4 = f"🚦 风险位：{worst_label}（{worst_today}）。一旦再恶化立即清仓；破开盘价无条件出。"
         return "\n".join([line1, line2, line3, line4])

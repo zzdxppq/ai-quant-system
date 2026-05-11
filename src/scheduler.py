@@ -167,6 +167,13 @@ def run_cycle_update() -> dict:
     3. 更新周期状态机
     4. 保存快照
     """
+    from src.config import is_trading_day
+    if not is_trading_day():
+        print(f"[{now_cn()}] 非交易日，跳过周期更新；保留上一交易日数据。")
+        snap_file = DATA_DIR / "latest_snapshot.json"
+        if snap_file.exists():
+            return json.loads(snap_file.read_text())
+        return {"status": "skipped", "reason": "non-trading day"}
     print("=" * 50)
     print(f"[{now_cn()}] 开始周期更新...")
 
@@ -359,6 +366,13 @@ def run_screener_update(skip_email: bool | None = None) -> dict:
     4. 执行选股筛选
     5. 交叉验证（结合龙头反馈微调仓位建议）
     """
+    from src.config import is_trading_day
+    if not is_trading_day():
+        print(f"[{now_cn()}] 非交易日，跳过选股；保留上一交易日选股结果。")
+        scr_file = DATA_DIR / "latest_screener.json"
+        if scr_file.exists():
+            return json.loads(scr_file.read_text())
+        return {"status": "skipped", "reason": "non-trading day"}
     print("=" * 50)
     print(f"[{now_cn()}] 开始选股...")
 
@@ -576,6 +590,13 @@ def run_screener_update(skip_email: bool | None = None) -> dict:
         enrich_screener_hits_with_concepts(hits_data, ranking_data)
     except Exception as e:
         print(f"[选股富化] helper 调用失败: {e}")
+
+    # 6.1.5 富化"昨日量能"（用于 2进3 缩量换手板过滤）
+    try:
+        from src.engine.screener_prev_day_enrich import enrich_hits_with_prev_day_kline
+        enrich_hits_with_prev_day_kline(hits_data)
+    except Exception as e:
+        print(f"[选股富化] 昨日量能富化失败: {e}")
 
     # 6.2 每只 hit 注入 per_stock_decision（按梯队 + 竞价 + 环境出仓位建议）
     try:

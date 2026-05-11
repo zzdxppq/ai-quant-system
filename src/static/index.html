@@ -337,6 +337,33 @@
         .decision-cell.dc-avoid  { background: #2a1a1a; border-left-color: #ef4444; }
         .decision-cell.dc-avoid .dc-action  { color: #ef4444; }
 
+        /* 决策规则说明气泡 */
+        .rule-info {
+            display: inline-block; margin-left: 4px;
+            width: 14px; height: 14px; line-height: 14px;
+            text-align: center; border-radius: 50%;
+            background: #1e2a45; color: #60a5fa;
+            font-size: 10px; font-weight: 700; cursor: help;
+            position: relative;
+        }
+        .rule-info:hover { background: #60a5fa; color: #0a0e1a; }
+        .rule-info .rule-tip {
+            display: none; position: absolute; right: 0; top: 22px;
+            width: 380px; padding: 12px 14px;
+            background: #0d1220; border: 1px solid #2a3a5c;
+            border-radius: 6px; font-size: 12px; color: #c9d1d9;
+            text-align: left; line-height: 1.6;
+            font-weight: 400; cursor: default;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+            z-index: 100;
+        }
+        .rule-info:hover .rule-tip { display: block; }
+        .rule-tip h4 { margin: 0 0 6px 0; color: #fbbf24; font-size: 12px; }
+        .rule-tip table { width: 100%; border-collapse: collapse; margin: 4px 0; }
+        .rule-tip th { padding: 3px 6px; text-align: left; color: #6b7280; font-weight: 500; border-bottom: 1px solid #1e2a45; font-size: 11px; }
+        .rule-tip td { padding: 3px 6px; border-bottom: 1px solid #0d1220; font-size: 11px; color: #c9d1d9; }
+        .rule-tip .rt-note { color: #6b7280; font-size: 11px; margin-top: 6px; font-style: italic; }
+
         /* K 线按钮 */
         .btn-kline {
             background: #1a2332; color: #60a5fa; border: 1px solid #2a3a55;
@@ -695,14 +722,47 @@
                     <th>涨幅</th>
                     <th>竞价涨幅</th>
                     <th title="竞价换手率(%)">竞价换手</th>
-                    <th title="竞价量比">竞价量比</th>
                     <th>市值</th>
                     <th>板块</th>
                     <th>连板</th>
                     <th>10日涨幅</th>
                     <th>周期股</th>
                     <th>操作</th>
-                    <th>决策</th>
+                    <th>
+                        决策<span class="rule-info" @click.stop>ⓘ<div class="rule-tip">
+                            <h4>📋 v3.2 分梯队开仓 + 仓位规则</h4>
+                            <div style="color:#a0aec0;margin-bottom:6px;font-size:11px;">基于半年真实数据校准（1进2 中枢 16%、2进3 31.7%、3进4 49%）</div>
+
+                            <h4 style="color:#60a5fa;margin-top:8px;">仓位档位（按 1进2 成功率）</h4>
+                            <table>
+                                <thead><tr><th>1进2</th><th>2进3</th><th>3进4</th><th>4进5+</th></tr></thead>
+                                <tbody>
+                                    <tr><td style="color:#ef4444;">>22% 极强</td><td>35%</td><td>35%</td><td>30%</td></tr>
+                                    <tr><td style="color:#fbbf24;">18-22% 偏强</td><td>25%</td><td>30%</td><td>25%</td></tr>
+                                    <tr><td style="color:#10b981;">15-18% 常态</td><td>15%</td><td>25%</td><td>20%</td></tr>
+                                    <tr><td style="color:#a0aec0;">12-15% 弱势</td><td>5%</td><td>15%</td><td>10%</td></tr>
+                                    <tr><td style="color:#6b7280;">&lt;12% 极弱</td><td>0%</td><td>10%</td><td>5%</td></tr>
+                                </tbody>
+                            </table>
+
+                            <h4 style="color:#60a5fa;margin-top:8px;">2进3 开仓条件（全满足）</h4>
+                            <div style="font-size:11px;">
+                                · 板块集中度 ≥30% <b>或</b> 所属概念涨停 ≥3只<br>
+                                · 竞价换手 &gt;0.6%<br>
+                                · <span style="color:#fbbf24;">非一字板时附加：</span>
+                                  昨日换手 ≥8%（20-100亿）<b>且</b> 昨/前日量比 ≥1.2
+                            </div>
+
+                            <h4 style="color:#60a5fa;margin-top:8px;">3进4+ 开仓条件（全满足）</h4>
+                            <div style="font-size:11px;">
+                                · 板块集中度 ≥25% <b>或</b> 所属概念涨停 ≥2只<br>
+                                · 竞价换手 &gt;0.5%<br>
+                                · 昨日空间板今日不跌停（小跌可接受）
+                            </div>
+
+                            <div class="rt-note">⚠ 跌停潮 ≥9 → 所有梯队仓位减半。首板不在本规则覆盖。</div>
+                        </div></span>
+                    </th>
                 </tr></thead>
                 <tbody>
                     <tr v-for="hit in screenerHits" :key="hit.code">
@@ -718,7 +778,6 @@
                         </td>
                         <td class="gain-pos"><b>{{ hit.auction_gain }}%</b></td>
                         <td>{{ hit.auction_turnover != null ? hit.auction_turnover + '%' : '—' }}</td>
-                        <td>{{ hit.auction_volume_ratio != null ? hit.auction_volume_ratio.toFixed(1) + '%' : '—' }}</td>
                         <td><template v-if="hit.market_cap != null">{{ hit.market_cap }}亿</template><template v-else>—</template></td>
                         <td style="font-size:12px;">
                             <template v-if="topConceptsOf(hit.code).length">
@@ -876,9 +935,10 @@
                             </div>
 
                             <div class="ka-section">
-                                <div class="ka-title">⚖️ 操作建议</div>
+                                <div class="ka-title">⚖️ 操作建议（v3.3 同源）</div>
                                 <div class="ka-row"><span class="ka-label">是否可操作</span><span class="ka-val" :class="klineModal.analysis.operable ? 'pos' : 'neg'">{{ klineModal.analysis.operable ? '✅ 是' : '⛔ 否' }}</span></div>
                                 <div class="ka-row"><span class="ka-label">建议仓位</span><span class="ka-val pos">{{ klineModal.analysis.position }}</span></div>
+                                <div class="ka-row" v-if="klineModal.analysis.ladder_label"><span class="ka-label">推荐梯队</span><span class="ka-val">{{ klineModal.analysis.ladder_label }}</span></div>
                                 <div class="ka-row"><span class="ka-label">买入条件</span><span class="ka-val" style="font-size:11px;">{{ klineModal.analysis.buy_condition }}</span></div>
                                 <div class="ka-row" v-if="klineModal.analysis.stop_loss && klineModal.analysis.stop_loss !== '—'"><span class="ka-label">止损位</span><span class="ka-val warn" style="font-size:11px;">{{ klineModal.analysis.stop_loss }}</span></div>
                                 <div class="ka-row" v-if="!klineModal.analysis.operable && klineModal.analysis.reversal_condition">
@@ -887,14 +947,12 @@
                                 </div>
                             </div>
 
-                            <div class="ka-section" v-if="(klineModal.analysis.bonus_notes||[]).length || (klineModal.analysis.penalty_notes||[]).length">
-                                <div class="ka-title">📋 综合打分</div>
-                                <div v-for="b in (klineModal.analysis.bonus_notes||[])" :key="'b-'+b" class="ka-bullet bonus">+ {{ b }}</div>
-                                <div v-for="p in (klineModal.analysis.penalty_notes||[])" :key="'p-'+p" class="ka-bullet penalty">- {{ p }}</div>
-                            </div>
-
-                            <div class="ka-summary" :class="klineModal.analysis.operable ? (klineModal.analysis.above_both ? 'go' : 'warn') : 'stop'">
-                                💡 {{ klineModal.analysis.summary }}
+                            <div class="ka-section" v-if="(klineModal.analysis.checks||[]).length">
+                                <div class="ka-title">📋 综合打分（v3.3 决策规则逐项）</div>
+                                <div v-for="(c, i) in klineModal.analysis.checks" :key="'c-'+i" class="ka-bullet" :class="c.pass === false ? 'penalty' : 'bonus'">
+                                    {{ c.pass === false ? '✗' : '✓' }} {{ c.label }}：<b>{{ c.value }}</b>
+                                    <span style="color:#6b7280;margin-left:6px;font-size:11px;">需 {{ c.need }}</span>
+                                </div>
                             </div>
                         </template>
                         <div v-else style="color:#6b7280;text-align:center;padding:40px;">{{ klineModal.analysisError || '解读加载失败' }}</div>

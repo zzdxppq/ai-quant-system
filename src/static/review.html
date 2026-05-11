@@ -329,6 +329,25 @@
             border-radius:6px; font-size:14px; line-height:1.7; color:#e0e6ed;
             white-space: pre-line; /* 让 \n 渲染为换行 */
         }
+        /* 今日决策行（评分卡底部）*/
+        .today-action {
+            margin-top: 12px; padding: 10px 14px;
+            background: #0d1220; border-radius: 6px;
+            border-left: 3px solid #60a5fa;
+            display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+            font-size: 13px;
+        }
+        .ta-tag {
+            display: inline-block; padding: 3px 10px; border-radius: 12px;
+            font-weight: 700; font-size: 13px;
+        }
+        .ta-tag.ta-go    { background: #2a0f0f; color: #ef4444; }   /* 重仓 */
+        .ta-tag.ta-norm  { background: #1a2332; color: #60a5fa; }   /* 正常 */
+        .ta-tag.ta-warn  { background: #2a2a0a; color: #fbbf24; }   /* 轻仓 */
+        .ta-tag.ta-stop  { background: #0a2a0a; color: #10b981; }   /* 空仓 */
+        .ta-detail { color: #c9d1d9; }
+        .ta-note { color: #6b7280; font-size: 12px; }
+
         .scorecard-table { width:100%; border-collapse:collapse; }
         .scorecard-table th { text-align:left; padding:8px 10px; font-size:12px; color:#6b7280; border-bottom:1px solid #1e2a45; font-weight:500; }
         .scorecard-table td { padding:8px 10px; font-size:13px; border-bottom:1px solid #0d1220; }
@@ -341,12 +360,19 @@
         .prom-table th { text-align:left; padding:8px 10px; font-size:12px; color:#6b7280; border-bottom:1px solid #1e2a45; font-weight:500; }
         .prom-table td { padding:8px 10px; font-size:13px; border-bottom:1px solid #0d1220; }
         .prom-table tr.row-warn td { background:#1a0a0a; }
+        .watch-pool-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
         .watch-item {
             background:#0d1220; border-left:3px solid #fbbf24; border-radius:6px;
-            padding:10px 14px; margin-bottom:10px;
+            padding:10px 14px;
         }
-        .watch-item:last-child { margin-bottom:0; }
 
+        @media (max-width: 900px) {
+            .watch-pool-grid { grid-template-columns: 1fr; }
+        }
         @media (max-width: 768px) {
             .insight-grid { grid-template-columns: 1fr; }
         }
@@ -420,10 +446,6 @@
                 </span>
                 <span style="margin-left:auto;font-size:12px;color:#6b7280;">{{ review.date }}</span>
             </div>
-            <!-- 一句话决策 -->
-            <div class="dec-headline" :style="{borderLeft: '4px solid ' + review.scorecard.decision_color}">
-                {{ review.scorecard.headline }}
-            </div>
             <!-- 5 项评分指标 -->
             <table class="scorecard-table">
                 <thead><tr>
@@ -443,6 +465,20 @@
                     </tr>
                 </tbody>
             </table>
+            <!-- 今日决策（基于总分自动映射） -->
+            <div v-if="review.scorecard.today_action" class="today-action">
+                <span class="ta-tag" :class="taActionCls">
+                    🎯 今日决策：{{ review.scorecard.today_action.verdict }}
+                </span>
+                <span class="ta-detail">
+                    总分 <b>{{ review.scorecard.total_score }}/6</b> →
+                    仓位 <b style="color:#fbbf24;">{{ review.scorecard.today_action.position }}</b>
+                    | 推荐梯队 <b style="color:#60a5fa;">{{ review.scorecard.today_action.ladders }}</b>
+                </span>
+                <span v-if="review.scorecard.today_action.note" class="ta-note">
+                    · {{ review.scorecard.today_action.note }}
+                </span>
+            </div>
         </div>
 
         <!-- ============ 区域 B：资金接力情绪 ============ -->
@@ -544,7 +580,7 @@
                     主板 + (流通市值&lt;100亿 AND ≥2连板) 或 (top30·gain≥45% AND 首板)
                 </span>
             </div>
-            <div v-if="watchPool.length">
+            <div v-if="watchPool.length" class="watch-pool-grid">
                 <div v-for="(w, i) in watchPool" :key="w.code" class="watch-item">
                     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
                         <span style="color:#fbbf24;font-weight:700;font-size:14px;">{{ i+1 }}. {{ w.name }}</span>
@@ -902,14 +938,14 @@
                             <th>日期</th><th>代码</th><th>名称</th><th>连板</th>
                             <th>开盘价</th><th>竞价涨幅</th>
                             <th title="竞价换手率(%)">竞价换手</th>
-                            <th title="竞价量比">竞价量比</th>
-                            <th title="封板时间（涨停时）">封板</th>
                             <th>收盘价</th><th>收盘涨幅</th><th>次日竞价</th><th>次日收盘涨幅</th>
                             <th>10日涨幅</th>
                             <th title="当日复盘 1进2 成功率">1进2</th>
                             <th title="当日板块/概念集中度">集中度</th>
                             <th>周期股</th><th>周期计数</th>
-                            <th>胜负</th><th>备注</th>
+                            <th>胜负</th>
+                            <th title="v3.3 决策快照（开仓/空仓 + 仓位 + 梯队）">决策</th>
+                            <th>备注</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -941,8 +977,6 @@
                                 <td>{{ r.open_price || '-' }}</td>
                                 <td :class="numClass(r.auction_gain)">{{ fmtPct(r.auction_gain) }}</td>
                                 <td>{{ r.auction_turnover != null ? r.auction_turnover + '%' : '—' }}</td>
-                                <td>{{ r.auction_volume_ratio != null ? Number(r.auction_volume_ratio).toFixed(1) + '%' : '—' }}</td>
-                                <td>{{ r.limit_up_time || '—' }}</td>
                                 <td>{{ r.close_price || '-' }}</td>
                                 <td :class="numClass(r.day_change)">{{ fmtPct(r.day_change) }}</td>
                                 <td :class="numClass(r.next_day_auction_gain)">{{ fmtPct(r.next_day_auction_gain) }}</td>
@@ -966,6 +1000,18 @@
                                     <span v-else-if="r.is_win === false" class="tag" style="background:#0a2a1a;color:#10b981;">亏</span>
                                     <span v-else class="tag" style="background:#1a1a2e;color:#6b7280;">待定</span>
                                     <span v-if="r.is_zhaban" class="tag" style="background:#78350f;color:#fbbf24;margin-left:2px;">炸</span>
+                                </td>
+                                <td style="font-size:11px;" :title="r.decision && r.decision.reason || ''">
+                                    <template v-if="r.decision && r.decision.can_open">
+                                        <span class="tag" style="background:#3b0a0a;color:#ef4444;">✅开仓</span>
+                                        <span style="color:#fbbf24;margin-left:3px;font-weight:600;">{{ r.decision.position_text }}</span>
+                                        <span v-if="r.decision.ladder_label" style="color:#60a5fa;margin-left:3px;">{{ r.decision.ladder_label }}</span>
+                                    </template>
+                                    <template v-else-if="r.decision">
+                                        <span class="tag" style="background:#0a2a1a;color:#10b981;">⛔空仓</span>
+                                        <span v-if="r.decision.ladder_label" style="color:#6b7280;margin-left:3px;">{{ r.decision.ladder_label }}</span>
+                                    </template>
+                                    <span v-else style="color:#4b5563;">—</span>
                                 </td>
                                 <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">
                                     <span v-if="r.sanbanzhu" style="color:#ef4444;font-weight:600;" :title="r.sanbanzhu_detail">⚠️三板组</span>
@@ -1035,9 +1081,10 @@
                             </div>
                         </div>
                         <div class="ka-section">
-                            <div class="ka-title">⚖️ 操作建议</div>
+                            <div class="ka-title">⚖️ 操作建议（v3.3 同源）</div>
                             <div class="ka-row"><span class="ka-label">是否可操作</span><span class="ka-val" :class="klineModal.analysis.operable ? 'pos' : 'neg'">{{ klineModal.analysis.operable ? '✅ 是' : '⛔ 否' }}</span></div>
                             <div class="ka-row"><span class="ka-label">建议仓位</span><span class="ka-val pos">{{ klineModal.analysis.position }}</span></div>
+                            <div class="ka-row" v-if="klineModal.analysis.ladder_label"><span class="ka-label">推荐梯队</span><span class="ka-val">{{ klineModal.analysis.ladder_label }}</span></div>
                             <div class="ka-row"><span class="ka-label">买入条件</span><span class="ka-val" style="font-size:11px;">{{ klineModal.analysis.buy_condition }}</span></div>
                             <div class="ka-row" v-if="klineModal.analysis.stop_loss && klineModal.analysis.stop_loss !== '—'"><span class="ka-label">止损位</span><span class="ka-val warn" style="font-size:11px;">{{ klineModal.analysis.stop_loss }}</span></div>
                             <div class="ka-row" v-if="!klineModal.analysis.operable && klineModal.analysis.reversal_condition">
@@ -1045,13 +1092,12 @@
                                 <span class="ka-val" style="font-size:11px;color:#fbbf24;">⏳ {{ klineModal.analysis.reversal_condition }}</span>
                             </div>
                         </div>
-                        <div class="ka-section" v-if="(klineModal.analysis.bonus_notes||[]).length || (klineModal.analysis.penalty_notes||[]).length">
-                            <div class="ka-title">📋 综合打分</div>
-                            <div v-for="b in (klineModal.analysis.bonus_notes||[])" :key="'b-'+b" class="ka-bullet bonus">+ {{ b }}</div>
-                            <div v-for="p in (klineModal.analysis.penalty_notes||[])" :key="'p-'+p" class="ka-bullet penalty">- {{ p }}</div>
-                        </div>
-                        <div class="ka-summary" :class="klineModal.analysis.operable ? (klineModal.analysis.above_both ? 'go' : 'warn') : 'stop'">
-                            💡 {{ klineModal.analysis.summary }}
+                        <div class="ka-section" v-if="(klineModal.analysis.checks||[]).length">
+                            <div class="ka-title">📋 综合打分（v3.3 决策规则逐项）</div>
+                            <div v-for="(c, i) in klineModal.analysis.checks" :key="'c-'+i" class="ka-bullet" :class="c.pass === false ? 'penalty' : 'bonus'">
+                                {{ c.pass === false ? '✗' : '✓' }} {{ c.label }}：<b>{{ c.value }}</b>
+                                <span style="color:#6b7280;margin-left:6px;font-size:11px;">需 {{ c.need }}</span>
+                            </div>
                         </div>
                     </template>
                     <div v-else style="color:#6b7280;text-align:center;padding:40px;">{{ klineModal.analysisError || '解读加载失败' }}</div>
@@ -1281,6 +1327,15 @@ createApp({
             return Number(v) >= 0 ? 'gain-pos' : 'gain-neg'
         }
 
+        // 今日决策标签样式（依据评分卡 verdict）
+        const taActionCls = computed(() => {
+            const v = review.value?.scorecard?.today_action?.verdict
+            if (v === '重仓') return 'ta-go'
+            if (v === '正常') return 'ta-norm'
+            if (v === '试错' || v === '轻仓') return 'ta-warn'
+            return 'ta-stop'
+        })
+
         // 晋级矩阵：按昨日板数分组，每组含 promoted/failed
         const boardGroups = computed(() => review.value.prev_board_groups || [])
         const todayCount = computed(() => review.value.limit_up_count || 0)
@@ -1439,6 +1494,7 @@ createApp({
             runReview,
             waveClass, waveColor, capitalHighlights,
             ciTagClass, ciTagLabel, fmtPct, numClass,
+            taActionCls,
         }
     }
 }).mount('#app')

@@ -564,103 +564,16 @@ def analyze_stock_action(
         "above_both": above_both,
     })
 
-    # ── 综合打分 → 仓位决策 ────────────────────────
-    concentration = float(market_ctx.get("concentration") or 0)
-    lb_index = float(market_ctx.get("lianban_index_pct") or 0)
-    b1_rate = float(market_ctx.get("b1_rate") or 0)
-    phase = str(market_ctx.get("attack_phase") or "")
+    # ── 走 v3.3 决策规则（与今日选股-决策列同源）──
+    psd, checks = _evaluate_v33(hit_dict=auction_ctx.get("hit_dict"),
+                                 auction_ctx=auction_ctx,
+                                 market_ctx=market_ctx,
+                                 df=df)
 
-    # ── 硬性否决：1进2 成功率 < 20% → 直接空仓 ──
-    # 主板 2 板以上接力策略，1进2 是新进资金动能的核心指标，
-    # 低于 20% 表示接力赚钱效应已枯竭，无论双线突破或板块多强都不开仓。
-    if b1_rate > 0 and b1_rate < 20:
-        reversal = (
-            f"1进2 成功率回升 ≥ 20%（当前 {b1_rate:.1f}%）；"
-            "且板块集中度 ≥ 30% + 个股保持双线之上"
-        )
-        out.update({
-            "operable": False,
-            "position": "空仓",
-            "buy_condition": "禁止开仓（1进2 成功率不足，接力生态枯竭）",
-            "stop_loss": "—",
-            "reversal_condition": reversal,
-            "summary": (
-                f"1进2 成功率 {b1_rate:.1f}% < 20%，主板 2 板以上接力策略硬性禁止开仓；"
-                f"逆转条件：{reversal}"
-            ),
-            "bonus_notes": [],
-            "penalty_notes": [f"1进2 仅 {b1_rate:.1f}%（< 20% 硬性否决）"],
-            "veto_b1": True,
-        })
-        return out
+    operable = bool(psd.get("can_open"))
+    position = psd.get("position_text") or "0% (空仓)"
 
-    # 加分
-    bonus = 0
-    bonus_notes: list[str] = []
-    if concentration >= 50:
-        bonus += 2
-        bonus_notes.append(f"板块集中度{concentration:.0f}%（高度集中）")
-    elif concentration >= 30:
-        bonus += 1
-        bonus_notes.append(f"板块集中度{concentration:.0f}%（主线明确）")
-    if lb_index > 2:
-        bonus += 1
-        bonus_notes.append(f"昨日连板指数+{lb_index:.1f}%（赚钱效应延续）")
-    if b1_rate >= 40:
-        bonus += 1
-        bonus_notes.append(f"1进2成功率{b1_rate:.0f}%（接力健康）")
-    if "发酵" in phase or "启动" in phase:
-        bonus += 1
-        bonus_notes.append(f"市场{phase}（攻击窗口）")
-
-    # 减分
-    penalty = 0
-    penalty_notes: list[str] = []
-    if "高潮" in phase:
-        penalty += 2
-        penalty_notes.append(f"市场{phase}（警惕退潮）")
-    if "冰点" in phase:
-        penalty += 2
-        penalty_notes.append(f"市场{phase}（接力稀缺）")
-    if lb_index < 0:
-        penalty += 1
-        penalty_notes.append(f"昨日连板指数{lb_index:.1f}%（亏钱效应）")
-    # 竞价过热 / 已涨停 风险（优先看竞价；无竞价数据时回退 K线 close）
-    risk_gain = float(auction_gain) if auction_gain is not None else gain
-    if risk_gain >= 7:
-        penalty += 1
-        penalty_notes.append(
-            f"{'竞价' if auction_gain is not None else '收盘'}+{risk_gain:.1f}%（追高/高位接力风险）"
-        )
-    elif risk_gain >= 9.5:
-        penalty += 2
-        penalty_notes.append(f"已涨停 +{risk_gain:.1f}%（高位接力风险）")
-
-    # ── 仓位决策 ─────────────────────────────────
-    if above_both and bonus >= 3 and penalty <= 1:
-        position = "重仓(50%)"
-        operable = True
-    elif above_both and bonus >= 1:
-        position = "正常(20-30%)"
-        operable = True
-    elif (above_qiba or above_mixian) and bonus >= 1:
-        position = "轻仓(10%)"
-        operable = True
-    else:
-        position = "空仓"
-        operable = False
-
-    # ── 买入条件 ─────────────────────────────────
-    if position == "重仓(50%)":
-        buy_condition = "明日竞价 3%~6% + 换手 >0.8% + 量能放大；竞价跳空高开 >7% 则等待回踩起拔线"
-    elif position == "正常(20-30%)":
-        buy_condition = "明日竞价 4%~7% + 换手 >0.8% + 板块集中度维持 >30%；破开盘价 -2% 即出"
-    elif position == "轻仓(10%)":
-        buy_condition = "明日竞价 2%~5% + 缩量阴线启动型；破开盘价坚决出，不补仓"
-    else:
-        buy_condition = "暂不参与；等突破双线 + 量能配合再考虑"
-
-    # ── 止损位 ───────────────────────────────────
+    # 止损位（与原逻辑一致：双线/起拔/秘线/开盘价回退）
     if qiba is not None and mixian is not None:
         lower = min(qiba, mixian)
         stop_loss = f"跌破 {lower:.2f}（起拔/秘线较低者）-3%（约 {lower * 0.97:.2f}）即清仓"
@@ -671,54 +584,202 @@ def analyze_stock_action(
     else:
         stop_loss = "跌破今日开盘价 -3% 即清仓"
 
-    # ── 逆转条件（空仓时给出，非硬性否决场景）──
-    reversal: Optional[str] = None
-    if not operable:
-        missing = []
-        if not above_qiba: missing.append("起拔线")
-        if not above_mixian: missing.append("秘线")
-        bits = []
-        if missing:
-            bits.append("个股突破" + " + ".join(missing))
-        if concentration < 30:
-            bits.append(f"板块集中度回升 ≥ 30%（当前 {concentration:.0f}%）")
-        if lb_index <= 0:
-            bits.append("昨日连板指数 > 0")
-        reversal = "；".join(bits) if bits else "市场环境改善 + 量能配合"
-
-    # ── 一句话总结 ────────────────────────────────
-    if operable and above_both:
-        summary = (
-            f"突破双压力线（起拔 {qiba:.2f} / 秘线 {mixian:.2f}）"
-            + ("，" + "+".join(bonus_notes[:2]) if bonus_notes else "")
-            + f"，可参与{position}接力"
-            + (f"；注意：{penalty_notes[0]}" if penalty_notes else "")
-        )
-    elif operable:
-        line = "起拔线" if above_qiba else "秘线"
-        summary = (
-            f"仅突破{line}（{qiba if above_qiba else mixian}），"
-            f"另一线未确认，{position}试错；破信号位坚决出"
-        )
-    else:
-        if not above_qiba and not above_mixian:
-            summary = "未突破起拔线 + 秘线，主动攻击信号缺失，空仓观察"
+    # 买入/逆转条件：从 v3.3 失败原因反推；可开仓时给目标条件
+    if operable:
+        ladder = psd.get("ladder_label", "")
+        if ladder.startswith("2进3"):
+            buy_condition = "v3.3 全部条件已满足；建议按建议仓位入场。盘中破开盘价 -2% 即出。"
+        elif ladder.startswith("3进4") or ladder.startswith("4进5") or ladder.startswith("5进6"):
+            buy_condition = "v3.3 高位接力条件已满足；建议按建议仓位入场。盘中破开盘价或起拔线即出。"
         else:
-            summary = f"双线未同时突破 + 市场环境偏弱（{phase or '未知'}），空仓回避"
-        if reversal:
-            summary += f"；逆转条件：{reversal}"
+            buy_condition = "已满足开仓条件，按建议仓位入场。"
+        reversal_condition = None
+    else:
+        buy_condition = "暂不参与（详见综合打分中未达条件）"
+        # 把失败的 check 串成逆转条件
+        unmet = [c for c in checks if c.get("pass") is False]
+        if unmet:
+            reversal_condition = "；".join(c.get("need", c.get("label", "")) for c in unmet)
+        else:
+            reversal_condition = psd.get("reason", "等待 v3.3 规则全部达标")
 
     out.update({
         "operable": operable,
         "position": position,
+        "ladder_label": psd.get("ladder_label"),
+        "reason": psd.get("reason"),
         "buy_condition": buy_condition,
         "stop_loss": stop_loss,
-        "reversal_condition": reversal,
-        "summary": summary,
-        "bonus_notes": bonus_notes,
-        "penalty_notes": penalty_notes,
-        "veto_b1": False,
+        "reversal_condition": reversal_condition,
+        "checks": checks,
+        "veto_b1": (psd.get("veto_reason") == "table_zero"),
     })
+    return out
+
+
+# =====================================================================
+# v3.3 决策映射器：用今日选股的 compute_per_stock_decision 出仓位 + 列条件
+# =====================================================================
+def _evaluate_v33(hit_dict, auction_ctx, market_ctx, df):
+    """从可用上下文构建 hit & market_env，调 v3.3 规则；并产出"综合打分"明细。
+
+    Returns: (psd, checks)
+      psd: compute_per_stock_decision 原 dict
+      checks: list[{label, value, pass(bool|None), need(str)}]
+    """
+    from src.engine.screener_decision import compute_per_stock_decision, _env_level
+
+    auction_ctx = auction_ctx or {}
+    market_ctx = market_ctx or {}
+
+    # ── 构造 hit ──
+    if hit_dict and isinstance(hit_dict, dict):
+        hit = dict(hit_dict)  # shallow copy
+    else:
+        hit = {}
+    # 用 auction_ctx 补全
+    for k_src, k_dst in [
+        ("auction_gain", "auction_gain"),
+        ("auction_turnover", "auction_turnover"),
+        ("auction_volume_ratio", "auction_volume_ratio"),
+        ("open_price", "open_price"),
+    ]:
+        if hit.get(k_dst) is None and auction_ctx.get(k_src) is not None:
+            hit[k_dst] = auction_ctx[k_src]
+    # 板数：缺失时从 K 线推（连续涨停计数）
+    if hit.get("continuous_limit_up") is None:
+        hit["continuous_limit_up"] = _count_consecutive_lu_from_kline(df, str(hit.get("code") or ""))
+
+    market_env = {
+        "b1_rate": market_ctx.get("b1_rate"),
+        "concentration": market_ctx.get("concentration"),
+        "market_limit_down": market_ctx.get("market_limit_down"),
+    }
+    # concept_zt_stats / space_board 不在 K 线 ctx 里，留空（影响仅在 5+板的备选概念条件）
+    psd = compute_per_stock_decision(
+        hit, market_env,
+        concept_zt_stats=market_ctx.get("concept_zt_stats") or [],
+        space_board_today=market_ctx.get("space_board_today"),
+        market_highest_board=market_ctx.get("market_highest_board"),
+    )
+
+    checks = _v33_checks(hit, market_env, psd)
+    return psd, checks
+
+
+def _count_consecutive_lu_from_kline(df, code: str) -> int:
+    """K 线推连续涨停板数（仅用于非选股池股票兜底）"""
+    try:
+        import pandas as pd
+        if df is None or df.empty or len(df) < 2:
+            return 0
+        threshold = 19.5 if code.startswith(("300", "301", "688", "689")) else 9.5
+        count = 0
+        for i in range(len(df) - 1, 0, -1):
+            prev_c = float(df.iloc[i - 1]["close"])
+            cur_c = float(df.iloc[i]["close"])
+            if prev_c <= 0:
+                break
+            chg = (cur_c / prev_c - 1) * 100
+            if chg >= threshold:
+                count += 1
+            else:
+                break
+        return count
+    except Exception:
+        return 0
+
+
+def _v33_checks(hit: dict, env: dict, psd: dict) -> list[dict]:
+    """产出 v3.3 综合打分明细：每条规则的 label/value/pass/need"""
+    from src.engine.screener_decision import _env_level
+    out: list[dict] = []
+    board = int(hit.get("continuous_limit_up", 0) or 0)
+    b1 = env.get("b1_rate")
+    conc = env.get("concentration")
+    at = hit.get("auction_turnover")
+    prev_to = hit.get("prev_day_turnover")
+    prev_vr = hit.get("prev_volume_ratio")
+    prev_yizi = hit.get("prev_day_yizi")
+    mc = hit.get("market_cap")
+
+    # 1) 1进2 档位
+    if b1 is not None:
+        try:
+            b1f = float(b1)
+            lvl = _env_level(b1f)
+            out.append({
+                "label": "1进2 成功率",
+                "value": f"{b1f:.1f}% · {lvl}",
+                "pass": (b1f >= 12),
+                "need": "≥12%（极弱势 < 12 不开 2进3）",
+            })
+        except Exception:
+            pass
+
+    # 2) 板块集中度（梯队差异：2进3 ≥30 / 3+板 ≥25）
+    threshold_conc = 30 if board == 2 else 25 if board >= 3 else None
+    if threshold_conc is not None and conc is not None:
+        try:
+            cf = float(conc)
+            out.append({
+                "label": "板块集中度",
+                "value": f"{cf:.1f}%",
+                "pass": (cf >= threshold_conc),
+                "need": f"≥{threshold_conc}% 或 概念涨停 ≥{3 if board==2 else 2}只",
+            })
+        except Exception:
+            pass
+
+    # 3) 竞价换手（梯队差异）
+    threshold_at = 0.6 if board == 2 else 0.5 if board >= 3 else None
+    if threshold_at is not None:
+        try:
+            af = float(at) if at is not None else None
+            out.append({
+                "label": "竞价换手",
+                "value": f"{af:.2f}%" if af is not None else "—",
+                "pass": (af is not None and af > threshold_at),
+                "need": f">{threshold_at}%",
+            })
+        except Exception:
+            pass
+
+    # 4-5) 缩量换手板过滤（仅 board=2 且非一字板）
+    if board == 2 and prev_yizi is False:
+        # 昨日换手 ≥8%（20-100亿适用）
+        if mc is not None:
+            try:
+                mcf = float(mc)
+                if 20 <= mcf <= 100:
+                    pf = float(prev_to) if prev_to is not None else None
+                    out.append({
+                        "label": "昨日换手率",
+                        "value": f"{pf:.2f}%" if pf is not None else "—",
+                        "pass": (pf is not None and pf >= 8),
+                        "need": "≥8%（20-100亿市值适用）",
+                    })
+            except Exception:
+                pass
+        # 量比 ≥1.2
+        try:
+            vrf = float(prev_vr) if prev_vr is not None else None
+            out.append({
+                "label": "昨日/前日量比",
+                "value": f"{vrf:.2f}" if vrf is not None else "—",
+                "pass": (vrf is not None and vrf >= 1.2),
+                "need": "≥1.2（温和放量 20%+）",
+            })
+        except Exception:
+            pass
+    elif board == 2 and prev_yizi:
+        out.append({
+            "label": "二板形态",
+            "value": "一字板",
+            "pass": True,
+            "need": "一字板免缩量过滤",
+        })
+
     return out
 
 

@@ -9,6 +9,29 @@ TZ_CN = timezone(timedelta(hours=8))
 def now_cn() -> datetime:
     return datetime.now(TZ_CN)
 
+
+def is_trading_day(d: datetime | None = None) -> bool:
+    """A 股交易日判定
+
+    A 股市场：
+      · 周六、周日恒定休市（即使是调休补班日也不开盘）
+      · 法定节假日休市（含正常工作日落在节假日时）
+
+    判定逻辑：
+      1. 周末 → 非交易日
+      2. 工作日且 chinese_calendar 标记为节假日（如周三元旦）→ 非交易日
+      3. 其他工作日 → 交易日
+    """
+    d = d or now_cn()
+    target = d.date() if hasattr(d, "date") else d
+    if target.weekday() >= 5:  # Sat / Sun 一律休市
+        return False
+    try:
+        import chinese_calendar as cc
+        return not cc.is_holiday(target)
+    except (ImportError, NotImplementedError):
+        return True  # 工作日 + 库不可用 → 默认开市
+
 # 项目根目录
 BASE_DIR = Path(__file__).resolve().parent.parent
 

@@ -259,6 +259,16 @@ def archive_today_hits(hits: list[dict], spot_df=None):
 
         # 当日封板时间（若涨停）— 从 latest_review.lianban_ladder 查
         lbt = _lookup_limit_up_time(code)
+        # 当日决策（v3.3 per_stock_decision 快照）
+        psd = h.get("per_stock_decision") or {}
+        decision_snapshot = {
+            "action": psd.get("action"),
+            "position_pct": psd.get("position_pct"),
+            "position_text": psd.get("position_text"),
+            "ladder_label": psd.get("ladder_label"),
+            "can_open": psd.get("can_open"),
+            "reason": psd.get("reason"),
+        } if psd else None
         records.append({
             "date": today,
             "code": code,
@@ -270,6 +280,7 @@ def archive_today_hits(hits: list[dict], spot_df=None):
             "auction_gain": h.get("auction_gain", 0),
             "auction_turnover": h.get("auction_turnover"),       # 竞价换手率(%)
             "auction_volume_ratio": h.get("auction_volume_ratio"),  # 竞价量比
+            "decision": decision_snapshot,                        # v3.3 决策快照
             "market_cap": h.get("market_cap", 0),
             "gain_10d": h.get("gain_10d", 0) or _calc_gain_10d(code),
             "industry": industry,

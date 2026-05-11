@@ -10,3 +10,4 @@ httpx>=0.27.0
 MyTT>=1.0
 mplfinance>=0.12.10b0
 matplotlib>=3.7.0
+chinese_calendar>=1.10.0
