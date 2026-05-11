@@ -1001,15 +1001,17 @@
                                     <span v-else class="tag" style="background:#1a1a2e;color:#6b7280;">待定</span>
                                     <span v-if="r.is_zhaban" class="tag" style="background:#78350f;color:#fbbf24;margin-left:2px;">炸</span>
                                 </td>
-                                <td style="font-size:11px;" :title="r.decision && r.decision.reason || ''">
+                                <td style="font-size:11px;line-height:1.5;" :title="r.decision && r.decision.reason || ''">
                                     <template v-if="r.decision && r.decision.can_open">
-                                        <span class="tag" style="background:#3b0a0a;color:#ef4444;">✅开仓</span>
-                                        <span style="color:#fbbf24;margin-left:3px;font-weight:600;">{{ r.decision.position_text }}</span>
-                                        <span v-if="r.decision.ladder_label" style="color:#60a5fa;margin-left:3px;">{{ r.decision.ladder_label }}</span>
+                                        <div><span class="tag" style="background:#3b0a0a;color:#ef4444;">✅开仓</span></div>
+                                        <div>
+                                            <span style="color:#fbbf24;font-weight:600;">{{ r.decision.position_text }}</span>
+                                            <span v-if="r.decision.ladder_label" style="color:#60a5fa;margin-left:4px;">{{ r.decision.ladder_label }}</span>
+                                        </div>
                                     </template>
                                     <template v-else-if="r.decision">
-                                        <span class="tag" style="background:#0a2a1a;color:#10b981;">⛔空仓</span>
-                                        <span v-if="r.decision.ladder_label" style="color:#6b7280;margin-left:3px;">{{ r.decision.ladder_label }}</span>
+                                        <div><span class="tag" style="background:#0a2a1a;color:#10b981;">⛔空仓</span></div>
+                                        <div v-if="r.decision.ladder_label" style="color:#6b7280;">{{ r.decision.ladder_label }}</div>
                                     </template>
                                     <span v-else style="color:#4b5563;">—</span>
                                 </td>
