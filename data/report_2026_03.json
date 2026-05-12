@@ -1,0 +1,26 @@
+{
+  "period": "2026年3月",
+  "generated_at": "2026-04-30 18:26:58",
+  "total_signals": 0,
+  "judged_signals": 0,
+  "wins": 0,
+  "losses": 0,
+  "win_rate": 0,
+  "board_distribution": {},
+  "outcome_distribution": {
+    "涨停": 0,
+    "涨停炸板": 0,
+    "未涨停": 0
+  },
+  "emotion_analysis": {
+    "strong_market_trades": 0,
+    "strong_market_win_rate": 0,
+    "weak_market_trades": 0,
+    "weak_market_win_rate": 0
+  },
+  "sanbanzhu_count": 0,
+  "sanbanzhu_win_rate": null,
+  "suggestions": [
+    "整体胜率偏低，建议收紧信号筛选条件或降低仓位"
+  ]
+}
