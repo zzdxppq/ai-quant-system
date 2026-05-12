@@ -83,6 +83,14 @@ def setup_scheduler():
         except Exception as e:
             print(f"[决策追踪] 回填异常: {e}")
 
+        # 3. 趋势选股 + 历史回填
+        try:
+            from src.engine.trend_screener import run_trend_screener, backfill_trend_next_day
+            run_trend_screener()
+            backfill_trend_next_day()
+        except Exception as e:
+            print(f"[趋势选股] 异常: {e}")
+
     scheduler.add_job(
         _run_post_market,
         "cron",

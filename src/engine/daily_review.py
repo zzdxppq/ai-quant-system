@@ -740,7 +740,10 @@ def _get_lianban_ladder() -> list[dict]:
             zt_info = zt_pool.get(code, {}) or zt_pool.get(str(code).zfill(6), {})
 
             # 流通市值（亿）+ 当日收盘价 — spot 含 market_cap（单位元）+ close
-            row = spot_map.get(str(code)) or {}
+            # 注意：spot_map 存的是 pandas Series，不能 `Series or {}`（Series 真值含混）
+            row = spot_map.get(str(code))
+            if row is None:
+                row = {}
             try:
                 mc_raw = float(row.get("market_cap", 0) or 0)
                 close_p = float(row.get("close", 0) or 0)

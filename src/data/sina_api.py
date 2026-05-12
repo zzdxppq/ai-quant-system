@@ -86,8 +86,14 @@ def fetch_single(code: str) -> Optional[dict]:
 
 
 def _to_sina_code(code: str) -> str:
-    """转换为新浪代码格式: 000001 -> sz000001, 600519 -> sh600519"""
-    code = str(code).strip()
+    """转换为新浪代码格式: 000001 -> sz000001, 600519 -> sh600519
+
+    若调用方已传入 sh/sz/bj 前缀（如指数 sh000001），原样返回；
+    否则按代码段推导前缀。
+    """
+    code = str(code).strip().lower()
+    if code.startswith(("sh", "sz", "bj")):
+        return code
     if code.startswith(("50", "51", "60", "68", "90", "110", "113", "132", "204")):
         return f"sh{code}"
     else:

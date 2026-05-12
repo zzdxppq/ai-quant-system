@@ -55,6 +55,39 @@
             margin: 0 auto;
         }
 
+        /* 顶部 Tab：钟馗捉妖 / 趋势选股 */
+        .dash-tabs { grid-column: 1 / -1; display:flex; gap:8px; margin-bottom:4px; }
+        .dash-tab-btn {
+            background:#111827; border:1px solid #1e2a45; color:#a0aec0;
+            padding:8px 18px; border-radius:8px; cursor:pointer;
+            font-size:14px; font-weight:600; transition:all .2s;
+            display:inline-flex; align-items:center; gap:6px;
+        }
+        .dash-tab-btn:hover { color:#60a5fa; border-color:#60a5fa; }
+        .dash-tab-btn.active { background:#1e3a5f; color:#60a5fa; border-color:#60a5fa; }
+        .dash-tab-badge { background:#ef4444; color:#fff; font-size:11px; padding:1px 7px; border-radius:10px; font-weight:700; }
+
+        /* 趋势选股 hit 卡片 */
+        .trend-hit { padding:14px 16px; border:1px solid #1e2a45; border-left:4px solid #ef4444; border-radius:8px; margin-bottom:12px; background:#0d1220; }
+        .trend-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:13px; }
+        .trend-rank { background:#ef4444; color:#fff; font-weight:700; padding:2px 8px; border-radius:4px; font-size:13px; }
+        .trend-name { font-size:16px; font-weight:700; color:#f0f2f5; }
+        .trend-code { color:#6b7280; font-size:12px; }
+        .trend-score { padding:2px 10px; border-radius:12px; font-weight:700; font-size:13px; }
+        .trend-score.s-high { background:#3b0a0a; color:#ef4444; }
+        .trend-score.s-mid  { background:#2a1f0a; color:#fbbf24; }
+        .trend-score.s-low  { background:#1a2a3a; color:#60a5fa; }
+        .trend-meta { color:#a0aec0; font-size:12px; }
+        .trend-kline { margin-left:auto; color:#60a5fa; text-decoration:none; font-size:12px; cursor:pointer; }
+        .trend-scores { display:flex; gap:12px; flex-wrap:wrap; margin-top:8px; font-size:12px; color:#a0aec0; }
+        .ts-cell { padding:2px 8px; background:#1a2332; border-radius:4px; }
+        .ts-cell b { color:#fbbf24; }
+        .ts-cell.ts-bonus.pos b { color:#ef4444; }
+        .ts-cell.ts-bonus.neg b { color:#10b981; }
+        .trend-action { margin-top:10px; padding:8px 12px; background:#1a2332; border-radius:6px; font-size:12px; color:#c9d1d9; line-height:1.6; }
+        .trend-concepts { margin-top:8px; font-size:12px; }
+        .trend-concept-pill { background:#3b0a0a; color:#ef4444; padding:2px 8px; border-radius:10px; font-size:11px; margin-right:4px; }
+
         .card {
             background: #111827;
             border: 1px solid #1e2a45;
@@ -587,19 +620,27 @@
             <div class="date">{{ today }}</div>
         </div>
         <div class="actions">
-            <a href="/ranking" class="btn btn-accent" style="text-decoration:none;">
-                10日涨幅榜
-            </a>
-            <a href="/review" class="btn btn-accent" style="text-decoration:none;">
-                复盘
-            </a>
-            <a href="/history" class="btn btn-accent" style="text-decoration:none;">
-                选股记录
-            </a>
+            <a href="/ranking" class="btn btn-accent" style="text-decoration:none;">10日涨幅榜</a>
+            <a href="/review" class="btn btn-accent" style="text-decoration:none;">复盘</a>
         </div>
     </div>
 
     <div class="dashboard">
+        <!-- Tab 切换：钟馗捉妖 / 趋势选股 -->
+        <div class="dash-tabs full-width">
+            <button class="dash-tab-btn" :class="{active: dashTab === 'zhongkui'}" @click="dashTab='zhongkui'">
+                🦸 钟馗捉妖
+            </button>
+            <button class="dash-tab-btn" :class="{active: dashTab === 'trend'}" @click="dashTab='trend'">
+                🎯 趋势选股
+                <span v-if="trendPool.pool && trendPool.pool.length" class="dash-tab-badge">
+                    {{ trendPool.pool.length }}
+                </span>
+            </button>
+        </div>
+
+        <!-- 钟馗捉妖：现有看板内容（包于 v-show） -->
+        <template v-if="dashTab === 'zhongkui'">
         <!-- 决策大字栏 — 9:27 后 3 分钟决策核心 -->
         <div class="card full-width hero-banner" :class="dailyAdvice.cls">
             <div class="hero-main">
@@ -846,6 +887,7 @@
                     <th>昨日竞价</th><th>昨日收盘</th><th>昨日 day%</th>
                     <th>今日开盘</th><th>今日竞价 vs 昨收</th>
                     <th>结果</th>
+                    <th>今日收盘涨幅</th>
                 </tr></thead>
                 <tbody>
                     <tr v-for="r in yesterdaySelections" :key="r.code">
@@ -872,10 +914,139 @@
                             <span v-else-if="r.next_day_auction_gain >= -3" class="tag" style="background:#0a2a1a;color:#10b981;padding:1px 6px;border-radius:4px;font-size:11px;">↓ 低开</span>
                             <span v-else class="tag" style="background:#0a3a1a;color:#34d399;padding:1px 6px;border-radius:4px;font-size:11px;">⛔ 深水</span>
                         </td>
+                        <td :class="r.next_day_close_gain == null ? '' : (r.next_day_close_gain >= 0 ? 'gain-pos' : 'gain-neg')">
+                            <b v-if="r.next_day_close_gain != null">{{ (r.next_day_close_gain >= 0 ? '+' : '') + r.next_day_close_gain }}%</b>
+                            <span v-else style="color:#6b7280;">⏳ 待收盘</span>
+                        </td>
                     </tr>
                 </tbody>
             </table>
         </div>
+        </template>
+
+        <!-- 趋势选股 Tab：迁自 /ranking -->
+        <template v-if="dashTab === 'trend'">
+            <div class="card full-width">
+                <div class="card-title">
+                    <span class="icon">🎯</span> 趋势选股 · 明日观察池
+                    <span style="margin-left:auto;font-size:11px;color:#6b7280;">
+                        {{ trendPool.date || '—' }} · 评分阈值 ≥70 取前 3
+                    </span>
+                </div>
+                <div v-if="!trendPool.pool || !trendPool.pool.length" class="empty-state">
+                    暂无趋势股开仓建议（无人达到 70 分阈值）
+                </div>
+                <div v-else>
+                    <div v-for="(h, i) in trendPool.pool" :key="h.code" class="trend-hit">
+                        <div class="trend-head">
+                            <span class="trend-rank">#{{ i + 1 }}</span>
+                            <span class="trend-name">{{ h.name }}</span>
+                            <span class="trend-code">{{ h.code }}</span>
+                            <span class="trend-score" :class="trendScoreCls(h.total_score)">
+                                总分 {{ h.total_score }}
+                            </span>
+                            <span class="trend-meta">
+                                10日 <b style="color:#ef4444;">+{{ h.gain_10d }}%</b>
+                                · 今日 <b :style="{color: h.today_gain >= 0 ? '#ef4444' : '#10b981'}">{{ h.today_gain >= 0 ? '+' : '' }}{{ h.today_gain }}%</b>
+                                · 换手 <b>{{ h.turnover ?? '—' }}%</b>
+                                · 市值 <b>{{ Math.round(h.market_cap_yi) }}亿</b>
+                            </span>
+                            <a :href="'#'+h.code" @click.prevent="openKline(h.code, h.name)" class="trend-kline">📈 日K</a>
+                        </div>
+                        <div class="trend-scores">
+                            <span class="ts-cell">趋势 <b>{{ h.score_trend }}</b>/25</span>
+                            <span class="ts-cell">动能 <b>{{ h.score_momentum }}</b>/20</span>
+                            <span class="ts-cell">攻击 <b>{{ h.score_attack }}</b>/15</span>
+                            <span class="ts-cell">量价 <b>{{ h.score_volume }}</b>/20</span>
+                            <span class="ts-cell">市值 <b>{{ h.score_market_cap }}</b>/10</span>
+                            <span class="ts-cell ts-bonus" :class="h.sector_bonus > 0 ? 'pos' : h.sector_bonus < 0 ? 'neg' : ''">
+                                板块动量 <b>{{ h.sector_bonus >= 0 ? '+' : '' }}{{ h.sector_bonus }}</b>
+                                <span v-if="h.sector_bonus_detail" style="color:#6b7280;font-size:11px;margin-left:4px;">{{ h.sector_bonus_detail }}</span>
+                            </span>
+                        </div>
+                        <div class="trend-action">
+                            <b>📍 明日开仓建议</b>：
+                            <span>竞价区间 <b style="color:#fbbf24;">{{ h.close ? (h.close * 0.99).toFixed(2) : '—' }} ~ {{ h.close ? (h.close * 1.03).toFixed(2) : '—' }}</b></span>
+                            ·
+                            <span>买入时机：竞价不超 +3% 入场；超 +5% 等回踩 MA5（{{ h.ma5 }}）</span>
+                            ·
+                            <span>止损：跌破 MA10（{{ h.ma10 }}）-2% 即出</span>
+                        </div>
+                        <div class="trend-concepts" v-if="h.top_concepts && h.top_concepts.length">
+                            <span style="color:#6b7280;">概念：</span>
+                            <span v-for="c in h.top_concepts" :key="c" class="trend-concept-pill">{{ c }}</span>
+                            <span style="color:#6b7280;margin-left:6px;">{{ h.industry }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <details class="card full-width" v-if="(trendPool.all_scored||[]).length">
+                <summary style="cursor:pointer;font-weight:600;color:#a0aec0;">
+                    📋 全部评分明细（{{ trendPool.all_scored.length }} 只通过初筛）
+                </summary>
+                <table style="width:100%;margin-top:10px;">
+                    <thead><tr style="color:#6b7280;font-size:12px;text-align:left;">
+                        <th>代码</th><th>名称</th><th>10日</th><th>今日</th><th>换手</th>
+                        <th>基础分</th><th>板块动量</th><th>总分</th><th>入池</th>
+                    </tr></thead>
+                    <tbody>
+                        <tr v-for="r in trendPool.all_scored" :key="r.code">
+                            <td>{{ r.code }}</td>
+                            <td>{{ r.name }}</td>
+                            <td :style="{color:'#ef4444'}">+{{ r.gain_10d }}%</td>
+                            <td :style="{color: r.today_gain >= 0 ? '#ef4444' : '#10b981'}">{{ r.today_gain >= 0 ? '+' : '' }}{{ r.today_gain }}%</td>
+                            <td>{{ r.turnover ?? '—' }}%</td>
+                            <td>{{ r.base_score }}</td>
+                            <td :style="{color: r.sector_bonus > 0 ? '#ef4444' : r.sector_bonus < 0 ? '#10b981' : '#6b7280'}">
+                                {{ r.sector_bonus >= 0 ? '+' : '' }}{{ r.sector_bonus }}
+                            </td>
+                            <td><b :style="{color: r.total_score >= 70 ? '#ef4444' : '#a0aec0'}">{{ r.total_score }}</b></td>
+                            <td>{{ r.total_score >= 70 ? '✅' : '—' }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </details>
+
+            <div class="card full-width" v-if="trendHistory.stats && trendHistory.stats.settled">
+                <div class="card-title"><span class="icon">📈</span> 趋势选股历史胜率</div>
+                <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:14px;">
+                    <span>已结算：<b>{{ trendHistory.stats.settled }}</b> / {{ trendHistory.stats.total }} 笔</span>
+                    <span>胜率：<b :style="{color: trendHistory.stats.win_rate >= 60 ? '#ef4444' : trendHistory.stats.win_rate >= 40 ? '#fbbf24' : '#10b981'}">
+                        {{ trendHistory.stats.win_rate }}%
+                    </b></span>
+                    <span>次日均涨：<b :style="{color: (trendHistory.stats.avg_next_close_gain||0) >= 0 ? '#ef4444' : '#10b981'}">
+                        {{ (trendHistory.stats.avg_next_close_gain||0) >= 0 ? '+' : '' }}{{ trendHistory.stats.avg_next_close_gain }}%
+                    </b></span>
+                </div>
+                <table style="width:100%;margin-top:10px;font-size:12px;">
+                    <thead><tr style="color:#6b7280;text-align:left;">
+                        <th>日期</th><th>代码</th><th>名称</th><th>总分</th><th>次日开盘%</th><th>次日收盘%</th><th>胜负</th>
+                    </tr></thead>
+                    <tbody>
+                        <tr v-for="r in (trendHistory.records || []).slice().reverse().slice(0, 30)" :key="r.date+r.code">
+                            <td>{{ r.date }}</td>
+                            <td>{{ r.code }}</td>
+                            <td>{{ r.name }}</td>
+                            <td>{{ r.total_score }}</td>
+                            <td :style="{color: (r.next_day_auction_gain||0) >= 0 ? '#ef4444' : '#10b981'}">
+                                <template v-if="r.next_day_auction_gain != null">{{ r.next_day_auction_gain >= 0 ? '+' : '' }}{{ r.next_day_auction_gain }}%</template>
+                                <template v-else>⏳</template>
+                            </td>
+                            <td :style="{color: (r.next_day_close_gain||0) >= 0 ? '#ef4444' : '#10b981'}">
+                                <template v-if="r.next_day_close_gain != null">{{ r.next_day_close_gain >= 0 ? '+' : '' }}{{ r.next_day_close_gain }}%</template>
+                                <template v-else>⏳</template>
+                            </td>
+                            <td>
+                                <span v-if="r.is_win === true" style="color:#ef4444;font-weight:700;">盈</span>
+                                <span v-else-if="r.is_win === false" style="color:#10b981;font-weight:700;">亏</span>
+                                <span v-else style="color:#6b7280;">—</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </template>
 
         <!-- ===== K 线图 Modal ===== -->
         <div v-if="klineModal.open" class="kline-modal-mask" @click="closeKline">
@@ -903,6 +1074,61 @@
                     <!-- 解读区（右 ~36%）-->
                     <div class="kline-analysis-pane">
                         <div v-if="klineModal.analysisLoading" style="color:#6b7280;text-align:center;padding:40px;">分析中…</div>
+
+                        <!-- 趋势策略视图 -->
+                        <template v-else-if="klineModal.trendHit">
+                            <div class="ka-section">
+                                <div class="ka-title">📊 当日数据</div>
+                                <div class="ka-row"><span class="ka-label">收盘价</span><span class="ka-val">{{ klineModal.trendHit.close }}</span></div>
+                                <div class="ka-row"><span class="ka-label">今日涨幅</span><span class="ka-val" :class="(klineModal.trendHit.today_gain||0) >= 0 ? 'pos' : 'neg'">{{ fmtPct(klineModal.trendHit.today_gain) }}</span></div>
+                                <div class="ka-row"><span class="ka-label">10日涨幅</span><span class="ka-val pos">+{{ klineModal.trendHit.gain_10d }}%</span></div>
+                                <div class="ka-row"><span class="ka-label">换手率</span><span class="ka-val">{{ klineModal.trendHit.turnover ?? '—' }}%</span></div>
+                                <div class="ka-row"><span class="ka-label">流通市值</span><span class="ka-val">{{ Math.round(klineModal.trendHit.market_cap_yi) }} 亿</span></div>
+                            </div>
+                            <div class="ka-section">
+                                <div class="ka-title">🛡️ 均线判定（MA5/MA10）</div>
+                                <div class="ka-row"><span class="ka-label">MA5</span><span class="ka-val" :class="(klineModal.trendHit.close > klineModal.trendHit.ma5) ? 'pos' : 'warn'">
+                                    {{ klineModal.trendHit.ma5 ?? '—' }} <small>{{ (klineModal.trendHit.close > klineModal.trendHit.ma5) ? '✓ 站上' : '× 跌破' }}</small>
+                                </span></div>
+                                <div class="ka-row"><span class="ka-label">MA10</span><span class="ka-val" :class="(klineModal.trendHit.close > klineModal.trendHit.ma10) ? 'pos' : 'warn'">
+                                    {{ klineModal.trendHit.ma10 ?? '—' }} <small>{{ (klineModal.trendHit.close > klineModal.trendHit.ma10) ? '✓ 站上' : '× 跌破' }}</small>
+                                </span></div>
+                                <div class="ka-row"><span class="ka-label">双均线之上</span><span class="ka-val" :class="(klineModal.trendHit.close > klineModal.trendHit.ma5 && klineModal.trendHit.close > klineModal.trendHit.ma10) ? 'pos' : 'warn'">
+                                    {{ (klineModal.trendHit.close > klineModal.trendHit.ma5 && klineModal.trendHit.close > klineModal.trendHit.ma10) ? '✅ 是' : '⚠️ 否' }}
+                                </span></div>
+                            </div>
+                            <div class="ka-section">
+                                <div class="ka-title">⚖️ 趋势开仓建议（评分 ≥70 入池）</div>
+                                <div class="ka-row"><span class="ka-label">是否入池</span><span class="ka-val" :class="klineModal.trendHit.total_score >= 70 ? 'pos' : 'neg'">
+                                    {{ klineModal.trendHit.total_score >= 70 ? '✅ 入池' : '⛔ 候选/落选' }}
+                                </span></div>
+                                <div class="ka-row"><span class="ka-label">总分</span><span class="ka-val pos"><b>{{ klineModal.trendHit.total_score }}</b>/110</span></div>
+                                <div class="ka-row"><span class="ka-label">竞价区间</span><span class="ka-val warn">
+                                    {{ (klineModal.trendHit.close * 0.99).toFixed(2) }} ~ {{ (klineModal.trendHit.close * 1.03).toFixed(2) }}
+                                </span></div>
+                                <div class="ka-row"><span class="ka-label">买入时机</span><span class="ka-val" style="font-size:11px;">
+                                    竞价不超 +3% 入场；超 +5% 等回踩 MA5（{{ klineModal.trendHit.ma5 }}）
+                                </span></div>
+                                <div class="ka-row"><span class="ka-label">止损位</span><span class="ka-val warn" style="font-size:11px;">
+                                    跌破 MA10（{{ klineModal.trendHit.ma10 }}）-2% 即出
+                                </span></div>
+                            </div>
+                            <div class="ka-section">
+                                <div class="ka-title">📋 评分明细（基础 100 + 板块动量）</div>
+                                <div class="ka-bullet bonus">趋势强度 <b>{{ klineModal.trendHit.score_trend }}</b>/25</div>
+                                <div class="ka-bullet bonus">近期动能 <b>{{ klineModal.trendHit.score_momentum }}</b>/20</div>
+                                <div class="ka-bullet" :class="klineModal.trendHit.active_attack ? 'bonus' : 'penalty'">主动攻击 <b>{{ klineModal.trendHit.score_attack }}</b>/15
+                                    <span style="color:#6b7280;margin-left:6px;font-size:11px;">{{ klineModal.trendHit.active_attack ? '✓ 有标记' : '× 无标记' }}</span>
+                                </div>
+                                <div class="ka-bullet bonus">量价健康 <b>{{ klineModal.trendHit.score_volume }}</b>/20</div>
+                                <div class="ka-bullet bonus">市值流动 <b>{{ klineModal.trendHit.score_market_cap }}</b>/10</div>
+                                <div class="ka-bullet" :class="klineModal.trendHit.sector_bonus > 0 ? 'bonus' : klineModal.trendHit.sector_bonus < 0 ? 'penalty' : ''">
+                                    板块动量 <b>{{ klineModal.trendHit.sector_bonus >= 0 ? '+' : '' }}{{ klineModal.trendHit.sector_bonus }}</b>
+                                    <span style="color:#6b7280;margin-left:6px;font-size:11px;">{{ klineModal.trendHit.sector_bonus_detail || '—' }}</span>
+                                </div>
+                            </div>
+                        </template>
+
                         <template v-else-if="klineModal.analysis">
                             <div class="ka-section">
                                 <div class="ka-title">📊 当日竞价数据 <small v-if="klineModal.analysis.data_source !== 'auction'" style="color:#fbbf24;">⚠️ 无竞价数据，回退 K 线收盘</small></div>
@@ -1019,105 +1245,7 @@
             </div>
         </details>
 
-        <!-- 折叠区：周期代表股 + 龙头反馈 + 昨日涨停股 -->
-        <details class="details-card full-width">
-            <summary>📊 周期代表股 · 龙头反馈 · 昨日涨停均价（点击展开）</summary>
-            <div class="details-body">
-                <div class="rep" v-if="snapshot.representative">
-                    <div class="label">周期代表股</div>
-                    <div class="value">
-                        {{ snapshot.representative.name }}
-                        ({{ snapshot.representative.code }})
-                        <span class="gain">{{ snapshot.representative.gain_10d }}%</span>
-                    </div>
-                    <div class="meta">
-                        持续 {{ snapshot.representative.sustain_days }} 天 ·
-                        榜首 {{ snapshot.representative.top_days }} 天 ·
-                        峰值 {{ snapshot.representative.peak_gain }}%
-                        <span v-if="!snapshot.representative.is_main_board" class="tag tag-gem">创/科</span>
-                        <span v-else class="tag tag-main">主板</span>
-                    </div>
-                </div>
-                <div class="prev-cycle" v-if="snapshot.prev_cycle">
-                    上轮周期：{{ snapshot.prev_cycle.name }}({{ snapshot.prev_cycle.code }})
-                    峰值 {{ snapshot.prev_cycle.peak_gain }}%
-                </div>
-
-
-                <!-- 市场高标 -->
-                <template v-for="(ld, idx) in leaderList" :key="idx">
-                    <div v-if="ld.signal" class="leader-card" :class="getLeaderClass(ld)">
-                        <div class="leader-icon">{{ getLeaderIcon(ld) }}</div>
-                        <div class="leader-info">
-                            <div class="title">
-                                {{ ld._tag }}：{{ ld.leader_name }}
-                                <template v-if="ld._useBoardCount">（{{ ld.board_count || ld.leader_gain_10d }}连板）</template>
-                                <template v-else>（{{ ld.leader_gain_10d }}%）</template>
-                                竞价 <span :class="ld.auction_change_pct >= 0 ? 'gain-pos' : 'gain-neg'">
-                                    {{ ld.auction_change_pct > 0 ? '+' : '' }}{{ ld.auction_change_pct }}%
-                                </span>
-                            </div>
-                            <div class="desc">{{ ld.reason }}</div>
-                        </div>
-                        <div class="leader-badge" :class="getLeaderBadgeClass(ld)">
-                            {{ ld.can_trade ? ld.aggression : '不操作' }}
-                        </div>
-                    </div>
-                </template>
-
-                <!-- 昨日主板连板高标 多只合并 -->
-                <div v-if="mainBoardLeadersGroup" class="leader-card" :class="mainBoardLeadersGroup.cardClass">
-                    <div class="leader-icon">{{ mainBoardLeadersGroup.icon }}</div>
-                    <div class="leader-info">
-                        <div class="title">
-                            昨日主板连板高标 今日竞价
-                            <span style="color:#6b7280;font-weight:400;">· {{ mainBoardLeadersGroup.count }} 只</span>
-                        </div>
-                        <div class="lb-pills">
-                            <span v-for="ld in mainBoardLeadersGroup.list" :key="ld.leader_code"
-                                  class="lb-pill" :class="getLeaderClass(ld)" :title="ld.reason">
-                                {{ getLeaderIcon(ld) }} {{ ld.leader_name }}（{{ ld.board_count || ld.leader_gain_10d }}连板）
-                                <span :class="ld.auction_change_pct >= 0 ? 'gain-pos' : 'gain-neg'" style="font-weight:700;">
-                                    {{ ld.auction_change_pct > 0 ? '+' : '' }}{{ ld.auction_change_pct }}%
-                                </span>
-                            </span>
-                        </div>
-                    </div>
-                    <div class="leader-badge" :class="mainBoardLeadersGroup.badgeClass">
-                        {{ mainBoardLeadersGroup.aggregateText }}
-                    </div>
-                </div>
-
-                <!-- 昨日主板涨停股今日平均竞价 -->
-                <div v-if="ydayAvg && ydayAvg.sample_count" class="leader-card" :class="ydayAvgClass">
-                    <div class="leader-icon">📊</div>
-                    <div class="leader-info">
-                        <div class="title">
-                            昨日主板涨停股 今日平均竞价（样本 {{ ydayAvg.sample_count }} 只）
-                            <span :class="ydayAvg.avg_change_pct >= 0 ? 'gain-pos' : 'gain-neg'">
-                                {{ ydayAvg.avg_change_pct > 0 ? '+' : '' }}{{ ydayAvg.avg_change_pct }}%
-                            </span>
-                        </div>
-                        <div class="desc">
-                            高开 {{ ydayAvg.positive_count }} 只 · 低开 {{ ydayAvg.negative_count }} 只<template v-if="ydayAvg.limit_down_count > 0"> · 跌停 {{ ydayAvg.limit_down_count }} 只</template>
-                        </div>
-                    </div>
-                    <div class="leader-badge" :class="ydayAvgBadge">{{ ydayAvgVerdict }}</div>
-                </div>
-
-                <!-- 进度条 -->
-                <div class="progress-bar" v-if="snapshot.representative">
-                    <div class="progress-fill" :class="progressClass" :style="{width: progressPct + '%'}">
-                        {{ snapshot.representative.gain_10d }}% → 120%
-                    </div>
-                    <div class="progress-markers">
-                        <div class="marker" style="left:37.5%"><span>45%</span></div>
-                        <div class="marker" style="left:83.3%"><span>100%</span></div>
-                        <div class="marker" style="left:100%"><span>120%</span></div>
-                    </div>
-                </div>
-            </div>
-        </details>
+        <!-- 周期状态（含代表股 / 龙头反馈 / 昨日均价）已迁至 /ranking 页 -->
 
         <!-- 四维决策卡已移除，统一用三维联动决策 -->
 
@@ -1683,61 +1811,76 @@ createApp({
         })
 
         // TOP30 赚钱效应解读 — 把 板块 + 市值 + 价格 三维结构组合成一段话
+        // 【风格适配度 · 小市值接力选手】
+        // 1) 主板+<100亿 占比 → 风格友好/中性/不利
+        // 2) 连板股数 + 小市值连板股数 → 接力情绪是否有支撑
+        // 3) 今日适合/不适合 + 仓位建议
         const top30Verdict = computed(() => {
-            const s = top30Stats.value
-            if (!s) return ''
-            const { board, cap, priceMain } = s
-
-            // 板块定性
-            let boardPart
-            if (board.mainPct >= 60) boardPart = `主板主线（占 ${board.mainPct}%）`
-            else if (board.gemPct >= 60) boardPart = `创业板/科创板主导（占 ${board.gemPct}%）`
-            else boardPart = `主板与创科双线并行（主板 ${board.mainPct}% / 创科 ${board.gemPct}%）`
-
-            // 市值定性
-            let capPart
-            if (cap.smallPct >= 60) capPart = `小市值题材主导（<100亿占 ${cap.smallPct}%）`
-            else if (cap.largePct >= 60) capPart = `大市值蓝筹领涨（≥100亿占 ${cap.largePct}%）`
-            else capPart = `大小盘并行（<100亿 ${cap.smallPct}% · ≥100亿 ${cap.largePct}%）`
-
-            // 价格区间定性
-            let pricePart = '价格分布分散'
-            if (priceMain) {
-                const lbl = priceMain.label
-                const pct = priceMain.pct
-                if (lbl === '<5元') pricePart = `低价小票活跃（<5元占 ${pct}%，纯情绪炒作）`
-                else if (lbl === '5-10元') pricePart = `次低价主流（5-10元占 ${pct}%，散户偏好）`
-                else if (lbl === '10-20元') pricePart = `主流价位活跃（10-20元占 ${pct}%）`
-                else if (lbl === '20-50元') pricePart = `中价股表现（20-50元占 ${pct}%）`
-                else if (lbl === '≥50元') pricePart = `高价股领跑（≥50元占 ${pct}%，机构筹码集中）`
-            }
-
-            // 综合赚钱效应判断
-            let conclusion
-            // 大盘 + 高价股 → 机构主线
-            if (cap.largePct >= 60 && priceMain && priceMain.label === '≥50元') {
-                conclusion = '赚钱效应集中在大市值高价主线龙头，散户跟风风险高，宜挑龙头不追末梢'
-            }
-            // 创科 + 高价 → 科创主线
-            else if (board.gemPct >= 60 && priceMain && (priceMain.label === '≥50元' || priceMain.label === '20-50元')) {
-                conclusion = '赚钱效应在科创/创业板高价主线，主板小票机会有限'
-            }
-            // 主板 + 小市值 → 题材轮动
-            else if (board.mainPct >= 50 && cap.smallPct >= 50) {
-                conclusion = '赚钱效应在主板小盘题材轮动，适合短线打板接力'
-            }
-            // 小市值 + 低价 → 纯情绪
-            else if (cap.smallPct >= 60 && priceMain && (priceMain.label === '<5元' || priceMain.label === '5-10元')) {
-                conclusion = '赚钱效应在低价题材股，市场以情绪炒作为主，加仓需谨慎'
-            }
-            // 大小盘并行 → 分化
-            else if (cap.smallPct >= 30 && cap.largePct >= 30) {
-                conclusion = '大小盘分化，无明确单一主线，需精选板块龙头规避平庸标的'
+            const items = ranking.value || []
+            if (!items.length) return null
+            const total = items.length
+            // 主板+小市值（<100亿）
+            const smallMain = items.filter(x =>
+                x.is_main_board !== false &&
+                Number(x.market_cap_yi || 0) > 0 &&
+                Number(x.market_cap_yi) < 100
+            )
+            const smallMainCount = smallMain.length
+            const smallMainPct = Math.round(smallMainCount * 1000 / total) / 10
+            let styleLevel, styleNote
+            if (smallMainPct > 30) {
+                styleLevel = 'friendly'
+                styleNote = '风格友好，正常执行接力策略'
+            } else if (smallMainPct >= 15) {
+                styleLevel = 'neutral'
+                styleNote = '风格中性，降低仓位 / 提高选股门槛'
             } else {
-                conclusion = '结构均衡，暂无明显单边赚钱效应主线'
+                styleLevel = 'unfriendly'
+                styleNote = '风格不利，减少接力开仓，切换至趋势模式'
             }
 
-            return `${boardPart}；${capPart}；${pricePart}。${conclusion}。`
+            // 连板股（continuous_limit_up ≥ 1）
+            const lbItems = items.filter(x =>
+                Number(x.continuous_limit_up || 0) >= 1
+            )
+            const lbCount = lbItems.length
+            const smallLbCount = lbItems.filter(x =>
+                x.is_main_board !== false &&
+                Number(x.market_cap_yi || 0) > 0 &&
+                Number(x.market_cap_yi) < 100
+            ).length
+            let relayNote
+            if (smallLbCount >= 2) relayNote = '接力情绪有支撑，可参与'
+            else if (smallLbCount === 1) relayNote = '小市值接力孤立，仅做最强一只'
+            else relayNote = '小市值接力失效，放弃或只做最高板'
+
+            // 综合：适合度 + 仓位建议
+            let suitable, suggestion
+            if (styleLevel === 'friendly' && smallLbCount >= 2) {
+                suitable = '适合'
+                suggestion = '接力仓位按 v3.3 档位正常出击'
+            } else if (styleLevel === 'friendly' && smallLbCount <= 1) {
+                suitable = '风格友好但接力空心'
+                suggestion = '接力仓位降至 ≤15%，只做最强主线'
+            } else if (styleLevel === 'neutral') {
+                suitable = '勉强适合' + (smallLbCount >= 2 ? '' : '（接力空心）')
+                suggestion = '接力仓位降至 ≤10%，3进4+ 优先'
+            } else if (smallLbCount >= 2) {
+                // 风格不利但小市值接力孤岛存活
+                suitable = '接力孤岛'
+                suggestion = '接力仓位 ≤10%，只做最强龙头日内回撤反包'
+            } else { // unfriendly + 接力失效
+                suitable = '不适合'
+                suggestion = '放弃接力，转 TOP30 趋势股模式'
+            }
+
+            const mode = (styleLevel === 'unfriendly' && smallLbCount < 2) ? '趋势模式' : '小市值连板接力'
+            return {
+                mode,
+                smallMainCount, smallMainPct, styleLevel, styleNote,
+                lbCount, smallLbCount, relayNote,
+                suitable, suggestion,
+            }
         })
 
         const signalClassMap = {
@@ -1803,7 +1946,13 @@ createApp({
             open: false, code: '', name: '', days: 60,
             url: '', loading: false, error: '',
             analysis: null, analysisLoading: false, analysisError: '',
+            trendHit: null,  // 趋势池命中 → 走趋势视图
         })
+        function _findTrendHit(code) {
+            const a = (trendPool.value.pool || []).find(h => h.code === code)
+            if (a) return a
+            return (trendPool.value.all_scored || []).find(h => h.code === code) || null
+        }
         function openKline(code, name) {
             klineModal.value.open = true
             klineModal.value.code = code
@@ -1811,8 +1960,14 @@ createApp({
             klineModal.value.days = 60
             klineModal.value.analysis = null
             klineModal.value.analysisError = ''
+            const th = _findTrendHit(code)
+            klineModal.value.trendHit = (dashTab.value === 'trend' || th) ? th : null
             reloadKline()
-            loadAnalysis()
+            if (klineModal.value.trendHit) {
+                klineModal.value.analysisLoading = false
+            } else {
+                loadAnalysis()
+            }
         }
         function closeKline() {
             klineModal.value.open = false
@@ -1991,7 +2146,28 @@ createApp({
             backtesting.value = false
         }
 
-        onMounted(loadData)
+        // 趋势选股 Tab 状态 + 数据加载
+        const dashTab = ref('zhongkui')
+        const trendPool = ref({ pool: [], all_scored: [], rejected: [] })
+        const trendHistory = ref({ records: [], stats: {} })
+        function trendScoreCls(s) {
+            if (s >= 85) return 's-high'
+            if (s >= 75) return 's-mid'
+            return 's-low'
+        }
+        async function loadTrend() {
+            try {
+                const [p, h] = await Promise.all([
+                    fetch('/api/trend-pool').then(r => r.json()),
+                    fetch('/api/trend-history').then(r => r.json()),
+                ])
+                trendPool.value = p || {}
+                trendHistory.value = h || {}
+            } catch (e) { console.error('趋势池加载失败:', e) }
+        }
+
+        onMounted(() => { loadData(); loadTrend() })
+        setInterval(loadTrend, 60000)
         setInterval(loadData, 60000)
         let liveTimer = null
         function startLivePolling() {
@@ -2260,6 +2436,7 @@ createApp({
             industryOf, topConceptsOf, isCycleStock, signalOf, scoreOf, decisionLevelClass, decisionIcon,
             perStockCls, perStockActionLabel,
             klineModal, openKline, closeKline, reloadKline, loadAnalysis,
+            dashTab, trendPool, trendHistory, trendScoreCls,
             leaderClass, leaderIcon, leaderBadgeClass,
             getLeaderClass, getLeaderIcon, getLeaderBadgeClass,
             sentimentClass, sentimentIcon, marketClass, marketIcon,

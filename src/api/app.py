@@ -376,6 +376,48 @@ async def get_cycle_history():
     return JSONResponse([])
 
 
+@app.get("/api/trend-pool")
+async def get_trend_pool():
+    """趋势选股最新结果（含明日观察池 + 全部评分 + 板块动量）"""
+    f = DATA_DIR / "latest_trend.json"
+    if not f.exists():
+        return JSONResponse({"date": "", "pool": [], "all_scored": [], "rejected": []})
+    return JSONResponse(_sanitize_json(json.loads(f.read_text())))
+
+
+@app.get("/api/trend-history")
+async def get_trend_history():
+    """趋势选股历史记录（含次日表现回填，用于胜率统计）"""
+    f = DATA_DIR / "trend_history.json"
+    if not f.exists():
+        return JSONResponse({"records": [], "stats": {}})
+    records = json.loads(f.read_text()) or []
+    settled = [r for r in records if r.get("is_win") is not None]
+    wins = sum(1 for r in settled if r.get("is_win"))
+    stats = {
+        "total": len(records),
+        "settled": len(settled),
+        "wins": wins,
+        "win_rate": round(wins / len(settled) * 100, 2) if settled else None,
+        "avg_next_close_gain": round(
+            sum(r.get("next_day_close_gain") or 0 for r in settled) / len(settled), 2
+        ) if settled else None,
+    }
+    return JSONResponse(_sanitize_json({"records": records, "stats": stats}))
+
+
+@app.post("/api/trend-run")
+async def trend_run():
+    """手动触发趋势选股 (盘后/调试用)"""
+    try:
+        from src.engine.trend_screener import run_trend_screener, backfill_trend_next_day
+        res = run_trend_screener()
+        backfill_trend_next_day()
+        return JSONResponse(res)
+    except Exception as e:
+        return JSONResponse({"status": "error", "msg": str(e)}, status_code=500)
+
+
 @app.post("/api/refresh-cycle")
 async def refresh_cycle():
     """手动触发周期引擎更新"""
