@@ -1,0 +1,1751 @@
+[
+  {
+    "date": "2026-04-28",
+    "watch_pool": [
+      {
+        "code": "603318",
+        "name": "水发燃气",
+        "board_count": 4,
+        "industry": "燃气",
+        "close": 12.53,
+        "market_cap_yi": 57.52,
+        "total_gain_pct": 59.41,
+        "reason": "4连板龙头，板块领涨核心",
+        "watch_points": "竞价涨幅4-7.5%为理想区间；关注是否缩量加速（一字或T字板更强）；同板块是否有跟风助攻",
+        "auction_range": "13.03 ~ 13.47"
+      },
+      {
+        "code": "000925",
+        "name": "众合科技",
+        "board_count": 3,
+        "industry": "未知",
+        "close": 10.12,
+        "market_cap_yi": 68.13,
+        "total_gain_pct": 0,
+        "reason": "3连板龙头，板块领涨核心",
+        "watch_points": "竞价涨幅4-7.5%为理想区间；关注是否缩量加速（一字或T字板更强）；同板块是否有跟风助攻",
+        "auction_range": "10.52 ~ 10.88"
+      },
+      {
+        "code": "600152",
+        "name": "维科技术",
+        "board_count": 2,
+        "industry": "未知",
+        "close": 14.26,
+        "market_cap_yi": 75.45,
+        "total_gain_pct": 0,
+        "reason": "2连板，有晋级预期",
+        "watch_points": "竞价涨幅4-7.5%为理想区间；关注竞价承接力度和封单情况；同板块是否有跟风助攻",
+        "auction_range": "14.83 ~ 15.33"
+      }
+    ],
+    "auction_scores": [],
+    "screener_hits": [],
+    "system_action": "",
+    "system_position": "",
+    "system_stop_loss": 0,
+    "user_action": "",
+    "user_code": "",
+    "user_price": 0,
+    "user_position": "",
+    "user_stop_loss": 0,
+    "user_note": "",
+    "result_close": 0,
+    "result_gain_pct": 0,
+    "result_is_limit_up": false,
+    "result_hit_stop": false,
+    "next_day_open": 0,
+    "next_day_gain_pct": 0,
+    "deviation": "",
+    "lesson": ""
+  },
+  {
+    "date": "2026-04-29",
+    "watch_pool": [
+      {
+        "code": "603318",
+        "name": "水发燃气",
+        "board_count": 5,
+        "industry": "燃气",
+        "close": 13.78,
+        "market_cap_yi": 63.26,
+        "total_gain_pct": 73.77,
+        "reason": "5连板妖股，市场情绪标杆",
+        "watch_points": "竞价涨幅4-7.5%为理想区间；关注是否缩量加速（一字或T字板更强）；同板块是否有跟风助攻",
+        "auction_range": "14.33 ~ 14.81"
+      },
+      {
+        "code": "600152",
+        "name": "维科技术",
+        "board_count": 3,
+        "industry": "未知",
+        "close": 15.69,
+        "market_cap_yi": 83.01,
+        "total_gain_pct": 0,
+        "reason": "3连板龙头，板块领涨核心",
+        "watch_points": "竞价涨幅4-7.5%为理想区间；关注是否缩量加速（一字或T字板更强）；同板块是否有跟风助攻",
+        "auction_range": "16.32 ~ 16.87"
+      },
+      {
+        "code": "603095",
+        "name": "越剑智能",
+        "board_count": 2,
+        "industry": "未知",
+        "close": 20.96,
+        "market_cap_yi": 54.13,
+        "total_gain_pct": 0,
+        "reason": "2连板，有晋级预期",
+        "watch_points": "竞价涨幅4-7.5%为理想区间；关注竞价承接力度和封单情况；同板块是否有跟风助攻",
+        "auction_range": "21.8 ~ 22.53"
+      }
+    ],
+    "auction_scores": [],
+    "screener_hits": [],
+    "system_action": "",
+    "system_position": "",
+    "system_stop_loss": 0,
+    "user_action": "",
+    "user_code": "",
+    "user_price": 0,
+    "user_position": "",
+    "user_stop_loss": 0,
+    "user_note": "",
+    "result_close": 0,
+    "result_gain_pct": 0,
+    "result_is_limit_up": false,
+    "result_hit_stop": false,
+    "next_day_open": 0,
+    "next_day_gain_pct": 0,
+    "deviation": "",
+    "lesson": ""
+  },
+  {
+    "date": "2026-04-30",
+    "watch_pool": [
+      {
+        "code": "603095",
+        "name": "越剑智能",
+        "board_count": 4,
+        "industry": "纺织服装机械",
+        "close": 25.37,
+        "market_cap_yi": 65.52,
+        "total_gain_pct": 40.79,
+        "reason": "4连板龙头，板块领涨核心",
+        "watch_points": "竞价涨幅4-7.5%为理想区间；关注是否缩量加速（一字或T字板更强）；同板块是否有跟风助攻",
+        "auction_range": "26.38 ~ 27.27"
+      },
+      {
+        "code": "603399",
+        "name": "永杉锂业",
+        "board_count": 3,
+        "industry": "其他稀有小金属",
+        "close": 19.39,
+        "market_cap_yi": 99.33,
+        "total_gain_pct": 49.5,
+        "reason": "3连板龙头，板块领涨核心",
+        "watch_points": "竞价涨幅4-7.5%为理想区间；关注是否缩量加速（一字或T字板更强）；同板块是否有跟风助攻",
+        "auction_range": "20.17 ~ 20.84"
+      }
+    ],
+    "auction_scores": [
+      {
+        "code": "001266",
+        "name": "宏英智能",
+        "date": "2026-04-30",
+        "d1_self": 36,
+        "d2_leader": 21.5,
+        "d3_ranking": 9,
+        "d4_sector": 7.5,
+        "total_score": 74.0,
+        "d1_detail": "竞价6.02%，抢筹型高开，理想区间；量比1833.73，资金积极抢筹",
+        "d2_detail": "市场高标华特气体红开+2.0%；昨日涨停股(92只)平均竞价+2.1%，接力情绪强",
+        "d3_detail": "涨幅榜板块杂乱，无核心方向；梯队情绪正常",
+        "d4_detail": "板块信息缺失",
+        "action": "小仓试错",
+        "position": "半仓1.5层",
+        "stop_loss": 40.64,
+        "stop_loss_pct": -3.0,
+        "reason": "总分74.0，有亮点但有瑕疵，控制仓位",
+        "vetoes": [],
+        "has_veto": false
+      },
+      {
+        "code": "600156",
+        "name": "华升股份",
+        "date": "2026-04-30",
+        "d1_self": 36,
+        "d2_leader": 21.5,
+        "d3_ranking": 9,
+        "d4_sector": 7.5,
+        "total_score": 74.0,
+        "d1_detail": "竞价5.82%，抢筹型高开，理想区间；量比358.44，资金积极抢筹",
+        "d2_detail": "市场高标华特气体红开+2.0%；昨日涨停股(92只)平均竞价+2.1%，接力情绪强",
+        "d3_detail": "涨幅榜板块杂乱，无核心方向；梯队情绪正常",
+        "d4_detail": "板块信息缺失",
+        "action": "小仓试错",
+        "position": "半仓1.5层",
+        "stop_loss": 11.47,
+        "stop_loss_pct": -3.0,
+        "reason": "总分74.0，有亮点但有瑕疵，控制仓位",
+        "vetoes": [],
+        "has_veto": false
+      }
+    ],
+    "screener_hits": [
+      {
+        "code": "001266",
+        "name": "宏英智能",
+        "continuous_limit_up": 2,
+        "open_price": 41.9,
+        "auction_gain": 6.02,
+        "auction_turnover": 21.61,
+        "auction_amount": 53004.53,
+        "auction_volume_lots": 125509.1,
+        "auction_volume_ratio": 1833.73,
+        "market_cap": 24.12,
+        "volume_ratio": 1.3,
+        "gain_10d": 0,
+        "matched_cycle": false
+      },
+      {
+        "code": "600156",
+        "name": "华升股份",
+        "continuous_limit_up": 2,
+        "open_price": 11.82,
+        "auction_gain": 5.82,
+        "auction_turnover": 19.04,
+        "auction_amount": 88255.91,
+        "auction_volume_lots": 765243.3,
+        "auction_volume_ratio": 358.44,
+        "market_cap": 43.83,
+        "volume_ratio": 1.48,
+        "gain_10d": 0,
+        "matched_cycle": false
+      }
+    ],
+    "system_action": "小仓试错",
+    "system_position": "半仓1.5层",
+    "system_stop_loss": 40.64,
+    "user_action": "",
+    "user_code": "",
+    "user_price": 0,
+    "user_position": "",
+    "user_stop_loss": 0,
+    "user_note": "",
+    "result_close": 0,
+    "result_gain_pct": 0,
+    "result_is_limit_up": false,
+    "result_hit_stop": false,
+    "next_day_open": 0,
+    "next_day_gain_pct": 0,
+    "deviation": "",
+    "lesson": ""
+  },
+  {
+    "date": "2026-05-06",
+    "watch_pool": [],
+    "auction_scores": [],
+    "screener_hits": [],
+    "system_action": "",
+    "system_position": "",
+    "system_stop_loss": 0,
+    "user_action": "",
+    "user_code": "",
+    "user_price": 0,
+    "user_position": "",
+    "user_stop_loss": 0,
+    "user_note": "",
+    "result_close": 0,
+    "result_gain_pct": 0,
+    "result_is_limit_up": false,
+    "result_hit_stop": false,
+    "next_day_open": 0,
+    "next_day_gain_pct": 0,
+    "deviation": "",
+    "lesson": ""
+  },
+  {
+    "date": "2026-05-07",
+    "watch_pool": [
+      {
+        "code": "002081",
+        "name": "金 螳 螂",
+        "board_count": 4,
+        "industry": "装修装饰",
+        "close": 6.49,
+        "market_cap_yi": 171.61,
+        "total_gain_pct": 74.93,
+        "reason": "4连板·10日涨幅 74.93%·主板",
+        "watch_points": "竞价 4~7.5% 介入；竞价回落破开盘价不接；同板块跟风缩量则减仓",
+        "auction_range": "6.75 ~ 6.98",
+        "top_concepts": [
+          "长江三角",
+          "半导体概念"
+        ],
+        "is_main_board": true
+      },
+      {
+        "code": "603399",
+        "name": "永杉锂业",
+        "board_count": 4,
+        "industry": "其他稀有小金属",
+        "close": 21.33,
+        "market_cap_yi": 109.27,
+        "total_gain_pct": 65.99,
+        "reason": "4连板·10日涨幅 65.99%·主板",
+        "watch_points": "竞价 4~7.5% 介入；竞价回落破开盘价不接；同板块跟风缩量则减仓",
+        "auction_range": "22.18 ~ 22.93",
+        "top_concepts": [
+          "电池技术",
+          "锂电池概念"
+        ],
+        "is_main_board": true
+      },
+      {
+        "code": "600379",
+        "name": "宝光股份",
+        "board_count": 4,
+        "industry": "其他电气设备",
+        "close": 18.46,
+        "market_cap_yi": 60.96,
+        "total_gain_pct": 55.78,
+        "reason": "4连板·10日涨幅 55.78%·主板",
+        "watch_points": "竞价 4~7.5% 介入；竞价回落破开盘价不接；同板块跟风缩量则减仓",
+        "auction_range": "19.2 ~ 19.84",
+        "top_concepts": [
+          "央国企改革",
+          "氢能源"
+        ],
+        "is_main_board": true
+      }
+    ],
+    "auction_scores": [],
+    "screener_hits": [],
+    "system_action": "",
+    "system_position": "",
+    "system_stop_loss": 0,
+    "user_action": "",
+    "user_code": "",
+    "user_price": 0,
+    "user_position": "",
+    "user_stop_loss": 0,
+    "user_note": "",
+    "result_close": 0,
+    "result_gain_pct": 0,
+    "result_is_limit_up": false,
+    "result_hit_stop": false,
+    "next_day_open": 0,
+    "next_day_gain_pct": 0,
+    "deviation": "",
+    "lesson": ""
+  },
+  {
+    "date": "2026-05-08",
+    "watch_pool": [],
+    "auction_scores": [],
+    "screener_hits": [],
+    "system_action": "果断开仓",
+    "system_position": "加仓4层（连续4日情绪良好）",
+    "system_stop_loss": 5.38,
+    "user_action": "",
+    "user_code": "",
+    "user_price": 0,
+    "user_position": "",
+    "user_stop_loss": 0,
+    "user_note": "",
+    "result_close": 0,
+    "result_gain_pct": 0,
+    "result_is_limit_up": false,
+    "result_hit_stop": false,
+    "next_day_open": 0,
+    "next_day_gain_pct": 0,
+    "deviation": "",
+    "lesson": ""
+  },
+  {
+    "date": "2026-05-09",
+    "watch_pool": [
+      {
+        "code": "603045",
+        "name": "福达合金",
+        "board_count": 4,
+        "industry": "其他电气设备",
+        "close": 62.14,
+        "market_cap_yi": 84.17,
+        "total_gain_pct": 0.0,
+        "reason": "4连板·流通市值84.17亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 62.14,
+          "lbt": "09:25:02",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 22.77,
+            "mixian": null,
+            "above_qiba": true,
+            "above_mixian": false,
+            "above_both": false
+          },
+          "resistance": {
+            "price": 56.49,
+            "distance_pct": -9.1
+          }
+        }
+      },
+      {
+        "code": "603278",
+        "name": "大业股份",
+        "board_count": 3,
+        "industry": "金属制品",
+        "close": 14.91,
+        "market_cap_yi": 50.96,
+        "total_gain_pct": 0.0,
+        "reason": "3连板·流通市值50.96亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 14.91,
+          "lbt": "10:15:44",
+          "lbt_qualitative": "盘中板，正常",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 17.72,
+            "mixian": 12.04,
+            "above_qiba": false,
+            "above_mixian": true,
+            "above_both": false
+          },
+          "resistance": {
+            "price": 13.91,
+            "distance_pct": -6.7
+          }
+        }
+      },
+      {
+        "code": "600130",
+        "name": "波导股份",
+        "board_count": 3,
+        "industry": "通信终端设备",
+        "close": 6.15,
+        "market_cap_yi": 46.12,
+        "total_gain_pct": 0.0,
+        "reason": "3连板·流通市值46.12亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 6.15,
+          "lbt": "09:31:30",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 4.75,
+            "mixian": 5.6,
+            "above_qiba": true,
+            "above_mixian": true,
+            "above_both": true
+          },
+          "resistance": {
+            "price": 5.59,
+            "distance_pct": -9.1
+          }
+        }
+      },
+      {
+        "code": "000720",
+        "name": "新能泰山",
+        "board_count": 2,
+        "industry": "电线电缆",
+        "close": 5.69,
+        "market_cap_yi": 71.5,
+        "total_gain_pct": 0.0,
+        "reason": "2连板·流通市值71.5亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 5.69,
+          "lbt": "13:21:12",
+          "lbt_qualitative": "下午板，犹豫",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 4.0,
+            "mixian": 5.09,
+            "above_qiba": true,
+            "above_mixian": true,
+            "above_both": true
+          },
+          "resistance": {
+            "price": 7.18,
+            "distance_pct": 26.2
+          }
+        }
+      },
+      {
+        "code": "002930",
+        "name": "宏川智慧",
+        "board_count": 2,
+        "industry": "物流",
+        "close": 16.04,
+        "market_cap_yi": 69.51,
+        "total_gain_pct": 0.0,
+        "reason": "2连板·流通市值69.51亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 16.04,
+          "lbt": "09:33:51",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 14.67,
+            "mixian": 12.99,
+            "above_qiba": true,
+            "above_mixian": true,
+            "above_both": true
+          },
+          "resistance": {
+            "price": 14.9,
+            "distance_pct": -7.1
+          }
+        }
+      },
+      {
+        "code": "603459",
+        "name": "红板科技",
+        "board_count": 2,
+        "industry": "电子元件",
+        "close": 81.05,
+        "market_cap_yi": 64.07,
+        "total_gain_pct": 0.0,
+        "reason": "2连板·流通市值64.07亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 81.05,
+          "lbt": "09:39:11",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": null,
+            "mixian": null,
+            "above_qiba": false,
+            "above_mixian": false,
+            "above_both": true
+          },
+          "resistance": {
+            "price": null,
+            "distance_pct": null
+          }
+        }
+      },
+      {
+        "code": "603636",
+        "name": "南威软件",
+        "board_count": 2,
+        "industry": "其他软件服务",
+        "close": 11.11,
+        "market_cap_yi": 64.48,
+        "total_gain_pct": 0.0,
+        "reason": "2连板·流通市值64.48亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 11.11,
+          "lbt": "09:25:02",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 14.54,
+            "mixian": 9.09,
+            "above_qiba": false,
+            "above_mixian": true,
+            "above_both": false
+          },
+          "resistance": {
+            "price": 11.87,
+            "distance_pct": 6.8
+          }
+        }
+      },
+      {
+        "code": "600936",
+        "name": "北投科技",
+        "board_count": 2,
+        "industry": "其他软件服务",
+        "close": 5.17,
+        "market_cap_yi": 86.39,
+        "total_gain_pct": 0.0,
+        "reason": "2连板·流通市值86.39亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 5.17,
+          "lbt": "09:31:23",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 4.89,
+            "mixian": 4.19,
+            "above_qiba": true,
+            "above_mixian": true,
+            "above_both": true
+          },
+          "resistance": {
+            "price": 4.7,
+            "distance_pct": -9.1
+          }
+        }
+      },
+      {
+        "code": "605006",
+        "name": "山东玻纤",
+        "board_count": 2,
+        "industry": "玻纤",
+        "close": 14.87,
+        "market_cap_yi": 89.23,
+        "total_gain_pct": 0.0,
+        "reason": "2连板·流通市值89.23亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 14.87,
+          "lbt": "09:36:45",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 11.1,
+            "mixian": 11.95,
+            "above_qiba": true,
+            "above_mixian": true,
+            "above_both": true
+          },
+          "resistance": {
+            "price": 13.52,
+            "distance_pct": -9.1
+          }
+        }
+      },
+      {
+        "code": "003036",
+        "name": "泰坦股份",
+        "board_count": 1,
+        "industry": "纺织服装机械",
+        "close": 41.91,
+        "market_cap_yi": 90.64,
+        "total_gain_pct": 52.23,
+        "reason": "首板·10日涨幅 52.23%·主板（首板新标）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [
+          "电池技术",
+          "固态电池"
+        ],
+        "is_main_board": true,
+        "pool_tag": "首板新标",
+        "observation": {
+          "close": 41.91,
+          "lbt": "09:32:21",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": "电池技术",
+            "lu_count": 13,
+            "ladder_2plus_count": 1,
+            "qualitative": "助攻中",
+            "text": "电池技术今日涨停13只（3板1只），助攻中"
+          },
+          "double_break": {
+            "qiba": 20.16,
+            "mixian": null,
+            "above_qiba": true,
+            "above_mixian": false,
+            "above_both": false
+          },
+          "resistance": {
+            "price": 38.27,
+            "distance_pct": -8.7
+          }
+        }
+      },
+      {
+        "code": "603937",
+        "name": "丽岛新材",
+        "board_count": 1,
+        "industry": "铝",
+        "close": 18.88,
+        "market_cap_yi": 39.44,
+        "total_gain_pct": 49.37,
+        "reason": "首板·10日涨幅 49.37%·主板（首板新标）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "首板新标",
+        "observation": {
+          "close": 18.88,
+          "lbt": "14:12:25",
+          "lbt_qualitative": "尾盘板，谨慎",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 13.56,
+            "mixian": 13.1,
+            "above_qiba": true,
+            "above_mixian": true,
+            "above_both": true
+          },
+          "resistance": {
+            "price": 18.46,
+            "distance_pct": -2.2
+          }
+        }
+      }
+    ],
+    "auction_scores": [
+      {
+        "code": "600130",
+        "name": "波导股份",
+        "date": "2026-05-09",
+        "d1_self": 38,
+        "d2_leader": 15.5,
+        "d3_ranking": 17,
+        "d4_sector": 12.5,
+        "total_score": 83.0,
+        "d1_detail": "竞价6.98%，抢筹型高开，理想区间；量比305.81，资金积极抢筹；3连板",
+        "d2_detail": "市场高标大普微低开-3.5%；昨日涨停股(90只)平均竞价+1.5%，接力情绪强",
+        "d3_detail": "涨幅榜集中在半导体概念（4/10），主线明确；梯队情绪正常",
+        "d4_detail": "长江三角 11只涨停，梯队完整",
+        "action": "果断开仓",
+        "position": "加仓4层（连续5日情绪良好）",
+        "stop_loss": 5.68,
+        "stop_loss_pct": -5.0,
+        "reason": "总分83.0，三重共振+连续5日情绪好，仓位加至4层",
+        "vetoes": [],
+        "has_veto": false
+      },
+      {
+        "code": "600936",
+        "name": "北投科技",
+        "date": "2026-05-09",
+        "d1_self": 36,
+        "d2_leader": 15.5,
+        "d3_ranking": 17,
+        "d4_sector": 14.5,
+        "total_score": 83.0,
+        "d1_detail": "竞价5.53%，抢筹型高开，理想区间；量比381.08，资金积极抢筹",
+        "d2_detail": "市场高标大普微低开-3.5%；昨日涨停股(90只)平均竞价+1.5%，接力情绪强",
+        "d3_detail": "涨幅榜集中在半导体概念（4/10），主线明确；梯队情绪正常",
+        "d4_detail": "央国企改革 32只涨停，梯队完整；涨幅榜有3只同向",
+        "action": "果断开仓",
+        "position": "加仓4层（连续5日情绪良好）",
+        "stop_loss": 4.71,
+        "stop_loss_pct": -5.0,
+        "reason": "总分83.0，三重共振+连续5日情绪好，仓位加至4层",
+        "vetoes": [],
+        "has_veto": false
+      },
+      {
+        "code": "000720",
+        "name": "新能泰山",
+        "date": "2026-05-09",
+        "d1_self": 36,
+        "d2_leader": 15.5,
+        "d3_ranking": 17,
+        "d4_sector": 14.5,
+        "total_score": 83.0,
+        "d1_detail": "竞价5.03%，抢筹型高开，理想区间；量比723.2，资金积极抢筹",
+        "d2_detail": "市场高标大普微低开-3.5%；昨日涨停股(90只)平均竞价+1.5%，接力情绪强",
+        "d3_detail": "涨幅榜集中在半导体概念（4/10），主线明确；梯队情绪正常",
+        "d4_detail": "央国企改革 32只涨停，梯队完整；涨幅榜有3只同向",
+        "action": "果断开仓",
+        "position": "加仓4层（连续5日情绪良好）",
+        "stop_loss": 5.16,
+        "stop_loss_pct": -5.0,
+        "reason": "总分83.0，三重共振+连续5日情绪好，仓位加至4层",
+        "vetoes": [],
+        "has_veto": false
+      }
+    ],
+    "screener_hits": [
+      {
+        "code": "600130",
+        "name": "波导股份",
+        "continuous_limit_up": 3,
+        "open_price": 5.98,
+        "auction_gain": 6.98,
+        "auction_turnover": 7.96,
+        "auction_amount": 36114.3,
+        "auction_volume_lots": 597117.32,
+        "auction_volume_ratio": 305.81,
+        "market_cap": 46.12,
+        "volume_ratio": 1.08,
+        "gain_10d": 0,
+        "matched_cycle": false
+      },
+      {
+        "code": "600936",
+        "name": "北投科技",
+        "continuous_limit_up": 2,
+        "open_price": 4.96,
+        "auction_gain": 5.53,
+        "auction_turnover": 4.48,
+        "auction_amount": 38140.01,
+        "auction_volume_lots": 748957.2,
+        "auction_volume_ratio": 381.08,
+        "market_cap": 86.39,
+        "volume_ratio": 1.18,
+        "gain_10d": 0,
+        "matched_cycle": false
+      },
+      {
+        "code": "000720",
+        "name": "新能泰山",
+        "continuous_limit_up": 2,
+        "open_price": 5.43,
+        "auction_gain": 5.03,
+        "auction_turnover": 24.08,
+        "auction_amount": 168380.7,
+        "auction_volume_lots": 3026116.65,
+        "auction_volume_ratio": 723.2,
+        "market_cap": 71.5,
+        "volume_ratio": 1.08,
+        "gain_10d": 0,
+        "matched_cycle": false
+      }
+    ],
+    "system_action": "果断开仓",
+    "system_position": "加仓4层（连续5日情绪良好）",
+    "system_stop_loss": 5.68,
+    "user_action": "",
+    "user_code": "",
+    "user_price": 0,
+    "user_position": "",
+    "user_stop_loss": 0,
+    "user_note": "",
+    "result_close": 0,
+    "result_gain_pct": 0,
+    "result_is_limit_up": false,
+    "result_hit_stop": false,
+    "next_day_open": 0,
+    "next_day_gain_pct": 0,
+    "deviation": "",
+    "lesson": ""
+  },
+  {
+    "date": "2026-05-11",
+    "watch_pool": [
+      {
+        "code": "603045",
+        "name": "福达合金",
+        "board_count": 4,
+        "industry": "其他电气设备",
+        "close": 62.14,
+        "market_cap_yi": 84.17,
+        "total_gain_pct": 0.0,
+        "reason": "4连板·流通市值84.17亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 62.14,
+          "lbt": "09:25:02",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 22.77,
+            "mixian": null,
+            "above_qiba": true,
+            "above_mixian": false,
+            "above_both": false
+          },
+          "resistance": {
+            "price": 56.49,
+            "distance_pct": -9.1
+          }
+        }
+      },
+      {
+        "code": "603278",
+        "name": "大业股份",
+        "board_count": 3,
+        "industry": "金属制品",
+        "close": 14.91,
+        "market_cap_yi": 50.96,
+        "total_gain_pct": 0.0,
+        "reason": "3连板·流通市值50.96亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 14.91,
+          "lbt": "10:15:44",
+          "lbt_qualitative": "盘中板，正常",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 17.72,
+            "mixian": 12.04,
+            "above_qiba": false,
+            "above_mixian": true,
+            "above_both": false
+          },
+          "resistance": {
+            "price": 13.91,
+            "distance_pct": -6.7
+          }
+        }
+      },
+      {
+        "code": "600130",
+        "name": "波导股份",
+        "board_count": 3,
+        "industry": "通信终端设备",
+        "close": 6.15,
+        "market_cap_yi": 46.12,
+        "total_gain_pct": 0.0,
+        "reason": "3连板·流通市值46.12亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 6.15,
+          "lbt": "09:31:30",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 4.75,
+            "mixian": 5.6,
+            "above_qiba": true,
+            "above_mixian": true,
+            "above_both": true
+          },
+          "resistance": {
+            "price": 5.59,
+            "distance_pct": -9.1
+          }
+        }
+      },
+      {
+        "code": "000720",
+        "name": "新能泰山",
+        "board_count": 2,
+        "industry": "电线电缆",
+        "close": 5.69,
+        "market_cap_yi": 71.5,
+        "total_gain_pct": 0.0,
+        "reason": "2连板·流通市值71.5亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 5.69,
+          "lbt": "13:21:12",
+          "lbt_qualitative": "下午板，犹豫",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 4.0,
+            "mixian": 5.09,
+            "above_qiba": true,
+            "above_mixian": true,
+            "above_both": true
+          },
+          "resistance": {
+            "price": 7.18,
+            "distance_pct": 26.2
+          }
+        }
+      },
+      {
+        "code": "002930",
+        "name": "宏川智慧",
+        "board_count": 2,
+        "industry": "物流",
+        "close": 16.04,
+        "market_cap_yi": 69.51,
+        "total_gain_pct": 0.0,
+        "reason": "2连板·流通市值69.51亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 16.04,
+          "lbt": "09:33:51",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 14.67,
+            "mixian": 12.99,
+            "above_qiba": true,
+            "above_mixian": true,
+            "above_both": true
+          },
+          "resistance": {
+            "price": 14.9,
+            "distance_pct": -7.1
+          }
+        }
+      },
+      {
+        "code": "603459",
+        "name": "红板科技",
+        "board_count": 2,
+        "industry": "电子元件",
+        "close": 81.05,
+        "market_cap_yi": 64.07,
+        "total_gain_pct": 0.0,
+        "reason": "2连板·流通市值64.07亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 81.05,
+          "lbt": "09:39:11",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": null,
+            "mixian": null,
+            "above_qiba": false,
+            "above_mixian": false,
+            "above_both": true
+          },
+          "resistance": {
+            "price": null,
+            "distance_pct": null
+          }
+        }
+      },
+      {
+        "code": "603636",
+        "name": "南威软件",
+        "board_count": 2,
+        "industry": "其他软件服务",
+        "close": 11.11,
+        "market_cap_yi": 64.48,
+        "total_gain_pct": 0.0,
+        "reason": "2连板·流通市值64.48亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 11.11,
+          "lbt": "09:25:02",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 14.54,
+            "mixian": 9.09,
+            "above_qiba": false,
+            "above_mixian": true,
+            "above_both": false
+          },
+          "resistance": {
+            "price": 11.87,
+            "distance_pct": 6.8
+          }
+        }
+      },
+      {
+        "code": "600936",
+        "name": "北投科技",
+        "board_count": 2,
+        "industry": "其他软件服务",
+        "close": 5.17,
+        "market_cap_yi": 86.39,
+        "total_gain_pct": 0.0,
+        "reason": "2连板·流通市值86.39亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 5.17,
+          "lbt": "09:31:23",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 4.89,
+            "mixian": 4.19,
+            "above_qiba": true,
+            "above_mixian": true,
+            "above_both": true
+          },
+          "resistance": {
+            "price": 4.7,
+            "distance_pct": -9.1
+          }
+        }
+      },
+      {
+        "code": "605006",
+        "name": "山东玻纤",
+        "board_count": 2,
+        "industry": "玻纤",
+        "close": 14.87,
+        "market_cap_yi": 89.23,
+        "total_gain_pct": 0.0,
+        "reason": "2连板·流通市值89.23亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 14.87,
+          "lbt": "09:36:45",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 11.1,
+            "mixian": 11.95,
+            "above_qiba": true,
+            "above_mixian": true,
+            "above_both": true
+          },
+          "resistance": {
+            "price": 13.52,
+            "distance_pct": -9.1
+          }
+        }
+      },
+      {
+        "code": "003036",
+        "name": "泰坦股份",
+        "board_count": 1,
+        "industry": "纺织服装机械",
+        "close": 41.91,
+        "market_cap_yi": 90.64,
+        "total_gain_pct": 52.23,
+        "reason": "首板·10日涨幅 52.23%·主板（首板新标）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [
+          "电池技术",
+          "固态电池"
+        ],
+        "is_main_board": true,
+        "pool_tag": "首板新标",
+        "observation": {
+          "close": 41.91,
+          "lbt": "09:32:21",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": "电池技术",
+            "lu_count": 13,
+            "ladder_2plus_count": 1,
+            "qualitative": "助攻中",
+            "text": "电池技术今日涨停13只（3板1只），助攻中"
+          },
+          "double_break": {
+            "qiba": 20.16,
+            "mixian": null,
+            "above_qiba": true,
+            "above_mixian": false,
+            "above_both": false
+          },
+          "resistance": {
+            "price": 38.27,
+            "distance_pct": -8.7
+          }
+        }
+      },
+      {
+        "code": "603937",
+        "name": "丽岛新材",
+        "board_count": 1,
+        "industry": "铝",
+        "close": 18.88,
+        "market_cap_yi": 39.44,
+        "total_gain_pct": 49.37,
+        "reason": "首板·10日涨幅 49.37%·主板（首板新标）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [],
+        "is_main_board": true,
+        "pool_tag": "首板新标",
+        "observation": {
+          "close": 18.88,
+          "lbt": "14:12:25",
+          "lbt_qualitative": "尾盘板，谨慎",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 13.56,
+            "mixian": 13.1,
+            "above_qiba": true,
+            "above_mixian": true,
+            "above_both": true
+          },
+          "resistance": {
+            "price": 18.46,
+            "distance_pct": -2.2
+          }
+        }
+      }
+    ],
+    "auction_scores": [
+      {
+        "code": "002902",
+        "name": "铭普光磁",
+        "date": "2026-05-11",
+        "d1_self": 36,
+        "d2_leader": 24.5,
+        "d3_ranking": 17,
+        "d4_sector": 14.5,
+        "total_score": 92.0,
+        "d1_detail": "竞价5.31%，抢筹型高开，理想区间；量比5.89，资金积极抢筹",
+        "d2_detail": "市场高标大普微大幅高开+5.6%；昨日涨停股(89只)平均竞价+3.3%，接力情绪强",
+        "d3_detail": "涨幅榜集中在半导体概念（4/10），主线明确；梯队情绪正常",
+        "d4_detail": "新能源车 3只涨停，梯队完整；涨幅榜有4只同向",
+        "action": "果断开仓",
+        "position": "加仓4层（连续5日情绪良好）",
+        "stop_loss": 36.2,
+        "stop_loss_pct": -5.0,
+        "reason": "总分92.0，三重共振+连续5日情绪好，仓位加至4层",
+        "vetoes": [],
+        "has_veto": false
+      },
+      {
+        "code": "003036",
+        "name": "泰坦股份",
+        "date": "2026-05-11",
+        "d1_self": 36,
+        "d2_leader": 24.5,
+        "d3_ranking": 17,
+        "d4_sector": 7.5,
+        "total_score": 85.0,
+        "d1_detail": "竞价5.25%，抢筹型高开，理想区间；量比8.12，资金积极抢筹",
+        "d2_detail": "市场高标大普微大幅高开+5.6%；昨日涨停股(89只)平均竞价+3.3%，接力情绪强",
+        "d3_detail": "涨幅榜集中在半导体概念（4/10），主线明确；梯队情绪正常",
+        "d4_detail": "电池技术 仅1只涨停，孤军奋战；涨幅榜有6只同向",
+        "action": "果断开仓",
+        "position": "加仓4层（连续5日情绪良好）",
+        "stop_loss": 41.9,
+        "stop_loss_pct": -5.0,
+        "reason": "总分85.0，三重共振+连续5日情绪好，仓位加至4层",
+        "vetoes": [],
+        "has_veto": false
+      },
+      {
+        "code": "600076",
+        "name": "康欣新材",
+        "date": "2026-05-11",
+        "d1_self": 36,
+        "d2_leader": 24.5,
+        "d3_ranking": 17,
+        "d4_sector": 12.5,
+        "total_score": 90.0,
+        "d1_detail": "竞价5.0%，抢筹型高开，理想区间；量比33.91，资金积极抢筹",
+        "d2_detail": "市场高标大普微大幅高开+5.6%；昨日涨停股(89只)平均竞价+3.3%，接力情绪强",
+        "d3_detail": "涨幅榜集中在半导体概念（4/10），主线明确；梯队情绪正常",
+        "d4_detail": "新材料 3只涨停，梯队完整",
+        "action": "果断开仓",
+        "position": "加仓4层（连续5日情绪良好）",
+        "stop_loss": 3.59,
+        "stop_loss_pct": -5.0,
+        "reason": "总分90.0，三重共振+连续5日情绪好，仓位加至4层",
+        "vetoes": [],
+        "has_veto": false
+      },
+      {
+        "code": "605189",
+        "name": "富春染织",
+        "date": "2026-05-11",
+        "d1_self": 32,
+        "d2_leader": 24.5,
+        "d3_ranking": 17,
+        "d4_sector": 3.5,
+        "total_score": 77.0,
+        "d1_detail": "竞价4.63%，温和高开；量比7.82，资金积极抢筹",
+        "d2_detail": "市场高标大普微大幅高开+5.6%；昨日涨停股(89只)平均竞价+3.3%，接力情绪强",
+        "d3_detail": "涨幅榜集中在半导体概念（4/10），主线明确；梯队情绪正常",
+        "d4_detail": "PEEK材料概念 无其他涨停，独木难支",
+        "action": "果断开仓",
+        "position": "加仓4层（连续5日情绪良好）",
+        "stop_loss": 18.04,
+        "stop_loss_pct": -5.0,
+        "reason": "总分77.0，三重共振+连续5日情绪好，仓位加至4层",
+        "vetoes": [],
+        "has_veto": false
+      }
+    ],
+    "screener_hits": [
+      {
+        "code": "002902",
+        "name": "铭普光磁",
+        "continuous_limit_up": 2,
+        "open_price": 38.1,
+        "auction_gain": 5.31,
+        "auction_turnover": 0.55,
+        "auction_amount": 3744.85,
+        "auction_volume_lots": 9829.0,
+        "auction_volume_ratio": 5.89,
+        "market_cap": 67.68,
+        "volume_ratio": 5.89,
+        "gain_10d": 0,
+        "matched_cycle": false
+      },
+      {
+        "code": "003036",
+        "name": "泰坦股份",
+        "continuous_limit_up": 2,
+        "open_price": 44.11,
+        "auction_gain": 5.25,
+        "auction_turnover": 0.29,
+        "auction_amount": 2767.9,
+        "auction_volume_lots": 6275.0,
+        "auction_volume_ratio": 8.12,
+        "market_cap": 95.4,
+        "volume_ratio": 8.12,
+        "gain_10d": 0,
+        "matched_cycle": false
+      },
+      {
+        "code": "600076",
+        "name": "康欣新材",
+        "continuous_limit_up": 2,
+        "open_price": 3.78,
+        "auction_gain": 5.0,
+        "auction_turnover": 0.33,
+        "auction_amount": 1676.88,
+        "auction_volume_lots": 44362.0,
+        "auction_volume_ratio": 33.91,
+        "market_cap": 50.82,
+        "volume_ratio": 33.91,
+        "gain_10d": 0,
+        "matched_cycle": false
+      },
+      {
+        "code": "605189",
+        "name": "富春染织",
+        "continuous_limit_up": 2,
+        "open_price": 18.99,
+        "auction_gain": 4.63,
+        "auction_turnover": 0.21,
+        "auction_amount": 779.54,
+        "auction_volume_lots": 4105.0,
+        "auction_volume_ratio": 7.82,
+        "market_cap": 36.86,
+        "volume_ratio": 7.82,
+        "gain_10d": 0,
+        "matched_cycle": false
+      }
+    ],
+    "system_action": "果断开仓",
+    "system_position": "加仓4层（连续5日情绪良好）",
+    "system_stop_loss": 36.2,
+    "user_action": "",
+    "user_code": "",
+    "user_price": 0,
+    "user_position": "",
+    "user_stop_loss": 0,
+    "user_note": "",
+    "result_close": 0,
+    "result_gain_pct": 0,
+    "result_is_limit_up": false,
+    "result_hit_stop": false,
+    "next_day_open": 0,
+    "next_day_gain_pct": 0,
+    "deviation": "",
+    "lesson": ""
+  },
+  {
+    "date": "2026-05-12",
+    "watch_pool": [
+      {
+        "code": "603045",
+        "name": "福达合金",
+        "board_count": 5,
+        "industry": "其他电气设备",
+        "close": 68.35,
+        "market_cap_yi": 92.58,
+        "total_gain_pct": 83.0,
+        "reason": "5连板·流通市值92.58亿·主板（小盘接力）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [
+          "通信技术",
+          "5G概念"
+        ],
+        "is_main_board": true,
+        "pool_tag": "小盘接力",
+        "observation": {
+          "close": 68.35,
+          "lbt": "09:25:02",
+          "lbt_qualitative": "早封板，强势",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": "新材料",
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "新材料（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 22.77,
+            "mixian": null,
+            "above_qiba": true,
+            "above_mixian": false,
+            "above_both": false
+          },
+          "resistance": {
+            "price": 62.14,
+            "distance_pct": -9.1
+          }
+        }
+      },
+      {
+        "code": "600379",
+        "name": "宝光股份",
+        "board_count": 1,
+        "industry": "其他电气设备",
+        "close": 18.43,
+        "market_cap_yi": 60.86,
+        "total_gain_pct": 58.2,
+        "reason": "首板·10日涨幅 58.2%·主板（首板新标）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [
+          "央国企改革",
+          "一带一路"
+        ],
+        "is_main_board": true,
+        "pool_tag": "首板新标",
+        "observation": {
+          "close": 18.43,
+          "lbt": "13:46:29",
+          "lbt_qualitative": "下午板，犹豫",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": "央国企改革",
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "央国企改革（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 14.03,
+            "mixian": 13.45,
+            "above_qiba": true,
+            "above_mixian": true,
+            "above_both": true
+          },
+          "resistance": {
+            "price": 20.31,
+            "distance_pct": 10.2
+          }
+        }
+      },
+      {
+        "code": "600396",
+        "name": "华电辽能",
+        "board_count": 1,
+        "industry": "火电",
+        "close": 13.68,
+        "market_cap_yi": 201.47,
+        "total_gain_pct": 53.02,
+        "reason": "首板·10日涨幅 53.02%·主板（首板新标）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [
+          "央国企改革",
+          "氢能源"
+        ],
+        "is_main_board": true,
+        "pool_tag": "首板新标",
+        "observation": {
+          "close": 13.68,
+          "lbt": "13:16:41",
+          "lbt_qualitative": "下午板，犹豫",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": "央国企改革",
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "央国企改革（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 3.38,
+            "mixian": null,
+            "above_qiba": true,
+            "above_mixian": false,
+            "above_both": false
+          },
+          "resistance": {
+            "price": 13.2,
+            "distance_pct": -3.5
+          }
+        }
+      },
+      {
+        "code": "001211",
+        "name": "双枪科技",
+        "board_count": 1,
+        "industry": "其他轻工",
+        "close": 48.68,
+        "market_cap_yi": 32.61,
+        "total_gain_pct": 52.27,
+        "reason": "首板·10日涨幅 52.27%·主板（首板新标）",
+        "watch_points": "",
+        "auction_range": "",
+        "top_concepts": [
+          "电商概念",
+          "预制菜概念"
+        ],
+        "is_main_board": true,
+        "pool_tag": "首板新标",
+        "observation": {
+          "close": 48.68,
+          "lbt": "13:03:21",
+          "lbt_qualitative": "下午板，犹豫",
+          "turnover": null,
+          "turnover_qualitative": "—",
+          "concept": {
+            "name": null,
+            "lu_count": 0,
+            "ladder_2plus_count": 0,
+            "qualitative": "—",
+            "text": "—（无聚合数据）"
+          },
+          "double_break": {
+            "qiba": 30.3,
+            "mixian": null,
+            "above_qiba": true,
+            "above_mixian": false,
+            "above_both": false
+          },
+          "resistance": {
+            "price": 45.03,
+            "distance_pct": -7.5
+          }
+        }
+      }
+    ],
+    "auction_scores": [],
+    "screener_hits": [],
+    "system_action": "",
+    "system_position": "",
+    "system_stop_loss": 0,
+    "user_action": "",
+    "user_code": "",
+    "user_price": 0,
+    "user_position": "",
+    "user_stop_loss": 0,
+    "user_note": "",
+    "result_close": 0,
+    "result_gain_pct": 0,
+    "result_is_limit_up": false,
+    "result_hit_stop": false,
+    "next_day_open": 0,
+    "next_day_gain_pct": 0,
+    "deviation": "",
+    "lesson": ""
+  }
+]

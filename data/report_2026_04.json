@@ -1,0 +1,48 @@
+{
+  "period": "2026年4月",
+  "generated_at": "2026-04-30 17:42:03",
+  "total_signals": 13,
+  "judged_signals": 13,
+  "wins": 4,
+  "losses": 9,
+  "win_rate": 30.8,
+  "board_distribution": {
+    "2进3": {
+      "total": 8,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    "4进5": {
+      "total": 2,
+      "wins": 2,
+      "win_rate": 100.0
+    },
+    "5进6": {
+      "total": 1,
+      "wins": 1,
+      "win_rate": 100.0
+    },
+    "3进4": {
+      "total": 2,
+      "wins": 1,
+      "win_rate": 50.0
+    }
+  },
+  "outcome_distribution": {
+    "涨停": 7,
+    "涨停炸板": 0,
+    "未涨停": 6
+  },
+  "emotion_analysis": {
+    "strong_market_trades": 10,
+    "strong_market_win_rate": 30.0,
+    "weak_market_trades": 1,
+    "weak_market_win_rate": 100.0
+  },
+  "sanbanzhu_count": 0,
+  "sanbanzhu_win_rate": null,
+  "suggestions": [
+    "整体胜率偏低，建议收紧信号筛选条件或降低仓位",
+    "最弱连板类型：2进3（胜率0.0%），建议降仓或回避"
+  ]
+}

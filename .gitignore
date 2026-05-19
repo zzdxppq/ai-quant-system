@@ -8,8 +8,8 @@ build/
 venv/
 
 # Runtime data
-data/*.db
-data/*.json
+#data/*.db
+#data/*.json
 
 # IDE & tool configs
 .mcp.json

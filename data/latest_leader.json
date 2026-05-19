@@ -1,0 +1,67 @@
+{
+  "date": "2026-05-12 09:27:14",
+  "market_leader": {
+    "leader_code": "301666",
+    "leader_name": "大普微",
+    "leader_gain_10d": 122.84,
+    "auction_change_pct": -2.85,
+    "signal": "中性",
+    "can_trade": true,
+    "aggression": "谨慎",
+    "reason": "高标大普微竞价微幅低开(-2.9%)，情绪偏弱但未崩，可谨慎参与，控制仓位"
+  },
+  "main_board_leaders": [
+    {
+      "leader_code": "603045",
+      "leader_name": "福达合金",
+      "leader_gain_10d": 5.0,
+      "auction_change_pct": 10.01,
+      "signal": "强正反馈",
+      "can_trade": true,
+      "aggression": "积极",
+      "reason": "主板5连板福达合金竞价大幅高开(+10.0%)，接力情绪强劲延续",
+      "board_count": 5
+    }
+  ],
+  "main_board_leader": {
+    "leader_code": "603045",
+    "leader_name": "福达合金",
+    "leader_gain_10d": 5.0,
+    "auction_change_pct": 10.01,
+    "signal": "强正反馈",
+    "can_trade": true,
+    "aggression": "积极",
+    "reason": "主板5连板福达合金竞价大幅高开(+10.0%)，接力情绪强劲延续",
+    "board_count": 5
+  },
+  "yesterday_main_board_avg_auction": {
+    "date": "20260511",
+    "sample_count": 82,
+    "avg_change_pct": 2.52,
+    "median_change_pct": 1.68,
+    "high5_count": 19,
+    "flat2_count": 43,
+    "low5_count": 1,
+    "positive_count": 62,
+    "negative_count": 15,
+    "limit_down_count": 1
+  },
+  "yesterday_zb_today_auction": {
+    "date": "20260511",
+    "pool_size": 34,
+    "sample_count": 1,
+    "avg_change_pct": 3.09,
+    "positive_count": 1,
+    "negative_count": 0,
+    "limit_down_count": 0
+  },
+  "yesterday_limit_down_today_auction": null,
+  "leader_code": "301666",
+  "leader_name": "大普微",
+  "leader_gain_10d": 122.84,
+  "auction_change_pct": -2.85,
+  "signal": "中性",
+  "can_trade": true,
+  "aggression": "谨慎",
+  "reason": "高标大普微竞价微幅低开(-2.9%)，情绪偏弱但未崩，可谨慎参与，控制仓位"
+}
