@@ -273,10 +273,11 @@ def score_from_kline(code: str, name: str = "", consecutive: int = 2) -> Optiona
         total_lu = 30
         sentiment = 0.0
         try:
-            import json
+            from src.data.json_io import load_json_file
+
             sent_file = DATA_DIR / "latest_sentiment.json"
-            if sent_file.exists():
-                sent_data = json.loads(sent_file.read_text())
+            sent_data = load_json_file(sent_file)
+            if isinstance(sent_data, dict):
                 sentiment = float(sent_data.get("weighted_auction_gain", 0))
                 total_lu = int(sent_data.get("pool_size", 30))
         except Exception:

@@ -5,8 +5,7 @@
 2. 新浪 stock_intraday_sina           - 兜底，9:25 集合竞价单点 + 9:30+ 连续撮合
 3. 腾讯 stock_zh_a_tick_tx_js (AkShare) - 二级兜底，分笔历史
 
-数据按 (code, date) 缓存到 data/auction_cache/{date}/{code}.json，
-9:25 后竞价已固定，缓存直至下一交易日。
+数据按 (code, date) 缓存到 quant 库 structured_store（auction_session），不再写 data/auction_cache/*.json。
 
 返回结构 (统一为 list of dict):
     {
@@ -19,17 +18,13 @@
 """
 from __future__ import annotations
 
-import json
-import os
 import time
-from pathlib import Path
 from typing import Optional
 
 import httpx
 
-from src.config import DATA_DIR, now_cn
+from src.config import now_cn
 
-CACHE_DIR = DATA_DIR / "auction_cache"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0",
     "Referer": "https://quote.eastmoney.com/",
@@ -44,27 +39,22 @@ def _market_prefix(code: str) -> str:
     return "0"
 
 
-def _cache_path(code: str, date: str) -> Path:
-    d = CACHE_DIR / date
-    d.mkdir(parents=True, exist_ok=True)
-    return d / f"{code}.json"
+def _market_prefix(code: str) -> str:
+    from src.data.structured_store import load_auction_session
 
-
-def _load_cache(code: str, date: str) -> Optional[dict]:
-    p = _cache_path(code, date)
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text())
-    except Exception:
-        return None
+    got = load_auction_session(code, date)
+    if isinstance(got, dict) and (
+        got.get("ticks") or got.get("intraday_window") or got.get("auction_window")
+    ):
+        return got
+    return None
 
 
 def _save_cache(code: str, date: str, payload: dict) -> None:
     try:
-        _cache_path(code, date).write_text(
-            json.dumps(payload, ensure_ascii=False)
-        )
+        from src.data.structured_store import save_auction_session
+
+        save_auction_session(code, date, payload)
     except Exception as e:
         print(f"[竞价] 缓存写入失败 {code}: {e}")
 
@@ -229,7 +219,9 @@ def fetch_auction_ticks(code: str, force: bool = False) -> dict:
     # 1) 缓存
     if not force:
         cached = _load_cache(code, today)
-        if cached and cached.get("ticks"):
+        if cached and (
+            cached.get("ticks") or cached.get("intraday_window") or cached.get("auction_window")
+        ):
             return cached
 
     # 2) 拉数据 — 主路径 → 降级

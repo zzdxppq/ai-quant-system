@@ -69,7 +69,9 @@ def _full_advice_payload():
         "suggested_position_short": "1.5层",
         "reason": "市场竞价跌停 8 只（>5 警戒线）。仅一项警戒，可小仓试错或观望。",
         "bad_count": 1,
-        "dimensions": {"ld_bad": True, "drop_bad": False, "w_bad": False, "lb_bad": False},
+        "dimensions": {
+            "ld_bad": True, "drop_bad": False, "w_bad": False, "lb_bad": False, "relay_bad": False,
+        },
         "inputs": {
             "limit_down": 8, "drop_over_9pct": 2, "weighted_auction_gain": 1.0,
             "prev_day_limit_down": 4, "prev_day_weighted_auction_gain": 0.5,
@@ -105,8 +107,8 @@ BASELINE_FIXTURE = Path(__file__).parent / "fixtures" / "index_template_baseline
 
 def test_2_1_unit_001_payload_contains_all_required_fields(tmp_path, monkeypatch):
     _patch_data_dir(monkeypatch, tmp_path)
-    write_advice_snapshot(_good_sent(), _leader_min())
-    data = json.loads((tmp_path / "latest_advice.json").read_text(encoding="utf-8"))
+    data = write_advice_snapshot(_good_sent(), _leader_min())
+    assert data is not None
     expected_keys = {
         "generated_at", "bucket", "text", "suggested_position",
         "suggested_position_short", "reason", "bad_count", "dimensions", "inputs",
@@ -119,7 +121,7 @@ def test_2_1_unit_002_dimensions_field_structure(tmp_path, monkeypatch):
     _patch_data_dir(monkeypatch, tmp_path)
     payload = write_advice_snapshot(_good_sent(), _leader_min())
     dims = payload["dimensions"]
-    assert set(dims.keys()) == {"ld_bad", "drop_bad", "w_bad", "lb_bad"}
+    assert set(dims.keys()) == {"ld_bad", "drop_bad", "w_bad", "lb_bad", "relay_bad"}
     for v in dims.values():
         assert isinstance(v, bool)
 
@@ -180,7 +182,10 @@ def test_2_1_unit_007_four_dim_triggered_max(tmp_path, monkeypatch):
     ])
     payload = write_advice_snapshot(sent, leader)
     assert payload["bad_count"] == 4
-    assert all(v is True for v in payload["dimensions"].values())
+    dims = payload["dimensions"]
+    assert dims["relay_bad"] is False
+    for k in ("ld_bad", "drop_bad", "w_bad", "lb_bad"):
+        assert dims[k] is True
     assert payload["reason"].count("（") >= 1
     for needle in ("跌停", "跌幅", "加权竞价", "连板高标"):
         assert needle in payload["reason"]
@@ -415,15 +420,12 @@ def _line_range(text, start, end):
 
 
 def test_2_1_int_005_template_html_unchanged_in_lines_505_to_666():
-    # Note: line numbers rebaselined to 541/631/694 in Story dashboard-hits-table-display-2.4
-    # after detecting drift caused by commit ba52314 (操作列+日K图). Asserted CONTENT
-    # remains character-equal to the original 2.1 freeze; only the offset within
-    # index.html changed because ba52314 added ~36 lines above the hero-banner block.
+    # Rebasing 2026-05-14: 昨日选股/分时等插入后行号再漂移；锚点见 index_template_baseline.json _note。
     text = _index_html_text()
     base = _read_baseline()
-    assert _line_range(text, 541, 545) == base["lines_541_545"]
-    assert _line_range(text, 631, 632) == base["lines_631_632"]
-    assert _line_range(text, 694, 703) == base["lines_694_703"]
+    assert _line_range(text, 891, 895) == base["lines_883_887"]
+    assert _line_range(text, 1017, 1019) == base["lines_1009_1011"]
+    assert _line_range(text, 1126, 1135) == base["lines_1113_1122"]
 
 
 def test_2_1_int_006_suggested_position_camel_case_mapping():
@@ -527,16 +529,21 @@ def test_2_1_unit_026_calc_daily_advice_function_body_preserved():
 
 def test_2_1_int_007_send_screener_report_signature_unchanged():
     sig = str(inspect.signature(send_screener_report))
+    # 2.6 升级：新增 keyword-only entry / force 参数以承接中央守卫。
     expected = (
         "(cycle_phase: str, cycle_day: int, representative: dict | None, "
         "leader: dict | None, hits: list[dict], signals: list[dict], "
         "deviations: list[dict] | None = None, sentiment_data: dict | None = None, "
-        "ranking_data: dict | None = None) -> bool"
+        "ranking_data: dict | None = None, *, entry: str = 'unknown', "
+        "force: bool = False) -> bool"
     )
     assert sig == expected
 
 
-def test_2_1_int_008_email_subject_uses_disk_position_short(tmp_path, monkeypatch):
+def test_2_1_int_008_email_subject_uses_openable_hits_avg(tmp_path, monkeypatch):
+    """标题仓位取自过滤后个股平均，而非盘面全局 suggested_position_short。"""
+    from datetime import datetime
+
     _patch_data_dir(monkeypatch, tmp_path)
     payload = _full_advice_payload()
     payload["suggested_position_short"] = "1.5层"
@@ -551,14 +558,100 @@ def test_2_1_int_008_email_subject_uses_disk_position_short(tmp_path, monkeypatc
     monkeypatch.setattr(email_sender, "_send", fake_send)
     monkeypatch.setattr(email_sender, "SMTP_USER", "u@x")
     monkeypatch.setattr(email_sender, "SMTP_PASSWORD", "p")
+    monkeypatch.setattr(email_sender, "now_cn", lambda: datetime(2026, 5, 8, 9, 27, 10))
+    monkeypatch.setattr(
+        email_sender, "send_guard_allows", lambda **kw: (True, "ok"),
+    )
+    monkeypatch.setattr(
+        email_sender, "_load_yesterday_selections_for_email", lambda: ("", []),
+    )
+    monkeypatch.setattr(
+        email_sender,
+        "_load_advice_from_disk",
+        lambda: {
+            "bucket": "go", "text": "✅ 可参与", "position": "3 层",
+            "position_short": "3层", "reason": "", "color": "#ef4444",
+            "bg": "#2a0f0f", "conclusion": "✅ 可参与",
+        },
+    )
+    email_sender._TODAY_SENT_CACHE.clear()
 
+    hits = [
+        {
+            "code": "600001", "name": "A",
+            "per_stock_decision": {
+                "can_open": True, "position_pct": 20, "action": "开仓",
+                "position_text": "20%（2层）",
+            },
+        },
+        {
+            "code": "600002", "name": "B",
+            "per_stock_decision": {
+                "can_open": False, "position_pct": 0, "action": "空仓",
+                "position_text": "0% (空仓)",
+            },
+        },
+    ]
     ok = send_screener_report(
         cycle_phase="孕育期", cycle_day=1, representative=None,
-        leader=_leader_min(), hits=[], signals=[],
+        leader=_leader_min(), hits=hits, signals=[],
         sentiment_data=_good_sent(), ranking_data=None,
+        entry="cron",
     )
     assert ok is True
-    assert "仓位1.5层" in captured["subject"]
+    assert "1只命中" in captured["subject"]
+    assert "仓位2层" in captured["subject"]
+    assert "仓位1.5层" not in captured["subject"]
+
+
+def test_email_subject_zero_openable_omits_position(tmp_path, monkeypatch):
+    from datetime import datetime
+
+    _patch_data_dir(monkeypatch, tmp_path)
+    _write_advice_file(tmp_path, _full_advice_payload())
+    captured = {}
+
+    def fake_send(subject, html):
+        captured["subject"] = subject
+        captured["html"] = html
+        return True
+
+    monkeypatch.setattr(email_sender, "_send", fake_send)
+    monkeypatch.setattr(email_sender, "SMTP_USER", "u@x")
+    monkeypatch.setattr(email_sender, "SMTP_PASSWORD", "p")
+    monkeypatch.setattr(email_sender, "now_cn", lambda: datetime(2026, 5, 8, 9, 27, 10))
+    monkeypatch.setattr(
+        email_sender, "send_guard_allows", lambda **kw: (True, "ok"),
+    )
+    monkeypatch.setattr(
+        email_sender, "_load_yesterday_selections_for_email", lambda: ("", []),
+    )
+    monkeypatch.setattr(
+        email_sender,
+        "_load_advice_from_disk",
+        lambda: {
+            "bucket": "go", "text": "✅ 可参与", "position": "3 层",
+            "position_short": "3层", "reason": "", "color": "#ef4444",
+            "bg": "#2a0f0f", "conclusion": "✅ 可参与",
+        },
+    )
+    email_sender._TODAY_SENT_CACHE.clear()
+
+    hits = [{
+        "code": "600001", "name": "A",
+        "per_stock_decision": {"can_open": False, "position_pct": 0, "action": "空仓"},
+    }]
+    ok = send_screener_report(
+        cycle_phase="孕育期", cycle_day=1, representative=None,
+        leader=_leader_min(), hits=hits, signals=[],
+        sentiment_data=_good_sent(), ranking_data=None,
+        entry="cron",
+    )
+    assert ok is True
+    assert "0只命中" in captured["subject"]
+    assert "仓位" not in captured["subject"]
+    assert "建议仓位" not in captured["html"]
+    assert "600001" not in captured["html"]
 
 
 # ============================================================
@@ -716,9 +809,9 @@ def test_2_1_int_015_dashboard_template_html_unchanged_vs_baseline():
     # 与 INT-005 重叠，但作为 AC5 回归保护独立断言
     # Line numbers rebaselined in Story dashboard-hits-table-display-2.4 — see INT-005 note
     for key, (s, e) in [
-        ("lines_541_545", (541, 545)),
-        ("lines_631_632", (631, 632)),
-        ("lines_694_703", (694, 703)),
+        ("lines_883_887", (891, 895)),
+        ("lines_1009_1011", (1017, 1019)),
+        ("lines_1113_1122", (1126, 1135)),
     ]:
         assert _line_range(text, s, e) == base[key], (
             f"Template lines {s}-{e} drifted from baseline (AC5 regression)"

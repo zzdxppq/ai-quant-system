@@ -7,6 +7,7 @@
 
 参考：go-stock/backend/data/eastmoney_kline_api.go
 """
+import logging
 import re
 import time
 import json
@@ -14,6 +15,15 @@ from typing import Optional
 
 import httpx
 import pandas as pd
+
+from src.data.em_request_guard import (
+    MEM_TTL_SEC,
+    request_json,
+    mem_get,
+    mem_set,
+)
+
+logger = logging.getLogger(__name__)
 
 # === 实时排行接口 ===
 CLIST_URL = "https://push2.eastmoney.com/api/qt/clist/get"
@@ -27,8 +37,13 @@ HEADERS = {
 }
 
 KLINE_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
     "Referer": "https://quote.eastmoney.com/",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
 }
 
 # A股市场过滤条件
@@ -124,7 +139,7 @@ def fetch_a_share_list(
         # 参考 go-stock：显式 Host + Referer，http2=False 用 HTTP/1.1
         req_headers = dict(HEADERS)
         req_headers["Host"] = "push2.eastmoney.com"
-        with httpx.Client(timeout=15, headers=req_headers, http2=False) as client:
+        with httpx.Client(timeout=15, headers=req_headers, http2=False, trust_env=False) as client:
             while remaining > 0:
                 items = _fetch_one_page(
                     client, current_page, min(remaining, _CLIST_PAGE_CAP)
@@ -213,12 +228,27 @@ def fetch_kline(
         "_": str(int(time.time() * 1000)),
     }
 
-    try:
-        with httpx.Client(timeout=10, headers=KLINE_HEADERS) as client:
-            resp = client.get(KLINE_URL, params=params)
-            data = resp.json()
+    cache_key = f"kline:{secid}:{klt}:{fqt}:{limit}"
+    if MEM_TTL_SEC > 0:
+        cached = mem_get(cache_key)
+        if cached is not None and not getattr(cached, "empty", True):
+            return cached.copy()
 
-        if data.get("data") is None:
+    try:
+        with httpx.Client(
+            timeout=20,
+            headers=KLINE_HEADERS,
+            http2=False,
+            trust_env=False,
+        ) as client:
+            data = request_json(
+                client=client,
+                url=KLINE_URL,
+                params=params,
+                label=f"东方财富K线({code})",
+            )
+
+        if not data or data.get("data") is None:
             return pd.DataFrame()
 
         klines = data["data"].get("klines", [])
@@ -244,10 +274,13 @@ def fetch_kline(
                 "turnover": float(parts[10]),
             })
 
-        return pd.DataFrame(rows)
+        df = pd.DataFrame(rows)
+        if not df.empty and MEM_TTL_SEC > 0:
+            mem_set(cache_key, df)
+        return df
 
     except Exception as e:
-        print(f"东方财富K线接口失败({code}): {e}")
+        logger.warning("东方财富K线解析失败(%s): %s", code, e)
         return pd.DataFrame()
 
 
@@ -267,6 +300,7 @@ def fetch_kline_batch(
         df = fetch_kline(code, klt, fqt, limit)
         if not df.empty:
             result[code] = df
+        # 节流由 fetch_kline / em_request_guard 统一处理
     return result
 
 
@@ -377,16 +411,19 @@ def fetch_limit_up_stocks(date: str = None) -> pd.DataFrame:
 
 
 def _to_secid(code: str) -> str:
-    """转换为东方财富secid格式
-
-    000001 → 0.000001 (深圳)
-    600519 → 1.600519 (上海)
-    """
-    code = str(code).strip()
-    if code.startswith(("50", "51", "60", "68", "90", "110", "113", "132", "204")):
-        return f"1.{code}"
+    """转换为东方财富 secid：沪 1.xxxxxx / 深与北交所 0.xxxxxx（北交所 4/8/92 开头）。"""
+    d = "".join(ch for ch in str(code).strip() if ch.isdigit())
+    if len(d) >= 6:
+        d = d[-6:]
     else:
-        return f"0.{code}"
+        d = str(code).strip().zfill(6)
+    if len(d) != 6 or not d.isdigit():
+        return f"0.{d}"
+    if d.startswith(("4", "8", "92")):
+        return f"0.{d}"
+    if d.startswith(("60", "68", "90", "110", "113", "132", "204")) or d.startswith("5"):
+        return f"1.{d}"
+    return f"0.{d}"
 
 
 def _is_main_board(code: str) -> bool:

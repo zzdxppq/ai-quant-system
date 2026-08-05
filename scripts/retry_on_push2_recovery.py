@@ -83,7 +83,11 @@ def main():
 
     _log("触发 run_screener_update ...")
     try:
-        hits_data = run_screener_update()
+        # push2 恢复时调用；邮件由 send_guard 中央守卫判定（2.6 升级）：
+        # 非交易时段（凌晨/晚间）一律不发，仅补跑选股 + 看板数据。
+        # skip_email=True → run_screener_update 不走邮件分支；窗口外的邮件发送意义不大
+        # （数据基于残缺快照），由下一个 9:27 cron 重新推送。
+        hits_data = run_screener_update(skip_email=True)
         hits = hits_data.get("hits", [])
         _log(f"选股完成: {len(hits)} 只命中")
         for h in hits:

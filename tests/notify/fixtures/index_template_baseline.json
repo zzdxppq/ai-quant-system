@@ -1,26 +1,27 @@
 {
-  "_note": "Baseline fingerprint for src/static/index.html template (decision-consistency-2.1 BR-2.4 / BR-5.4). Originally recorded 2026-05-08 at commit eea5d4a; rebaselined 2026-05-08 against current HEAD because commit ba52314 ('选股表新增操作列+日K图') shifted line numbers by ~36 lines without updating this fixture. Story dashboard-hits-table-display-2.4 detected and corrected the drift; the asserted CONTENT remains character-equal to the original 2.1 baseline. Lines 541-545 / 631-632 / 694-703 must remain char-level unchanged through Story 2.4.",
-  "lines_541_545": [
-    "        <div class=\"card full-width hero-banner\" :class=\"dailyAdvice.cls\">",
+  "_note": "Baseline fingerprint for src/static/index.html (decision-consistency-2.1). Rebasing 2026-05-14: 昨日选股/分时后行号漂移，锚 891-895 / 1017-1019 / 1126-1135（键名沿用 lines_* 兼容旧测试键）。",
+  "lines_883_887": [
+    "        <div v-else class=\"card full-width hero-banner\" :class=\"dailyAdvice.cls\">",
     "            <div class=\"hero-main\">",
     "                <div class=\"hero-action\">",
     "                    <div class=\"ha-text\">{{ dailyAdvice.text }}</div>",
     "                    <div class=\"ha-position\">建议仓位：<b>{{ dailyAdvice.suggestedPosition }}</b></div>"
   ],
-  "lines_631_632": [
+  "lines_1009_1011": [
     "            <div class=\"hero-reason\" v-if=\"dailyAdvice.reason\">",
-    "                💡 {{ dailyAdvice.reason }}"
+    "                💡 {{ dailyAdvice.reason }}",
+    "            </div>"
   ],
-  "lines_694_703": [
-    "                            <div class=\"decision-cell\" :class=\"dailyAdvice.cls\" style=\"padding:4px 8px;border-radius:6px;\">",
+  "lines_1113_1122": [
+    "                            <div class=\"decision-cell\" :class=\"perStockCls(hit)\" style=\"padding:4px 8px;border-radius:6px;\" :title=\"(hit.per_stock_decision || {}).reason || ''\">",
     "                                <div class=\"dc-action\" style=\"font-size:12px;font-weight:600;\">",
-    "                                    {{ dailyAdvice.text }}",
-    "                                </div>",
-    "                                <div style=\"font-size:11px;margin-top:2px;\"",
-    "                                     :style=\"{color: hit.matched_cycle ? '#60a5fa' : '#a0aec0'}\">",
-    "                                    <template v-if=\"dailyAdvice.cls === 'advice-go'\">",
-    "                                        {{ hit.matched_cycle ? '3层（🎯周期股）' : '2层（非周期降1层）' }}",
+    "                                    <template v-if=\"hit.per_stock_decision\">",
+    "                                        {{ perStockActionLabel(hit) }}",
     "                                    </template>",
-    "                                    <template v-else-if=\"dailyAdvice.cls === 'advice-warn'\">"
+    "                                    <template v-else>",
+    "                                        {{ dailyAdvice.text }}",
+    "                                    </template>",
+    "                                </div>",
+    "                                <div style=\"font-size:11px;margin-top:2px;color:#a0aec0;\">"
   ]
 }

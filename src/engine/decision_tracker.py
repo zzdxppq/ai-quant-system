@@ -8,11 +8,10 @@
 
 数据：data/decision_records.json
 """
-import json
-from dataclasses import dataclass, field, asdict
-from typing import Optional
+from dataclasses import asdict, dataclass, field
 
 from src.config import DATA_DIR, now_cn
+from src.data.json_io import dump_json_file, load_json_file
 
 
 RECORDS_FILE = DATA_DIR / "decision_records.json"
@@ -53,16 +52,12 @@ class DecisionRecord:
 
 
 def _load_records() -> list[dict]:
-    if RECORDS_FILE.exists():
-        try:
-            return json.loads(RECORDS_FILE.read_text())
-        except Exception:
-            pass
-    return []
+    data = load_json_file(RECORDS_FILE)
+    return data if isinstance(data, list) else []
 
 
 def _save_records(records: list[dict]):
-    RECORDS_FILE.write_text(json.dumps(records, ensure_ascii=False, indent=2))
+    dump_json_file(RECORDS_FILE, records)
 
 
 def create_premarket_record(
@@ -124,6 +119,11 @@ def update_user_decision(
             r["user_position"] = position
             r["user_stop_loss"] = stop_loss
             r["user_note"] = note
+            # 决策基本面锚点：用户敲定买入标的时同步抓取 MX 妙想画像，
+            # 写不进 decision_records.json 的 mx_snapshot 字段。
+            # 失败/无 key 静默跳过，不影响主流程。
+            if code and action == "买入" and not r.get("mx_snapshot"):
+                r["mx_snapshot"] = _fetch_mx_snapshot(code)
             _save_records(records)
             return r
     return {"error": "未找到该日记录"}
@@ -139,6 +139,10 @@ def backfill_result(date: str):
         if not code:
             # 没有实际操作，跳过
             continue
+
+        # 历史记录可能没有基本面快照（早于本次升级的记录），盘后补一次
+        if not r.get("mx_snapshot"):
+            r["mx_snapshot"] = _fetch_mx_snapshot(code)
 
         try:
             from src.data.sina_kline_api import fetch_kline, SCALE_DAILY
@@ -283,10 +287,27 @@ def get_missed_trades(limit: int = 30) -> list[dict]:
     return missed[:limit]
 
 
+def _fetch_mx_snapshot(code: str) -> dict:
+    """调 MX 妙想 API 抓个股画像。失败/无 key → 返回 {}。
+
+    写入 decision_records.json 的 mx_snapshot 字段（dict 形式），
+    失败时不写字段（getattr 兜底成 None / dict）。
+    """
+    code = (code or "").strip()
+    if not code:
+        return {}
+    try:
+        from src.data.mx_api import available, fetch_snapshot
+
+        if not available():
+            return {}
+        return fetch_snapshot(code)
+    except Exception as e:
+        print(f"[决策追踪] MX 快照失败({code}): {e}")
+        return {}
+
+
 def get_stats() -> dict:
-    """统计决策表现"""
-    records = _load_records()
-    traded = [r for r in records if r.get("user_action") == "买入" and r.get("result_gain_pct") is not None]
 
     total = len(traded)
     if total == 0:

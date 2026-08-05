@@ -13,15 +13,21 @@ import pandas as pd
 
 USE_MOCK = os.getenv("MOCK", "0") == "1"
 
+# ok_eastmoney | ok_sina | mock | empty（MOCK=0 且全源失败）
+LAST_REALTIME_SPOT_STATUS: str = "unset"
+
 
 def fetch_realtime_spot() -> pd.DataFrame:
     """获取全市场实时快照
 
     用途：选股引擎9:27调用
     """
+    global LAST_REALTIME_SPOT_STATUS
+
     if USE_MOCK:
         from src.data.mock_data import generate_mock_spot
         print("[MOCK] 使用模拟实时行情")
+        LAST_REALTIME_SPOT_STATUS = "mock"
         return generate_mock_spot()
 
     # 优先东方财富（字段最全）
@@ -29,6 +35,7 @@ def fetch_realtime_spot() -> pd.DataFrame:
         from src.data.eastmoney_api import fetch_a_share_list
         df = fetch_a_share_list()
         if not df.empty:
+            LAST_REALTIME_SPOT_STATUS = "ok_eastmoney"
             return df
         print("东方财富返回空，尝试新浪兜底")
     except Exception as e:
@@ -39,13 +46,14 @@ def fetch_realtime_spot() -> pd.DataFrame:
         from src.data.sina_spot_api import fetch_a_share_list_sina
         df = fetch_a_share_list_sina()
         if not df.empty:
+            LAST_REALTIME_SPOT_STATUS = "ok_sina"
             return df
     except Exception as e:
         print(f"新浪兜底失败: {e}")
 
-    from src.data.mock_data import generate_mock_spot
-    print("[降级] 使用模拟数据")
-    return generate_mock_spot()
+    LAST_REALTIME_SPOT_STATUS = "empty"
+    print("[spot] 全源失败，返回空结果（MOCK=0 未降级 mock）")
+    return pd.DataFrame()
 
 
 def fetch_realtime_batch(codes: list[str]) -> pd.DataFrame:
@@ -230,15 +238,14 @@ def fetch_stock_list() -> pd.DataFrame:
 
 def _load_limit_up_cache() -> dict[str, pd.DataFrame]:
     """从本地文件加载历史涨停缓存"""
-    import json
     from src.config import DATA_DIR
+    from src.data.json_io import load_json_file
 
     cache_file = DATA_DIR / "limit_up_cache.json"
-    if not cache_file.exists():
+    data = load_json_file(cache_file)
+    if not isinstance(data, dict):
         return {}
-
     try:
-        data = json.loads(cache_file.read_text())
         result = {}
         for date_str, records in data.items():
             result[date_str] = pd.DataFrame(records)
@@ -249,22 +256,84 @@ def _load_limit_up_cache() -> dict[str, pd.DataFrame]:
 
 def _save_limit_up_cache(date_str: str, df: pd.DataFrame):
     """保存涨停数据到本地缓存"""
-    import json
     from src.config import DATA_DIR
+    from src.data.json_io import dump_json_file, load_json_file
 
     cache_file = DATA_DIR / "limit_up_cache.json"
 
     # 加载已有缓存
-    cache = {}
-    if cache_file.exists():
-        try:
-            cache = json.loads(cache_file.read_text())
-        except Exception:
-            pass
+    cache: dict = {}
+    raw = load_json_file(cache_file)
+    if isinstance(raw, dict):
+        cache = raw
 
     # 只保留最近10天
     cache[date_str] = df.to_dict("records")
     sorted_dates = sorted(cache.keys(), reverse=True)[:10]
     cache = {d: cache[d] for d in sorted_dates}
 
-    cache_file.write_text(json.dumps(cache, ensure_ascii=False, indent=2))
+    dump_json_file(cache_file, cache)
+
+
+def sync_limit_up_cache_from_zt_pool(date_str: str | None = None) -> int:
+    """用东财 push2ex 涨停板池写入 limit_up_cache（全市场行情失败时的盘后兜底）。
+
+    Returns:
+        写入条数；拉取失败返回 0
+    """
+    from src.config import now_cn
+
+    key = (date_str or now_cn().strftime("%Y%m%d")).strip()
+    if len(key) != 8 or not key.isdigit():
+        return 0
+
+    try:
+        from src.data.zt_pool_api import fetch_zt_pool_with_retry
+    except Exception as e:
+        print(f"[涨停缓存] zt_pool 模块不可用: {e}")
+        return 0
+
+    pool = fetch_zt_pool_with_retry(key) or {}
+    if not pool:
+        return 0
+
+    spot_pct: dict[str, float] = {}
+    try:
+        spot = fetch_realtime_spot()
+        if spot is not None and not spot.empty and "code" in spot.columns:
+            for _, row in spot.iterrows():
+                c = str(row.get("code", "")).strip().zfill(6)[-6:]
+                try:
+                    spot_pct[c] = float(row.get("change_pct", 0) or 0)
+                except (TypeError, ValueError):
+                    pass
+    except Exception as e:
+        print(f"[涨停缓存] zt_pool 补全涨幅 spot 失败: {e}")
+
+    records: list[dict] = []
+    for code, info in pool.items():
+        code6 = str(code).strip().zfill(6)[-6:]
+        if len(code6) != 6 or not code6.isdigit():
+            continue
+        lbc = int(info.get("lbc") or 0)
+        if lbc <= 0:
+            lbc = 1
+        is_gem = code6.startswith(("300", "301", "688"))
+        pct = spot_pct.get(code6)
+        if pct is None:
+            pct = 20.0 if is_gem else 10.0
+        records.append({
+            "code": code6,
+            "name": str(info.get("name") or ""),
+            "change_pct": round(float(pct), 2),
+            "board_count": lbc,
+            "continuous_limit_up": lbc,
+        })
+
+    if not records:
+        return 0
+
+    df = pd.DataFrame(records)
+    _save_limit_up_cache(key, df)
+    print(f"[涨停缓存] zt_pool 已写入 {key}：{len(records)} 只")
+    return len(records)

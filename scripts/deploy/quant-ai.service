@@ -1,0 +1,27 @@
+[Unit]
+Description=AI Quant Dashboard (ai-quant-system)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=quant
+Group=quant
+WorkingDirectory=/opt/ai-quant-system
+EnvironmentFile=/opt/ai-quant-system/.env
+Environment=PYTHONPATH=/opt/ai-quant-system
+Environment=TZ=Asia/Shanghai
+ExecStart=/opt/ai-quant-system/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=5
+# 避免 OOM 时反复拉起过快
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=quant-ai
+
+[Install]
+WantedBy=multi-user.target

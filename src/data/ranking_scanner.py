@@ -15,6 +15,7 @@ import time
 import pandas as pd
 
 from src.config import DATA_DIR
+from src.data.json_io import dump_json_file, load_json_file
 from src.data.sina_kline_api import NEW_STOCK_MIN_TRADING_DAYS
 
 
@@ -160,20 +161,14 @@ def _enrich_market_cap(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _load_industry_cache() -> dict[str, str]:
-    import json
     p = DATA_DIR / "industry_cache.json"
-    if not p.exists():
-        return {}
-    try:
-        return json.loads(p.read_text())
-    except Exception:
-        return {}
+    data = load_json_file(p)
+    return data if isinstance(data, dict) else {}
 
 
 def _save_industry_cache(cache: dict[str, str]) -> None:
-    import json
     p = DATA_DIR / "industry_cache.json"
-    p.write_text(json.dumps(cache, ensure_ascii=False, indent=2))
+    dump_json_file(p, cache)
 
 
 _EMWEB_F10_URL = "https://emweb.securities.eastmoney.com/PC_HSF10/CompanySurvey/PageAjax"
@@ -274,8 +269,8 @@ def _enrich_concepts(df: pd.DataFrame) -> pd.DataFrame:
 def _enrich_zt_pool(df: pd.DataFrame) -> pd.DataFrame:
     """为 top-N 补齐 连板数 + 最后封板时间 + 炸板次数"""
     try:
-        from src.data.zt_pool_api import fetch_zt_pool
-        pool = fetch_zt_pool()
+        from src.data.zt_pool_api import fetch_zt_pool_with_retry
+        pool = fetch_zt_pool_with_retry()
     except Exception as e:
         print(f"涨停板池富化失败: {e}")
         pool = {}
@@ -459,6 +454,119 @@ def scan_full_market_10d_ranking(top_n: int = 30) -> pd.DataFrame:
         "active_attack",
     ]
     return merged[[c for c in keep if c in merged.columns]]
+
+
+def _enrich_quote_fields(df: pd.DataFrame) -> pd.DataFrame:
+    """为 TOP30 补齐最新价、当日涨幅、竞价涨幅（腾讯 → 新浪兜底）。"""
+    if df.empty:
+        return df
+    codes = df["code"].astype(str).tolist()
+    df = df.copy()
+    live_map: dict[str, dict] = {}
+    try:
+        from src.data.tencent_api import fetch_stock_details
+
+        tx = fetch_stock_details(codes, batch_size=80)
+        if tx is not None and not tx.empty:
+            for _, row in tx.iterrows():
+                c = str(row.get("code", "")).strip()
+                if c:
+                    live_map[c] = row.to_dict()
+    except Exception as e:
+        print(f"[TOP30补全] 腾讯行情: {e}")
+
+    if len(live_map) < len(codes) // 2:
+        try:
+            from src.data.sina_api import fetch_realtime_batch
+
+            sina_df = fetch_realtime_batch(codes)
+            if sina_df is not None and not sina_df.empty:
+                for _, row in sina_df.iterrows():
+                    c = str(row.get("code", "")).strip()
+                    if c and c not in live_map:
+                        live_map[c] = row.to_dict()
+        except Exception as e:
+            print(f"[TOP30补全] 新浪行情: {e}")
+
+    for i, row in df.iterrows():
+        c = str(row["code"])
+        lr = live_map.get(c)
+        if lr is None:
+            continue
+        try:
+            close = float(lr.get("close", 0) or 0)
+            pre = float(lr.get("pre_close", 0) or 0)
+            op = float(lr.get("open", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if close > 0:
+            df.at[i, "close"] = round(close, 2)
+        if pre > 0:
+            chg = lr.get("change_pct")
+            if chg is not None:
+                try:
+                    df.at[i, "change_pct"] = round(float(chg), 2)
+                except (TypeError, ValueError):
+                    df.at[i, "change_pct"] = round((close / pre - 1) * 100, 2) if close > 0 else 0.0
+            elif close > 0:
+                df.at[i, "change_pct"] = round((close / pre - 1) * 100, 2)
+            if op > 0:
+                df.at[i, "auction_gain"] = round((op / pre - 1) * 100, 2)
+    return df
+
+
+def re_enrich_ranking_records(records: list[dict]) -> list[dict]:
+    """对已有 TOP30 落盘记录补全行业/概念/连板/偏离/攻击/行情字段（无需全市场 5000 只扫描）。"""
+    if not records:
+        return []
+    df = pd.DataFrame(records)
+    for col, default in (
+        ("close", 0.0),
+        ("market_cap", 0.0),
+        ("change_pct", None),
+        ("auction_gain", None),
+        ("gain_10d", 0.0),
+        ("continuous_limit_up", 0),
+        ("last_limit_up_time", ""),
+        ("deviation_pct", 0.0),
+        ("industry", ""),
+        ("is_main_board", True),
+    ):
+        if col not in df.columns:
+            df[col] = default
+    df["code"] = df["code"].astype(str)
+    df["is_main_board"] = df["code"].apply(_is_main_board)
+
+    df = _enrich_quote_fields(df)
+    df = _enrich_market_cap(df)
+    df = _enrich_industry(df)
+    df = _enrich_concepts(df)
+    df = _enrich_zt_pool(df)
+    df = _enrich_deviation(df)
+    df = _enrich_active_attack(df)
+    if "_zt_info" in df.columns:
+        df = df.drop(columns=["_zt_info"])
+
+    df["market_cap_yi"] = (
+        pd.to_numeric(df.get("market_cap", 0), errors="coerce").fillna(0) / 1e8
+    ).round(2)
+
+    out = df.to_dict("records")
+    try:
+        from src.engine.concept_stats import enrich_ranking_with_top_concepts
+
+        enrich_ranking_with_top_concepts(out, top_n=2)
+    except Exception as e:
+        print(f"[TOP30补全] top_concepts: {e}")
+    try:
+        from src.engine.top30_streak import stamp_streak
+
+        stamp_streak(out)
+    except Exception as e:
+        print(f"[TOP30补全] top30_streak: {e}")
+    for i, r in enumerate(out):
+        r["rank"] = i + 1
+    return out
 
 
 def _is_main_board(code: str) -> bool:

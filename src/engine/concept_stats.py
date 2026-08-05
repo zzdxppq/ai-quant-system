@@ -213,11 +213,12 @@ def enrich_ranking_with_top_concepts(
     # 1. 加载今日涨停 + 概念映射
     try:
         from src.config import DATA_DIR
-        import json as _json
+        from src.data.json_io import load_json_file
+
         cache_file = DATA_DIR / "limit_up_cache.json"
-        if not cache_file.exists():
+        cache = load_json_file(cache_file)
+        if not isinstance(cache, dict):
             return ranking_records
-        cache = _json.loads(cache_file.read_text())
         latest = sorted(cache.keys())[-1] if cache else ""
         if not latest:
             return ranking_records

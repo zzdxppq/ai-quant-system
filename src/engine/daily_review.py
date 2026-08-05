@@ -1,12 +1,13 @@
 """盘后复盘引擎 — 次日鱼塘
 
-15:45 收盘后自动运行：
+盘后（调度 18:00 run_eod_bundle → run_post_market_bundle）自动运行：
 1. 涨停梯队分析（按板块分组，识别主线）
 2. 连板股梯队（按连板数排序）
 3. 生成次日观察池（3只核心标的+逻辑备注）
-4. 输出到 data/latest_review.json + 邮件推送
+4. 输出到 data/latest_review.json
+5. 邮件推送由 scheduler.run_post_market_bundle → send_review_report 完成
 """
-import json
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field, asdict
 from typing import Optional
@@ -14,6 +15,56 @@ from typing import Optional
 import pandas as pd
 
 from src.config import DATA_DIR, now_cn
+from src.data.json_io import dump_json_file, load_json_file
+
+
+def _norm_zt_code(code) -> str:
+    """涨停池 / 连板梯队 code 归一化为 6 位数字串，避免 1211 vs 001211 对不上。"""
+    if code is None:
+        return ""
+    s = str(code).strip()
+    if not s:
+        return ""
+    if s.endswith(".0") and s[:-2].isdigit():
+        s = s[:-2]
+    if s.isdigit():
+        return s.zfill(6)[-6:]
+    return s
+
+
+def _limit_up_cache_keys_sorted(cache: dict) -> list[str]:
+    return sorted(
+        str(k) for k in (cache or {}).keys()
+        if str(k).isdigit() and len(str(k)) == 8
+    )
+
+
+def _get_limit_up_session_for_review() -> tuple[list[dict], str]:
+    """返回 (当日涨停列表, 对应的 limit_up_cache 日期键 YYYYMMDD)。
+
+    若当前自然日键尚未写入缓存，则用缓存中最新一日（避免复盘/晋级矩阵日期错位）。
+    """
+    cache_file = DATA_DIR / "limit_up_cache.json"
+    try:
+        cache = load_json_file(cache_file) or {}
+    except Exception:
+        return [], now_cn().strftime("%Y%m%d")
+
+    today_key = now_cn().strftime("%Y%m%d")
+    keys = _limit_up_cache_keys_sorted(cache)
+    if today_key in cache:
+        return list(cache.get(today_key) or []), today_key
+    if keys:
+        k0 = keys[-1]
+        return list(cache.get(k0) or []), k0
+    return [], today_key
+
+
+def _session_key_to_iso(session_key: str) -> str:
+    s = str(session_key)
+    if len(s) == 8 and s.isdigit():
+        return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+    return now_cn().strftime("%Y-%m-%d")
 
 
 @dataclass
@@ -76,6 +127,8 @@ class DailyReview:
     # 区域 C：晋级矩阵摘要
     # [{label:"1进2", success, total, success_rate, fail_avg_pct}, ...]
     promotion_summary: list = field(default_factory=list)
+    # 复盘日全市场涨跌家数 + 上证（与 /api/market-insight.breadth 同源，按日复盘冻结）
+    market_breadth: dict = field(default_factory=dict)
 
 
 _SPOT_CACHE = {"df": None, "ts": 0}
@@ -108,27 +161,273 @@ def _get_spot_cached(max_age_sec: int = 600):
     return _SPOT_CACHE["df"]
 
 
+def _lbc_from_record(rec: dict) -> int:
+    """涨停 cache / zt_pool 写入的连板数（优先于历史日递推）。"""
+    if not rec:
+        return 0
+    try:
+        v = int(rec.get("continuous_limit_up") or rec.get("board_count") or 0)
+        return v if v > 0 else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _board_count_walk(code: str, as_of_key: str, cache: dict) -> int:
+    """截至 as_of_key 当日收盘的连板数（有 lbc 则用，否则按 cache 连续涨停日递推）。"""
+    code = _norm_zt_code(code)
+    if not code or not as_of_key:
+        return 0
+    keys = _limit_up_cache_keys_sorted(cache)
+    if as_of_key not in keys:
+        return 0
+    day_pool = cache.get(as_of_key) or []
+    day_codes = {_norm_zt_code(r.get("code")) for r in day_pool}
+    if code not in day_codes:
+        return 0
+    for r in day_pool:
+        if _norm_zt_code(r.get("code")) == code:
+            lbc = _lbc_from_record(r)
+            if lbc > 0:
+                return lbc
+            break
+    idx = keys.index(as_of_key)
+    count = 1
+    for i in range(idx - 1, -1, -1):
+        prev_codes = {_norm_zt_code(r.get("code")) for r in (cache.get(keys[i]) or [])}
+        if code in prev_codes:
+            count += 1
+        else:
+            break
+    return count
+
+
+def _yesterday_cache_key(session_today_key: str, cache: dict) -> str | None:
+    keys = _limit_up_cache_keys_sorted(cache)
+    before = [k for k in keys if k < str(session_today_key)]
+    return before[-1] if before else None
+
+
+def _space_leader_on_day(day_key: str, cache: dict) -> dict | None:
+    """指定交易日 cache 上的空间板（最高连板，同板取涨幅最高）。"""
+    stocks = cache.get(day_key) or []
+    if not stocks:
+        return None
+    best: dict | None = None
+    best_bc, best_pct = 0, -999.0
+    for r in stocks:
+        c = _norm_zt_code(r.get("code"))
+        if not c:
+            continue
+        bc = _board_count_walk(c, day_key, cache)
+        pct = float(r.get("change_pct", 0) or 0)
+        if bc > best_bc or (bc == best_bc and pct > best_pct):
+            best_bc, best_pct = bc, pct
+            best = {"code": c, "name": r.get("name", ""), "board_count": bc, "change_pct": pct}
+    return best
+
+
+def _row_as_dict(row) -> dict:
+    if row is None:
+        return {}
+    if hasattr(row, "to_dict"):
+        return row.to_dict()
+    return dict(row) if isinstance(row, dict) else {}
+
+
+def _session_ymd_from_review_date(review_date: str) -> str:
+    rk = re.sub(r"\D", "", str(review_date or ""))[:8]
+    if len(rk) == 8:
+        return rk
+    return now_cn().strftime("%Y%m%d")
+
+
+def _pre_close_before_session(code: str, session_ymd: str) -> float | None:
+    """复盘日开盘价分母：前一交易日收盘价（日 K 缓存）。"""
+    yc = _norm_zt_code(code)
+    sk = _session_ymd_from_review_date(session_ymd)
+    if len(yc) != 6 or len(sk) != 8:
+        return None
+    try:
+        import pandas as pd
+        from src.data.kline_file_cache import try_read_cache
+
+        df = try_read_cache(yc, "240", 40, allow_stale=True)
+        if df is None or df.empty or "date" not in df.columns:
+            return None
+        d = df.copy()
+        d["_dt"] = pd.to_datetime(d["date"], errors="coerce").dt.normalize()
+        d = d.dropna(subset=["_dt"]).sort_values("_dt")
+        target = pd.Timestamp(f"{sk[:4]}-{sk[4:6]}-{sk[6:8]}")
+        before = d[d["_dt"] < target]
+        if before.empty:
+            return None
+        pc = float(before.iloc[-1].get("close") or 0)
+        return pc if pc > 0 else None
+    except Exception:
+        return None
+
+
+def open_pct_for_session(
+    code: str,
+    session_ymd: str,
+    spot_row: dict | None = None,
+    prev_board_groups: list | None = None,
+) -> float | None:
+    """复盘日开盘涨幅 %：spot → 晋级矩阵 → 日 K → 竞价 tick 缓存。"""
+    yc = _norm_zt_code(code)
+    sk = _session_ymd_from_review_date(session_ymd)
+    if len(yc) != 6:
+        return None
+
+    if prev_board_groups:
+        for g in prev_board_groups:
+            for bucket in ("promoted", "failed"):
+                for s in g.get(bucket) or []:
+                    if _norm_zt_code(s.get("code")) != yc:
+                        continue
+                    v = s.get("today_open_pct")
+                    if v is not None:
+                        try:
+                            return round(float(v), 2)
+                        except (TypeError, ValueError):
+                            pass
+
+    row = spot_row or _build_spot_map_for_codes({yc}).get(yc) or {}
+    try:
+        op = float(row.get("open", 0) or 0)
+        pre = float(row.get("pre_close", 0) or 0)
+        if op > 0 and pre > 0:
+            return round((op / pre - 1) * 100, 2)
+    except (TypeError, ValueError):
+        pass
+
+    try:
+        import pandas as pd
+        from src.data.kline_file_cache import try_read_cache
+
+        df = try_read_cache(yc, "240", 40, allow_stale=True)
+        if df is not None and not df.empty and "date" in df.columns:
+            d = df.copy()
+            d["_k"] = pd.to_datetime(d["date"], errors="coerce").dt.strftime("%Y%m%d")
+            hit = d[d["_k"] == sk]
+            if not hit.empty:
+                r = hit.iloc[-1]
+                op = float(r.get("open") or 0)
+                pre = float(r.get("pre_close") or 0)
+                if op <= 0 or pre <= 0:
+                    pre = _pre_close_before_session(yc, sk) or pre
+                if op > 0 and pre > 0:
+                    return round((op / pre - 1) * 100, 2)
+    except Exception:
+        pass
+
+    try:
+        from src.data.structured_store import load_auction_session
+
+        sess = load_auction_session(yc, sk)
+        if sess:
+            ot = sess.get("open_tick")
+            if not isinstance(ot, dict) and sess.get("auction_window"):
+                aw = sess.get("auction_window") or []
+                ot = aw[0] if aw else None
+            price = float((ot or {}).get("price") or 0)
+            pre = _pre_close_before_session(yc, sk)
+            if price > 0 and pre and pre > 0:
+                return round((price / pre - 1) * 100, 2)
+    except Exception:
+        pass
+
+    try:
+        from src.data.json_io import load_json_file
+
+        doc = load_json_file(f"auction_cache/{sk}/{yc}.json")
+        if isinstance(doc, dict):
+            ot = doc.get("open_tick")
+            if not isinstance(ot, dict) and doc.get("auction_window"):
+                aw = doc.get("auction_window") or []
+                ot = aw[0] if aw else None
+            price = float((ot or {}).get("price") or 0)
+            pre = _pre_close_before_session(yc, sk)
+            if price > 0 and pre and pre > 0:
+                return round((price / pre - 1) * 100, 2)
+    except Exception:
+        pass
+    return None
+
+
+def enrich_prev_space_board_open(
+    relay_env: dict | None,
+    review_date: str = "",
+    prev_board_groups: list | None = None,
+) -> dict:
+    """补全昨日空间板今日开盘涨幅（盘内只读库，不打全市场）。"""
+    out = dict(relay_env or {})
+    prev = out.get("prev_space_board_today")
+    if not isinstance(prev, dict) or not prev.get("code"):
+        return out
+    if prev.get("today_open_pct") is not None:
+        return out
+    yc = _norm_zt_code(prev.get("code"))
+    sk = _session_ymd_from_review_date(review_date)
+    row = _build_spot_map_for_codes({yc}).get(yc) if yc else None
+    op_pct = open_pct_for_session(yc, sk, row, prev_board_groups)
+    if op_pct is not None:
+        updated = dict(prev)
+        updated["today_open_pct"] = op_pct
+        out["prev_space_board_today"] = updated
+    return out
+
+
+def _build_spot_map_for_codes(codes: set[str]) -> dict[str, dict]:
+    """复盘用 spot：全市场缓存 + 腾讯批量补缺（避免 mock 小样本导致开盘缺失）。"""
+    need = {_norm_zt_code(c) for c in codes if _norm_zt_code(c)}
+    if not need:
+        return {}
+    spot_map: dict[str, dict] = {}
+    try:
+        spot = _get_spot_cached()
+        if spot is not None and not spot.empty:
+            for _, r in spot.iterrows():
+                c = _norm_zt_code(r.get("code"))
+                if c in need:
+                    spot_map[c] = _row_as_dict(r)
+    except Exception as e:
+        print(f"[复盘] spot 缓存取用失败: {e}")
+    missing = [c for c in need if c not in spot_map]
+    if missing:
+        try:
+            from src.data.tencent_api import fetch_stock_details
+            df = fetch_stock_details(missing, batch_size=80)
+            if df is not None and not df.empty:
+                for _, r in df.iterrows():
+                    c = _norm_zt_code(r.get("code"))
+                    if c:
+                        spot_map[c] = _row_as_dict(r)
+        except Exception as e:
+            print(f"[复盘] 腾讯 spot 补缺失败: {e}")
+    return spot_map
+
+
 def run_daily_review() -> Optional[DailyReview]:
     """执行盘后复盘"""
-    today = now_cn().strftime("%Y-%m-%d")
-    print(f"[复盘] {today} 开始...")
     # 预热 spot 缓存
     _get_spot_cached()
 
-    # 1. 获取涨停数据
-    limit_up_data = _get_today_limit_ups()
+    # 1. 获取涨停数据（与 limit_up_cache 日期键对齐）
+    limit_up_data, session_zt_key = _get_limit_up_session_for_review()
     if not limit_up_data:
         print("[复盘] 无涨停数据，跳过")
         return None
 
+    print(f"[复盘] {_session_key_to_iso(session_zt_key)} (cache={session_zt_key}) 开始...")
     # 2. 获取连板数据
-    lianban_data = _get_lianban_ladder()
+    lianban_data = _get_lianban_ladder(session_today_key=session_zt_key)
 
     # 3. 获取排行数据补充板块信息
     ranking_data = _get_ranking_data()
 
-    # 4. 构建复盘
-    review = DailyReview(date=today)
+    # 4. 构建复盘（date 与缓存「当日」键一致，避免跨日矩阵/空间板错位）
+    review = DailyReview(date=_session_key_to_iso(session_zt_key))
 
     # 涨停梯队分析
     review.limit_up_count = len(limit_up_data)
@@ -170,16 +469,23 @@ def run_daily_review() -> Optional[DailyReview]:
     review.highest_board = max((s.get("board_count", 0) for s in lianban_data), default=0)
 
     # 4.5 晋级矩阵：按昨日板数分组，每组含 晋级 + 失败
-    review.prev_board_groups = _build_prev_board_groups(limit_up_data, lianban_data)
+    review.prev_board_groups = _build_prev_board_groups(
+        limit_up_data, lianban_data, session_today_key=session_zt_key,
+    )
     # 4.6 板块涨停统计 + 龙头
     review.sector_zt_stats = _build_sector_zt_stats(lianban_data)
     # 4.6b 概念涨停统计（一对多聚合，最强概念梯队展示）
     review.concept_zt_stats = _build_concept_zt_stats(lianban_data)
     # 兼容字段：扁平化失败列表
-    review.failed_promotion_list = _get_failed_promotion_list(limit_up_data)
+    review.failed_promotion_list = _get_failed_promotion_list(
+        limit_up_data, session_today_key=session_zt_key,
+    )
 
     # 4.7 接力专项数据（区域 B/C/A 顺序计算：B 依赖梯队、C 依赖矩阵、A 综合）
-    review.relay_env = _build_relay_env(review, review.prev_board_groups, lianban_data)
+    review.relay_env = _build_relay_env(
+        review, review.prev_board_groups, lianban_data,
+        session_today_key=session_zt_key,
+    )
     review.promotion_summary = _build_promotion_summary(review.prev_board_groups)
     review.scorecard = _build_scorecard(
         review.prev_board_groups, review.relay_env,
@@ -187,6 +493,15 @@ def run_daily_review() -> Optional[DailyReview]:
         concept_zt_stats=review.concept_zt_stats,
         highest_board=review.highest_board,
     )
+
+    try:
+        from src.engine.market_insight import _compute_market_breadth
+
+        mb = _compute_market_breadth()
+        if isinstance(mb, dict):
+            review.market_breadth = mb
+    except Exception as e:
+        print(f"[复盘] market_breadth 统计失败: {e}")
 
     # 5. 生成次日观察池（严格 3 条件）
     review.watch_pool = _generate_watch_pool(lianban_data, ranking_data, review)
@@ -205,24 +520,328 @@ def run_daily_review() -> Optional[DailyReview]:
 
 
 def _get_today_limit_ups() -> list[dict]:
-    """获取今日涨停股列表"""
+    """获取今日涨停股列表（兼容旧调用；与缓存最新交易日对齐）。"""
+    data, _ = _get_limit_up_session_for_review()
+    return data
+
+
+def _zt_pool_lbc(zt_pool: dict, code: str) -> int:
+    """东财涨停池 lbc（与同花顺连板晋级同源）。"""
+    c6 = _norm_zt_code(code)
+    if not c6:
+        return 0
+    info = zt_pool.get(c6) or zt_pool.get(code) or {}
+    try:
+        return int(info.get("lbc") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _limit_up_close_thr(code: str) -> float:
+    """主板/创业板收盘涨停近似阈值（%）。"""
+    c6 = _norm_zt_code(code)
+    if c6.startswith(("300", "301", "688")):
+        return 19.4
+    return 9.7
+
+
+def _spot_close_pct(row: dict | None) -> float | None:
+    if not row:
+        return None
+    try:
+        close = float(row.get("close", 0) or 0)
+        pre = float(row.get("pre_close", 0) or 0)
+        if close > 0 and pre > 0:
+            return round((close / pre - 1) * 100, 2)
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def _merge_today_limit_up_codes(
+    today_limit_up: list[dict],
+    zt_today: dict,
+    spot_map: dict | None = None,
+    extra_codes: set[str] | None = None,
+) -> set[str]:
+    """当日收盘涨停 code 集合：本地 cache + 东财涨停池 + spot 触板（连板晋级真源优先 zt_pool）。"""
+    codes = {
+        _norm_zt_code(s.get("code"))
+        for s in (today_limit_up or [])
+        if _norm_zt_code(s.get("code"))
+    }
+    for raw in (zt_today or {}):
+        c6 = _norm_zt_code(raw)
+        if c6 and _zt_pool_lbc(zt_today, c6) > 0:
+            codes.add(c6)
+    if spot_map:
+        for c6, row in spot_map.items():
+            if not c6:
+                continue
+            pct = _spot_close_pct(row if isinstance(row, dict) else None)
+            if pct is not None and pct >= _limit_up_close_thr(c6):
+                codes.add(c6)
+    for c6 in extra_codes or set():
+        nc = _norm_zt_code(c6)
+        if nc:
+            codes.add(nc)
+    return codes
+
+
+def _prev_board_for_promotion(
+    code: str,
+    yesterday_str: str,
+    yesterday_pool: dict[str, dict],
+    cache: dict,
+    zt_yesterday: dict,
+) -> int:
+    """昨日收盘连板数：优先涨停池 lbc，避免 cache 递推高估为 2 板导致分母偏小。"""
+    zt_b = _zt_pool_lbc(zt_yesterday, code)
+    if zt_b > 0:
+        return zt_b
+    if code not in yesterday_pool:
+        return 0
+    lbc = _lbc_from_record(yesterday_pool.get(code) or {})
+    if lbc > 0:
+        return lbc
+    return _board_count_walk(code, yesterday_str, cache)
+
+
+def _today_board_for_promotion(
+    code: str,
+    today_lianban_map: dict,
+    zt_today: dict,
+) -> int:
+    """今日收盘连板数：优先当日涨停池 lbc，其次天梯 board_count。"""
+    zt_b = _zt_pool_lbc(zt_today, code)
+    if zt_b > 0:
+        return zt_b
+    info = today_lianban_map.get(code) or {}
+    try:
+        return int(info.get("board_count") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _is_promoted_board(prev_board: int, today_board: int, *, in_today_limit_up: bool) -> bool:
+    """晋级：今日在涨停池且连板数 ≥ 昨日+1（对齐同花顺 N进N+1，非仅「今日曾涨停」）。"""
+    if not in_today_limit_up or prev_board <= 0 or today_board <= 0:
+        return False
+    return today_board >= prev_board + 1
+
+
+def _promotion_candidates(
+    yesterday_pool: dict[str, dict],
+    zt_yesterday: dict,
+    yesterday_str: str,
+    cache: dict,
+) -> dict[str, tuple[int, dict]]:
+    """晋级矩阵分母：优先昨日东财涨停池 lbc（与同花顺 N进N+1 分母一致），cache 仅补缺。"""
+    out: dict[str, tuple[int, dict]] = {}
+    for raw_code, zinfo in (zt_yesterday or {}).items():
+        c6 = _norm_zt_code(raw_code)
+        if not c6:
+            continue
+        pb = _zt_pool_lbc(zt_yesterday, c6)
+        if pb <= 0:
+            continue
+        info = yesterday_pool.get(c6) or {
+            "code": c6,
+            "name": zinfo.get("name", ""),
+            "continuous_limit_up": pb,
+        }
+        out[c6] = (pb, info)
+    for code, info in yesterday_pool.items():
+        if code in out:
+            continue
+        pb = _prev_board_for_promotion(
+            code, yesterday_str, yesterday_pool, cache, zt_yesterday,
+        )
+        if pb <= 0:
+            continue
+        out[code] = (pb, info)
+    return out
+
+
+def _build_prev_board_groups(
+    today_limit_up: list[dict],
+    lianban_data: list[dict],
+    *,
+    session_today_key: str,
+) -> list[dict]:
+    """构造按昨日板数分组的晋级矩阵（session_today_key = 复盘对应的 limit_up_cache 当日键）。"""
     cache_file = DATA_DIR / "limit_up_cache.json"
-    if not cache_file.exists():
+    try:
+        cache = load_json_file(cache_file) or {}
+    except Exception:
+        return {}
+
+    keys_sorted = _limit_up_cache_keys_sorted(cache)
+    sk = str(session_today_key)
+    before = [k for k in keys_sorted if k < sk]
+    if not before:
+        return []
+    yesterday_str = before[-1]
+
+    yesterday_raw = cache.get(yesterday_str, []) or []
+    yesterday_pool: dict[str, dict] = {}
+    for r in yesterday_raw:
+        kc = _norm_zt_code(r.get("code"))
+        if kc:
+            yesterday_pool[kc] = r
+    today_lianban_map = {
+        _norm_zt_code(s.get("code")): s for s in lianban_data if _norm_zt_code(s.get("code"))
+    }
+
+    zt_yesterday: dict = {}
+    zt_today: dict = {}
+    try:
+        from src.data.zt_pool_api import fetch_zt_pool_with_retry
+
+        zt_yesterday = fetch_zt_pool_with_retry(yesterday_str) or {}
+        zt_today = fetch_zt_pool_with_retry(sk) or {}
+    except Exception as e:
+        print(f"[复盘] 涨停池(lbc) 拉取失败: {e}")
+
+    candidates = _promotion_candidates(
+        yesterday_pool, zt_yesterday, yesterday_str, cache,
+    )
+    if not candidates and not today_lianban_map:
         return []
 
+    industry_map: dict = {}
     try:
-        cache = json.loads(cache_file.read_text())
-        today = now_cn().strftime("%Y%m%d")
-        # 取今天或最近一天的数据
-        if today in cache:
-            return cache[today]
-        # 取最近的
-        if cache:
-            latest = sorted(cache.keys())[-1]
-            return cache[latest]
+        ic = DATA_DIR / "industry_cache.json"
+        industry_map = load_json_file(ic) or {}
     except Exception:
         pass
-    return []
+
+    need_codes = set(candidates.keys()) | {
+        _norm_zt_code(s.get("code")) for s in (today_limit_up or []) if _norm_zt_code(s.get("code"))
+    }
+    spot_map = _build_spot_map_for_codes(need_codes)
+    today_codes = _merge_today_limit_up_codes(
+        today_limit_up, zt_today, spot_map, extra_codes=need_codes,
+    )
+
+    def _is_main(code: str) -> bool:
+        return not str(code).startswith(("300", "301", "688", "8", "4"))
+
+    def _classify(pct: float | None) -> str:
+        if pct is None:
+            return "数据缺失"
+        if pct <= -9.5:
+            return "跌停"
+        if pct <= -5:
+            return "深水"
+        if pct < -1:
+            return "绿盘"
+        if pct <= 1:
+            return "平开"
+        return "炸板"
+
+    def _today_pct(code: str) -> tuple[float | None, float | None]:
+        row = spot_map.get(code)
+        if row is None:
+            return None, None
+        try:
+            close = float(row.get("close", 0) or 0)
+            pre = float(row.get("pre_close", 0) or 0)
+            if close > 0 and pre > 0:
+                return round(close, 2), round((close / pre - 1) * 100, 2)
+        except (ValueError, TypeError):
+            pass
+        return None, None
+
+    def _today_open_pct(code: str) -> float | None:
+        row = spot_map.get(code)
+        if row is None:
+            return None
+        try:
+            op = float(row.get("open", 0) or 0)
+            pre = float(row.get("pre_close", 0) or 0)
+            if op > 0 and pre > 0:
+                return round((op / pre - 1) * 100, 2)
+        except (ValueError, TypeError):
+            pass
+        return None
+
+    groups_by_prev: dict = {}
+    for code, (prev_b, info) in candidates.items():
+        grp = groups_by_prev.setdefault(prev_b, {"promoted": [], "failed": []})
+        name = info.get("name", "") or (zt_yesterday.get(code) or {}).get("name", "")
+        is_main = _is_main(code)
+        ind = industry_map.get(code, "-")
+        today_bc = _today_board_for_promotion(code, today_lianban_map, zt_today)
+        in_today = code in today_codes
+        if _is_promoted_board(prev_b, today_bc, in_today_limit_up=in_today):
+            today_info = today_lianban_map.get(code, {})
+            _close, _pct = _today_pct(code)
+            grp["promoted"].append({
+                "code": code,
+                "name": name,
+                "today_board": today_bc,
+                "today_pct": _pct if _pct is not None else today_info.get("change_pct", 0),
+                "today_open_pct": _today_open_pct(code),
+                "industry": ind,
+                "is_main_board": is_main,
+                "lbt": today_info.get("lbt", "") or (zt_today.get(code) or {}).get("lbt", ""),
+                "is_flat": today_info.get("is_flat", False),
+            })
+        else:
+            close, pct = _today_pct(code)
+            grp["failed"].append({
+                "code": code,
+                "name": name,
+                "today_close": close,
+                "today_pct": pct,
+                "status": _classify(pct),
+                "industry": ind,
+                "is_main_board": is_main,
+            })
+
+    new_first = []
+    for code in today_codes:
+        if code in yesterday_pool:
+            continue
+        info = today_lianban_map.get(code, {})
+        new_first.append({
+            "code": code,
+            "name": info.get("name", ""),
+            "today_board": 1,
+            "today_pct": info.get("change_pct", 0),
+            "today_open_pct": _today_open_pct(code),
+            "industry": industry_map.get(code, "-"),
+            "is_main_board": _is_main(code),
+            "lbt": info.get("lbt", ""),
+            "is_flat": info.get("is_flat", False),
+        })
+    new_first.sort(key=lambda s: -float(s.get("today_pct", 0) or 0))
+
+    result = []
+    for prev_b in sorted(groups_by_prev.keys(), reverse=True):
+        grp = groups_by_prev[prev_b]
+        grp["promoted"].sort(key=lambda s: -float(s.get("today_pct", 0) or 0))
+        grp["failed"].sort(key=lambda s: float(s.get("today_pct", 0) or 0))
+        label = f"昨日{prev_b}板" if prev_b > 1 else "昨日首板"
+        result.append({
+            "prev_board": prev_b,
+            "next_board": prev_b + 1,
+            "label": label,
+            "promoted": grp["promoted"],
+            "failed": grp["failed"],
+        })
+
+    if new_first:
+        result.append({
+            "prev_board": 0,
+            "next_board": 1,
+            "label": "今日新进首板",
+            "promoted": new_first,
+            "failed": [],
+        })
+
+    return result
 
 
 def _build_sector_zt_stats(lianban_data: list[dict]) -> list[dict]:
@@ -253,7 +872,6 @@ def _build_sector_zt_stats(lianban_data: list[dict]) -> list[dict]:
                 "is_main_board": leader.get("is_main_board", True),
             },
         })
-    # 按涨停数降序，相同时按龙头板数
     result.sort(key=lambda r: (-r["count"], -r["leader"]["board_count"]))
     return result
 
@@ -281,23 +899,19 @@ def _enrich_review_top_concepts(review, lianban_data: list[dict]) -> None:
         cs = list(c_map.get(str(code)) or [])
         return top_concepts_for_stock(cs, heats, top_n=2)
 
-    # 1) 晋级矩阵
     for grp in (review.prev_board_groups or []):
         for s in grp.get("promoted", []) + grp.get("failed", []):
             s["top_concepts"] = pick(s.get("code", ""))
 
-    # 2) relay_env.space_board / prev_space_board
     relay = review.relay_env or {}
     sb = relay.get("space_board")
     if isinstance(sb, dict) and sb.get("code"):
         sb["top_concepts"] = pick(sb["code"])
 
-    # 3) watch_pool（次日观察池每条候选）
     for w in (review.watch_pool or []):
         if isinstance(w, dict) and w.get("code"):
             w["top_concepts"] = pick(w["code"])
 
-    # 4) lianban_ladder 自身（display 用）
     for s in (review.lianban_ladder or []):
         if isinstance(s, dict) and s.get("code"):
             s["top_concepts"] = pick(s["code"])
@@ -321,231 +935,45 @@ def _build_concept_zt_stats(lianban_data: list[dict]) -> list[dict]:
         return []
 
 
-def _build_prev_board_groups(today_limit_up: list[dict], lianban_data: list[dict]) -> list[dict]:
-    """构造按昨日板数分组的晋级矩阵
-
-    一个组 = 一个昨日板数梯队。组内包含：
-      - promoted: 今日成功晋级（昨日 N 板 → 今日 N+1 板）
-      - failed:   今日断板（昨日涨停今日没涨停）
-
-    特殊组 prev_board=0 = 今日新进首板（昨日没涨停今日首次涨停）。
-
-    Returns:
-        [
-          {prev_board, next_board, label, promoted: [...], failed: [...]},
-          ...
-          {prev_board: 0, label: "今日新进首板", promoted: [...新进首板], failed: []}
-        ]
-    """
+def _get_failed_promotion_list(
+    today_limit_up: list[dict],
+    *,
+    session_today_key: str,
+) -> list[dict]:
+    """晋级失败列表：昨日涨停但今日没涨停的股票"""
     cache_file = DATA_DIR / "limit_up_cache.json"
-    if not cache_file.exists():
-        return []
     try:
-        cache = json.loads(cache_file.read_text())
+        cache = load_json_file(cache_file) or {}
     except Exception:
         return []
 
-    today_str = now_cn().strftime("%Y%m%d")
-    sorted_dates = sorted(cache.keys(), reverse=True)
-    past_dates = [d for d in sorted_dates if d != today_str]
-    if not past_dates:
+    keys_sorted = _limit_up_cache_keys_sorted(cache)
+    sk = str(session_today_key)
+    before = [k for k in keys_sorted if k < sk]
+    if not before:
         return []
-    yesterday_str = past_dates[0]
+    yesterday_str = before[-1]
+    past_desc = [k for k in reversed(keys_sorted) if k <= yesterday_str]
 
-    yesterday_pool = {str(r.get("code", "")): r for r in cache.get(yesterday_str, [])}
-    today_codes = {str(r.get("code", "")) for r in (today_limit_up or [])}
-    today_lianban_map = {str(s["code"]): s for s in lianban_data}
-
-    if not yesterday_pool and not today_lianban_map:
-        return []
-
-    # 行业 + 计算昨日各股板数
-    industry_map: dict = {}
-    try:
-        ic = DATA_DIR / "industry_cache.json"
-        if ic.exists():
-            industry_map = json.loads(ic.read_text())
-    except Exception:
-        pass
-
-    def _calc_prev_board(code: str) -> int:
-        """计算昨日板数（含昨日往前回溯）"""
-        if code not in yesterday_pool:
-            return 0
-        bc = 1
-        for d in past_dates[1:]:
-            day_codes = [str(r.get("code", "")) for r in cache.get(d, [])]
-            if code in day_codes:
-                bc += 1
-            else:
-                break
-        return bc
-
-    # 拉今日全市场 spot 用于 failed 算 today_pct
-    spot_map = {}
-    try:
-        spot = _get_spot_cached()
-        if spot is not None and not spot.empty:
-            for _, r in spot.iterrows():
-                spot_map[str(r["code"])] = r
-    except Exception as e:
-        print(f"[复盘] 晋级矩阵 spot 取用失败: {e}")
-
-    def _is_main(code: str) -> bool:
-        return not str(code).startswith(("300", "301", "688", "8", "4"))
-
-    def _classify(pct: float | None) -> str:
-        if pct is None:
-            return "数据缺失"
-        if pct <= -9.5:
-            return "跌停"
-        if pct <= -5:
-            return "深水"
-        if pct < -1:
-            return "绿盘"
-        if pct <= 1:
-            return "平开"
-        return "炸板"
-
-    def _today_pct(code: str) -> tuple[float | None, float | None]:
-        """缺数据时返回 (None, None)，区分真平开（0%）与缺失"""
-        row = spot_map.get(code)
-        if row is None:
-            return None, None
-        try:
-            close = float(row.get("close", 0) or 0)
-            pre = float(row.get("pre_close", 0) or 0)
-            if close > 0 and pre > 0:
-                return round(close, 2), round((close / pre - 1) * 100, 2)
-        except (ValueError, TypeError):
-            pass
-        return None, None
-
-    def _today_open_pct(code: str) -> float | None:
-        """今日开盘相对昨收的涨跌幅；缺数据返回 None，区分真平开"""
-        row = spot_map.get(code)
-        if row is None:
-            return None
-        try:
-            op = float(row.get("open", 0) or 0)
-            pre = float(row.get("pre_close", 0) or 0)
-            if op > 0 and pre > 0:
-                return round((op / pre - 1) * 100, 2)
-        except (ValueError, TypeError):
-            pass
-        return None
-
-    # ---- 组装：晋级 vs 失败，按昨日板数分组 ----
-    groups_by_prev: dict = {}
-
-    # 1) 昨日涨停股遍历：在 today_codes → 晋级；不在 → 失败
-    for code, info in yesterday_pool.items():
-        prev_b = _calc_prev_board(code)
-        grp = groups_by_prev.setdefault(prev_b, {"promoted": [], "failed": []})
-
-        name = info.get("name", "")
-        is_main = _is_main(code)
-        ind = industry_map.get(code, "-")
-        if code in today_codes:
-            today_info = today_lianban_map.get(code, {})
-            grp["promoted"].append({
-                "code": code,
-                "name": name,
-                "today_board": today_info.get("board_count", prev_b + 1),
-                "today_pct": today_info.get("change_pct", 0),
-                "today_open_pct": _today_open_pct(code),
-                "industry": ind,
-                "is_main_board": is_main,
-                "lbt": today_info.get("lbt", ""),
-                "is_flat": today_info.get("is_flat", False),
-            })
-        else:
-            close, pct = _today_pct(code)
-            grp["failed"].append({
-                "code": code,
-                "name": name,
-                "today_close": close,
-                "today_pct": pct,
-                "status": _classify(pct),
-                "industry": ind,
-                "is_main_board": is_main,
-            })
-
-    # 2) 今日新进首板：今日涨停 但 不在昨日池
-    new_first = []
-    for code in today_codes:
-        if code in yesterday_pool:
-            continue
-        info = today_lianban_map.get(code, {})
-        new_first.append({
-            "code": code,
-            "name": info.get("name", ""),
-            "today_board": 1,
-            "today_pct": info.get("change_pct", 0),
-            "today_open_pct": _today_open_pct(code),
-            "industry": industry_map.get(code, "-"),
-            "is_main_board": _is_main(code),
-            "lbt": info.get("lbt", ""),
-            "is_flat": info.get("is_flat", False),
-        })
-    new_first.sort(key=lambda s: -float(s.get("today_pct", 0) or 0))
-
-    # ---- 输出 ----
-    result = []
-    # 按昨日板数从高到低
-    for prev_b in sorted(groups_by_prev.keys(), reverse=True):
-        grp = groups_by_prev[prev_b]
-        # promoted 按今日涨幅倒序；failed 按今日跌幅升序
-        grp["promoted"].sort(key=lambda s: -float(s.get("today_pct", 0) or 0))
-        grp["failed"].sort(key=lambda s: float(s.get("today_pct", 0) or 0))
-        label = f"昨日{prev_b}板" if prev_b > 1 else "昨日首板"
-        result.append({
-            "prev_board": prev_b,
-            "next_board": prev_b + 1,
-            "label": label,
-            "promoted": grp["promoted"],
-            "failed": grp["failed"],
-        })
-
-    # 新进首板单独成组（prev_board=0）
-    if new_first:
-        result.append({
-            "prev_board": 0,
-            "next_board": 1,
-            "label": "今日新进首板",
-            "promoted": new_first,
-            "failed": [],
-        })
-
-    return result
-
-
-def _get_failed_promotion_list(today_limit_up: list[dict]) -> list[dict]:
-    """晋级失败列表：昨日涨停但今日没涨停的股票
-
-    Returns:
-        [{code, name, prev_board, today_pct, today_close, status, industry, is_main_board}]
-        status: '炸板' / '平开' / '绿盘' / '跌停' / '深水'
-    """
-    cache_file = DATA_DIR / "limit_up_cache.json"
-    if not cache_file.exists():
-        return []
-    try:
-        cache = json.loads(cache_file.read_text())
-    except Exception:
-        return []
-
-    today_str = now_cn().strftime("%Y%m%d")
-    all_dates = sorted(cache.keys(), reverse=True)
-    past_dates = [d for d in all_dates if d != today_str]
-    if not past_dates:
-        return []
-    yesterday_str = past_dates[0]
-
-    yesterday_pool = {str(r.get("code", "")): r for r in cache.get(yesterday_str, [])}
+    yesterday_raw = cache.get(yesterday_str, []) or []
+    yesterday_pool: dict[str, dict] = {}
+    for r in yesterday_raw:
+        kc = _norm_zt_code(r.get("code"))
+        if kc:
+            yesterday_pool[kc] = r
     if not yesterday_pool:
         return []
-    today_codes = {str(r.get("code", "")) for r in (today_limit_up or [])}
+    zt_today: dict = {}
+    try:
+        from src.data.zt_pool_api import fetch_zt_pool_with_retry
+
+        zt_today = fetch_zt_pool_with_retry(sk) or {}
+    except Exception:
+        pass
+    spot_map_pre = _build_spot_map_for_codes(set(yesterday_pool.keys()))
+    today_codes = _merge_today_limit_up_codes(
+        today_limit_up, zt_today, spot_map_pre,
+    )
 
     # 昨日涨停 - 今日涨停 = 晋级失败
     failed_codes = [c for c in yesterday_pool.keys() if c not in today_codes]
@@ -556,32 +984,16 @@ def _get_failed_promotion_list(today_limit_up: list[dict]) -> list[dict]:
     industry_map: dict = {}
     try:
         ic = DATA_DIR / "industry_cache.json"
-        if ic.exists():
-            industry_map = json.loads(ic.read_text())
+        industry_map = load_json_file(ic) or {}
     except Exception:
         pass
 
-    # 计算昨日各股的"昨日板数"（用 lianban_history）
     prev_board_map: dict = {}
     for code in failed_codes:
-        bc = 1
-        for d in past_dates[1:]:
-            day_codes = [str(r.get("code", "")) for r in cache.get(d, [])]
-            if code in day_codes:
-                bc += 1
-            else:
-                break
-        prev_board_map[code] = bc
+        lbc = _lbc_from_record(yesterday_pool.get(code) or {})
+        prev_board_map[code] = lbc if lbc > 0 else _board_count_walk(code, yesterday_str, cache)
 
-    # 拉今日全市场 spot 算 close + change_pct
-    spot_map = {}
-    try:
-        spot = _get_spot_cached()
-        if spot is not None and not spot.empty:
-            for _, r in spot.iterrows():
-                spot_map[str(r["code"])] = r
-    except Exception as e:
-        print(f"[复盘] 晋级失败列表 spot 取用失败: {e}")
+    spot_map = _build_spot_map_for_codes(set(failed_codes))
 
     def _classify(pct: float) -> str:
         if pct <= -9.5:
@@ -628,18 +1040,15 @@ def _get_failed_promotion_list(today_limit_up: list[dict]) -> list[dict]:
     return result
 
 
-def _get_lianban_ladder() -> list[dict]:
+def _get_lianban_ladder(*, session_today_key: str = "") -> list[dict]:
     """获取连板梯队（含 industry 板块 + concepts 概念 + 封板时间 + 一字标记）"""
     cache_file = DATA_DIR / "limit_up_cache.json"
-    if not cache_file.exists():
-        return []
 
     # 行业映射
     industry_map: dict = {}
     try:
         ic = DATA_DIR / "industry_cache.json"
-        if ic.exists():
-            industry_map = json.loads(ic.read_text())
+        industry_map = load_json_file(ic) or {}
     except Exception:
         pass
 
@@ -665,9 +1074,7 @@ def _get_lianban_ladder() -> list[dict]:
                         updated += 1
             if updated:
                 try:
-                    (DATA_DIR / "industry_cache.json").write_text(
-                        json.dumps(industry_map, ensure_ascii=False, indent=2)
-                    )
+                    dump_json_file(DATA_DIR / "industry_cache.json", industry_map)
                 except Exception:
                     pass
         except Exception:
@@ -682,13 +1089,21 @@ def _get_lianban_ladder() -> list[dict]:
         pass
 
     try:
-        cache = json.loads(cache_file.read_text())
-        sorted_dates = sorted(cache.keys(), reverse=True)
+        cache = load_json_file(cache_file) or {}
+        sorted_dates = sorted(
+            [k for k in cache.keys() if str(k).isdigit() and len(str(k)) == 8],
+            reverse=True,
+        )
         if not sorted_dates:
             return []
 
-        latest_date = sorted_dates[0]
-        latest_stocks = {r.get("code", ""): r for r in cache.get(latest_date, [])}
+        sk = str(session_today_key or "")
+        latest_date = sk if sk and sk in cache else sorted_dates[0]
+        latest_stocks = {
+            _norm_zt_code(r.get("code")): r
+            for r in cache.get(latest_date, [])
+            if _norm_zt_code(r.get("code"))
+        }
 
         # industry_cache 缺失即时补（多见于北交所 920）
         _fill_missing_industry(list(latest_stocks.keys()))
@@ -696,23 +1111,28 @@ def _get_lianban_ladder() -> list[dict]:
         # 拉今日 zt_pool 拿封板时间（lbt）
         zt_pool: dict = {}
         try:
-            from src.data.zt_pool_api import fetch_zt_pool
-            zt_pool = fetch_zt_pool(latest_date) or {}
+            from src.data.zt_pool_api import fetch_zt_pool_with_retry
+            zt_pool = fetch_zt_pool_with_retry(latest_date) or {}
         except Exception as e:
             print(f"[复盘] 涨停池(封板时间) 拉取失败: {e}")
 
-        # 拉今日 spot 算开盘价 → 判定一字板
-        spot_map: dict = {}
-        try:
-            spot = _get_spot_cached()
-            if spot is not None and not spot.empty:
-                for _, r in spot.iterrows():
-                    spot_map[str(r["code"])] = r
-        except Exception as e:
-            print(f"[复盘] 一字板判定 spot 取用失败: {e}")
+        # 合并 zt_pool：东财涨幅榜筛涨停无连板字段且易漏板，高连板仅以涨停池为准
+        for raw_code, zt_info in (zt_pool or {}).items():
+            code = _norm_zt_code(raw_code)
+            if not code:
+                continue
+            if code in latest_stocks:
+                continue
+            latest_stocks[code] = {
+                "code": code,
+                "name": str(zt_info.get("name") or ""),
+                "change_pct": 0.0,
+            }
+
+        spot_map = _build_spot_map_for_codes(set(latest_stocks.keys()))
 
         def _is_flat(code: str, is_main: bool) -> bool:
-            row = spot_map.get(str(code))
+            row = spot_map.get(_norm_zt_code(code))
             if row is None:
                 return False
             try:
@@ -728,37 +1148,50 @@ def _get_lianban_ladder() -> list[dict]:
 
         result = []
         for code, info in latest_stocks.items():
-            count = 1
-            for d in sorted_dates[1:]:
-                codes_in_day = [r.get("code", "") for r in cache.get(d, [])]
-                if code in codes_in_day:
-                    count += 1
-                else:
-                    break
+            zt_info = zt_pool.get(code, {}) or zt_pool.get(str(code).zfill(6), {})
+            zt_lbc = 0
+            try:
+                zt_lbc = int(zt_info.get("lbc") or 0)
+            except (TypeError, ValueError):
+                zt_lbc = 0
+            count = zt_lbc if zt_lbc > 0 else _lbc_from_record(info)
+            if count <= 0:
+                count = 1
+                for d in sorted_dates[1:]:
+                    codes_in_day = {
+                        _norm_zt_code(r.get("code"))
+                        for r in cache.get(d, [])
+                    }
+                    if code in codes_in_day:
+                        count += 1
+                    else:
+                        break
 
             is_main = not code.startswith(("300", "301", "688", "8", "4"))
-            zt_info = zt_pool.get(code, {}) or zt_pool.get(str(code).zfill(6), {})
 
             # 流通市值（亿）+ 当日收盘价 — spot 含 market_cap（单位元）+ close
             # 注意：spot_map 存的是 pandas Series，不能 `Series or {}`（Series 真值含混）
-            row = spot_map.get(str(code))
-            if row is None:
-                row = {}
+            row = spot_map.get(code) or {}
             try:
                 mc_raw = float(row.get("market_cap", 0) or 0)
                 close_p = float(row.get("close", 0) or 0)
+                spot_pct = float(row.get("change_pct", 0) or 0)
             except (TypeError, ValueError):
                 mc_raw = 0.0
                 close_p = 0.0
+                spot_pct = 0.0
             mc_yi = round(mc_raw / 1e8, 2) if mc_raw > 0 else None
             close_p = round(close_p, 2) if close_p > 0 else None
+            chg = float(info.get("change_pct", 0) or 0)
+            if spot_pct != 0:
+                chg = spot_pct
 
             result.append({
                 "code": code,
-                "name": info.get("name", ""),
+                "name": info.get("name", "") or zt_info.get("name", ""),
                 "board_count": count,
                 "is_main_board": is_main,
-                "change_pct": info.get("change_pct", 0),
+                "change_pct": chg,
                 "industry": industry_map.get(code, "-"),
                 "concepts": list(concept_map.get(code) or []),
                 "lbt": zt_info.get("lbt", ""),       # 最后封板时间 HH:MM:SS
@@ -778,13 +1211,13 @@ def _get_lianban_ladder() -> list[dict]:
 def _get_ranking_data() -> dict:
     """获取排行数据（用于板块信息）"""
     ranking_file = DATA_DIR / "latest_ranking.json"
-    if not ranking_file.exists():
-        return {}
     try:
-        data = json.loads(ranking_file.read_text())
-        return {str(r["code"]): r for r in data.get("ranking", [])}
+        data = load_json_file(ranking_file)
+        if data is not None:
+            return {str(r["code"]): r for r in data.get("ranking", [])}
     except Exception:
-        return {}
+        pass
+    return {}
 
 
 def _lookup_industry(code: str, ranking_data: dict) -> str:
@@ -810,10 +1243,8 @@ def build_watch_pool_from_ranking(
 ) -> list[dict]:
     """次日观察池（用户口径，主板专员）
 
-    入选规则（满足任一即可，均要求 主板 + 在 top30 数据源内）：
-      A) 小盘高位接力：流通市值 < 100亿 AND continuous_limit_up ≥ 2
-      B) 首板新标：    gain_10d ≥ 45%  AND continuous_limit_up == 1
-         （第一次涨停就挤进 top30，主线候补来源）
+    入选规则：主板 + 流通市值 ≤ 100亿 + continuous_limit_up ≥ 2
+    （从全市场涨停/连板天梯扫描，不限 top30）
 
     Args:
         ranking: {code: ranking_row} 或 [ranking_row, ...]
@@ -822,26 +1253,12 @@ def build_watch_pool_from_ranking(
     qualified: list[dict] = []
     seen_codes: set[str] = set()
 
-    # === 规则 B：top30 内 首板新标 ===
-    for r in rows:
-        gain = float(r.get("gain_10d") or 0)
-        clu = int(r.get("continuous_limit_up") or 0)
-        is_main = bool(r.get("is_main_board"))
-        if not is_main:
-            continue
-        if gain >= 45 and clu == 1:
-            row = dict(r)
-            row["_pool_tag"] = "首板新标"
-            qualified.append(row)
-            seen_codes.add(str(r.get("code", "")))
-
-    # === 规则 A：从全市场涨停股扫描（不限 top30）===
     qualified.extend(_scan_full_market_rule_a(rows, seen_codes, lianban_ladder))
 
     if not qualified:
         return []
 
-    # 排序：连板数 desc → 10日涨幅 desc（高位接力天然排在前，首板按涨幅排）
+    # 排序：连板数 desc → 10日涨幅 desc
     qualified.sort(
         key=lambda s: (
             -int(s.get("continuous_limit_up") or 0),
@@ -853,10 +1270,9 @@ def build_watch_pool_from_ranking(
     concept_zt_map: dict[str, dict] = {}
     try:
         review_file = DATA_DIR / "latest_review.json"
-        if review_file.exists():
-            review_data = json.loads(review_file.read_text())
-            for c in (review_data.get("concept_zt_stats") or []):
-                concept_zt_map[c.get("name", "")] = c
+        review_data = load_json_file(review_file) or {}
+        for c in (review_data.get("concept_zt_stats") or []):
+            concept_zt_map[c.get("name", "")] = c
     except Exception:
         pass
 
@@ -865,11 +1281,7 @@ def build_watch_pool_from_ranking(
         ind = s.get("industry") or "未知"
         clu = int(s.get("continuous_limit_up") or 0)
         gain = float(s.get("gain_10d") or 0)
-        tag = s.get("_pool_tag") or ""
-        if tag == "首板新标":
-            reason = f"首板·10日涨幅 {gain}%·主板（首板新标）"
-        else:
-            reason = f"{clu}连板·流通市值{s.get('market_cap_yi','-')}亿·主板（小盘接力）"
+        reason = f"{clu}连板·流通市值{s.get('market_cap_yi','-')}亿·主板（小盘接力）"
         candidate = asdict(WatchCandidate(
             code=str(s.get("code", "")),
             name=s.get("name", ""),
@@ -885,7 +1297,7 @@ def build_watch_pool_from_ranking(
         # 透传 top_concepts / is_main_board / pool_tag 给前端展示
         candidate["top_concepts"] = list(s.get("top_concepts") or [])
         candidate["is_main_board"] = bool(s.get("is_main_board", True))
-        candidate["pool_tag"] = tag
+        candidate["pool_tag"] = s.get("_pool_tag") or "小盘接力"
         # 计算 6 字段观察要点
         candidate["observation"] = _compute_watch_observation(s, concept_zt_map)
         out.append(candidate)
@@ -899,7 +1311,7 @@ def _scan_full_market_rule_a(
     seen_codes: set[str],
     lianban_ladder: list[dict] | None = None,
 ) -> list[dict]:
-    """规则 A：从全市场今日涨停池筛 主板 + 流通市值<100亿 + ≥2连板
+    """规则 A：从全市场今日涨停池筛 主板 + 流通市值≤100亿 + ≥2连板
 
     数据源优先级（用户偏好：复用连板天梯数据，避免重复抓接口）：
       1. lianban_ladder 已含 code/name/board_count/industry/concepts/lbt/market_cap_yi
@@ -913,7 +1325,12 @@ def _scan_full_market_rule_a(
         for s in lianban_ladder:
             code = str(s.get("code", ""))
             board = int(s.get("board_count", 0) or 0)
-            is_main = bool(s.get("is_main_board", True))
+            # is_main_board 字段缺失/为 None 时按代码前缀兜底（与路径 2 保持一致）
+            is_main_field = s.get("is_main_board", None)
+            if is_main_field is None:
+                is_main = not str(code).startswith(("300", "301", "688", "8", "4", "92"))
+            else:
+                is_main = bool(is_main_field)
             mc = s.get("market_cap_yi")
             if code in seen_codes:
                 continue
@@ -923,7 +1340,7 @@ def _scan_full_market_rule_a(
                 mc_f = float(mc) if mc is not None else 0
             except (TypeError, ValueError):
                 continue
-            if not (0 < mc_f < 100):
+            if not (0 < mc_f <= 100):
                 continue
             cp = s.get("close_price")
             try:
@@ -951,16 +1368,17 @@ def _scan_full_market_rule_a(
     # === 路径 2: 兜底 — zt_pool + ranking + tencent ===
     # 1. 拉今日涨停池（含 lbc/lbt/zbc）
     try:
-        from src.data.zt_pool_api import fetch_zt_pool
-        zt_pool = fetch_zt_pool() or {}
+        from src.data.zt_pool_api import fetch_zt_pool_with_retry
+        zt_pool = fetch_zt_pool_with_retry() or {}
     except Exception:
         zt_pool = {}
     if not zt_pool:
         return out
 
-    # 2. 候选 = lbc>=2 + 主板（非 300/301/688/8x/4x）
+    # 2. 候选 = lbc>=2 + 主板（非 300/301/688/8x/4x/92x）
+    #    92xxxx = 北交所京A，trend_screener._is_main_board_code 同样口径
     def _is_main(code: str) -> bool:
-        return not str(code).startswith(("300", "301", "688", "8", "4"))
+        return not str(code).startswith(("300", "301", "688", "8", "4", "92"))
 
     cand_codes = []
     for code, info in zt_pool.items():
@@ -1014,8 +1432,7 @@ def _scan_full_market_rule_a(
     industry_cache: dict = {}
     try:
         ic = DATA_DIR / "industry_cache.json"
-        if ic.exists():
-            industry_cache = json.loads(ic.read_text())
+        industry_cache = load_json_file(ic) or {}
     except Exception:
         pass
     concept_cache: dict = {}
@@ -1051,9 +1468,9 @@ def _scan_full_market_rule_a(
             "gain_10d": 0,
         }, mc))
 
-    # 6. 过滤 流通市值<100亿
+    # 6. 过滤 流通市值≤100亿
     for info, mc in cand_with_mc:
-        if 0 < mc < 100:
+        if 0 < mc <= 100:
             info["_pool_tag"] = "小盘接力"
             out.append(info)
 
@@ -1339,6 +1756,8 @@ def _build_relay_env(
     review: DailyReview,
     prev_board_groups: list[dict],
     lianban_data: list[dict],
+    *,
+    session_today_key: str = "",
 ) -> dict:
     """资金接力情绪（区域 B）"""
     # 1. 今日空间板（最高连板，多只取涨幅最高的）
@@ -1354,65 +1773,63 @@ def _build_relay_env(
                 "industry": best.get("industry", "-"),
             }
 
-    # 2. 昨日空间板今日表现 — 从 review_history 取昨日 highest_board 那只
+    # 2. 昨日空间板今日表现 — 从 limit_up_cache 昨日键取最高连板（与晋级矩阵同源）
     prev_space = None
     try:
-        hist_file = DATA_DIR / "review_history.json"
-        if hist_file.exists():
-            history = json.loads(hist_file.read_text())
-            today = now_cn().strftime("%Y-%m-%d")
-            past = [h for h in history if h.get("date") and h["date"] != today]
-            if past:
-                yhist = sorted(past, key=lambda h: h["date"])[-1]
-                ylb = yhist.get("lianban_ladder") or []
-                ymax = yhist.get("highest_board", 0)
-                ytop = [s for s in ylb if s.get("board_count", 0) == ymax]
-                if ytop:
-                    ybest = max(ytop, key=lambda s: s.get("change_pct", 0) or 0)
-                    yc = str(ybest.get("code", ""))
-                    yn = ybest.get("name", "")
-                    # 1) spot 算今日涨跌 + 开盘相对昨收（精确）
-                    today_pct = None
-                    today_open_pct = None
-                    today_zt = False
-                    try:
-                        spot = _get_spot_cached()
-                        if spot is not None and not spot.empty:
-                            row = spot[spot["code"].astype(str) == yc]
-                            if not row.empty:
-                                close = float(row.iloc[0].get("close", 0) or 0)
-                                pre = float(row.iloc[0].get("pre_close", 0) or 0)
-                                op = float(row.iloc[0].get("open", 0) or 0)
-                                if close > 0 and pre > 0:
-                                    today_pct = round((close / pre - 1) * 100, 2)
-                                    is_main = not yc.startswith(("300", "301", "688", "8", "4"))
-                                    thr = 9.7 if is_main else 19.4
-                                    today_zt = today_pct >= thr
-                                if op > 0 and pre > 0:
-                                    today_open_pct = round((op / pre - 1) * 100, 2)
-                    except Exception:
-                        pass
-                    # 2) spot 拿不到 → 回退到 limit_up_cache 判断今日是否仍涨停
-                    if today_pct is None:
-                        try:
-                            cf = DATA_DIR / "limit_up_cache.json"
-                            if cf.exists():
-                                cache = json.loads(cf.read_text())
-                                today_str = now_cn().strftime("%Y%m%d")
-                                if today_str in cache:
-                                    today_codes_set = {str(r.get("code", "")) for r in cache[today_str]}
-                                    if yc in today_codes_set:
-                                        today_zt = True
-                                        today_pct = 9.99  # 占位（涨停）
-                        except Exception:
-                            pass
-                    prev_space = {
-                        "code": yc, "name": yn,
-                        "yesterday_board": ymax,
-                        "today_pct": today_pct,
-                        "today_open_pct": today_open_pct,
-                        "today_held": today_zt,
-                    }
+        cache = load_json_file(DATA_DIR / "limit_up_cache.json") or {}
+        sk = str(session_today_key or review.date.replace("-", ""))
+        ykey = _yesterday_cache_key(sk, cache)
+        yleader = _space_leader_on_day(ykey, cache) if ykey else None
+        if yleader:
+            yc = yleader["code"]
+            yn = yleader.get("name", "")
+            ymax = int(yleader.get("board_count") or 0)
+            today_pct = None
+            today_open_pct = None
+            today_zt = False
+            zt_today_sb: dict = {}
+            try:
+                from src.data.zt_pool_api import fetch_zt_pool_with_retry
+
+                zt_today_sb = fetch_zt_pool_with_retry(sk) or {}
+            except Exception:
+                pass
+            zt_lbc_today = _zt_pool_lbc(zt_today_sb, yc)
+            if zt_lbc_today >= ymax + 1:
+                today_zt = True
+            row = _build_spot_map_for_codes({yc}).get(yc) or {}
+            if row:
+                try:
+                    close = float(row.get("close", 0) or 0)
+                    pre = float(row.get("pre_close", 0) or 0)
+                    op = float(row.get("open", 0) or 0)
+                    if close > 0 and pre > 0:
+                        today_pct = round((close / pre - 1) * 100, 2)
+                        if not today_zt:
+                            today_zt = today_pct >= _limit_up_close_thr(yc)
+                    if op > 0 and pre > 0:
+                        today_open_pct = round((op / pre - 1) * 100, 2)
+                except (TypeError, ValueError):
+                    pass
+            if today_open_pct is None:
+                today_open_pct = open_pct_for_session(yc, sk, row)
+            if today_pct is None:
+                tk = sk if sk in cache else (_limit_up_cache_keys_sorted(cache)[-1] if cache else "")
+                today_codes_set = _merge_today_limit_up_codes(
+                    cache.get(tk, []) or [],
+                    zt_today_sb,
+                    {yc: row} if row else None,
+                )
+                if yc in today_codes_set:
+                    today_zt = True
+                    today_pct = 9.99
+            prev_space = {
+                "code": yc, "name": yn,
+                "yesterday_board": ymax,
+                "today_pct": today_pct,
+                "today_open_pct": today_open_pct,
+                "today_held": today_zt,
+            }
     except Exception as e:
         print(f"[复盘] 昨日空间板取数失败: {e}")
 
@@ -1427,10 +1844,9 @@ def _build_relay_env(
     acc, dec = 0, 0
     try:
         insight_file = DATA_DIR / "latest_insight.json"
-        if insight_file.exists():
-            ins = json.loads(insight_file.read_text())
-            acc = int(ins.get("accelerating_count", 0) or 0)
-            dec = int(ins.get("decelerating_count", 0) or 0)
+        ins = load_json_file(insight_file) or {}
+        acc = int(ins.get("accelerating_count", 0) or 0)
+        dec = int(ins.get("decelerating_count", 0) or 0)
     except Exception:
         pass
 
@@ -1438,12 +1854,11 @@ def _build_relay_env(
     zb_avg = None
     try:
         leader_file = DATA_DIR / "latest_leader.json"
-        if leader_file.exists():
-            ld = json.loads(leader_file.read_text())
-            zb = ld.get("yesterday_zb_today_auction") or {}
-            v = zb.get("avg_change_pct")
-            if v is not None:
-                zb_avg = round(float(v), 2)
+        ld = load_json_file(leader_file) or {}
+        zb = ld.get("yesterday_zb_today_auction") or {}
+        v = zb.get("avg_change_pct")
+        if v is not None:
+            zb_avg = round(float(v), 2)
     except Exception:
         pass
 
@@ -1455,6 +1870,104 @@ def _build_relay_env(
         "decelerating_count": dec,
         "yesterday_zb_today_avg_pct": zb_avg,
     }
+
+
+def hydrate_relay_env_from_stores(relay_env: dict | None, review_date: str = "") -> dict:
+    """读库刷新接力情绪可漂移字段（不重跑复盘、默认不拉东财）。
+
+    GET /api/review 在返回前调用：加速/减速 ← latest_insight；炸板反馈 ← latest_leader；
+    昨日空间板今日涨跌 ← 已有 spot 缓存（10 分钟内）或涨停池，避免每次打开复盘页打行情。
+    """
+    out = dict(relay_env or {})
+
+    try:
+        ins = load_json_file(DATA_DIR / "latest_insight.json") or {}
+        out["accelerating_count"] = int(ins.get("accelerating_count", 0) or 0)
+        out["decelerating_count"] = int(ins.get("decelerating_count", 0) or 0)
+    except Exception:
+        pass
+
+    try:
+        ld = load_json_file(DATA_DIR / "latest_leader.json") or {}
+        zb = ld.get("yesterday_zb_today_auction") or {}
+        v = zb.get("avg_change_pct")
+        if v is not None:
+            out["yesterday_zb_today_avg_pct"] = round(float(v), 2)
+    except Exception:
+        pass
+
+    prev = out.get("prev_space_board_today")
+    if not isinstance(prev, dict) or not prev.get("code"):
+        return out
+    yc = _norm_zt_code(prev.get("code"))
+    if not yc:
+        return out
+
+    today_pct = prev.get("today_pct")
+    today_open_pct = prev.get("today_open_pct")
+    today_held = prev.get("today_held")
+    sk = _session_ymd_from_review_date(review_date)
+    ymax = int(prev.get("yesterday_board") or 0)
+    row: dict = {}
+    zt_today_h: dict = {}
+    try:
+        from src.data.zt_pool_api import fetch_zt_pool_with_retry
+
+        zt_today_h = fetch_zt_pool_with_retry(sk) or {}
+    except Exception:
+        pass
+    zt_lbc = _zt_pool_lbc(zt_today_h, yc)
+    if ymax > 0 and zt_lbc >= ymax + 1:
+        today_held = True
+    try:
+        row = _build_spot_map_for_codes({yc}).get(yc) or {}
+        if row:
+            close = float(row.get("close", 0) or 0)
+            pre = float(row.get("pre_close", 0) or 0)
+            op = float(row.get("open", 0) or 0)
+            if close > 0 and pre > 0:
+                today_pct = round((close / pre - 1) * 100, 2)
+                if today_held is not True:
+                    today_held = today_pct >= _limit_up_close_thr(yc)
+            if op > 0 and pre > 0:
+                today_open_pct = round((op / pre - 1) * 100, 2)
+    except Exception:
+        pass
+    if today_open_pct is None:
+        today_open_pct = open_pct_for_session(yc, sk, row)
+
+    if today_pct is None:
+        try:
+            cache = load_json_file(DATA_DIR / "limit_up_cache.json") or {}
+            keys_sorted = _limit_up_cache_keys_sorted(cache)
+            tk = now_cn().strftime("%Y%m%d")
+            if review_date:
+                rk = review_date.replace("-", "")
+                if len(rk) == 8 and rk in cache:
+                    tk = rk
+            elif tk not in cache and keys_sorted:
+                tk = keys_sorted[-1]
+            today_codes_set = _merge_today_limit_up_codes(
+                cache.get(tk, []) or [],
+                zt_today_h,
+                {yc: row} if row else None,
+            )
+            if yc in today_codes_set:
+                today_held = True
+                if today_pct is None:
+                    today_pct = 9.99
+        except Exception:
+            pass
+
+    updated = dict(prev)
+    if today_pct is not None:
+        updated["today_pct"] = today_pct
+    if today_open_pct is not None:
+        updated["today_open_pct"] = today_open_pct
+    if today_held is not None:
+        updated["today_held"] = bool(today_held)
+    out["prev_space_board_today"] = updated
+    return out
 
 
 def _build_scorecard(
@@ -1476,9 +1989,8 @@ def _build_scorecard(
         b1_promoted, b1_total, b1_rate = 0, 0, 0.0
     score_1 = 1 if b1_rate >= 15 else 0
 
-    # === 指标 2: 2进3 成功率 ≥40% ===
-    # 阈值与 _build_promotion_summary 中 2进3 warn 阈值一致（< 40% 即视为接力恶化）
-    # 改用成功率而非"红盘晋级数"：避免 today_open_pct 数据质量影响判定
+    # === 指标 2: 2进3 成功率 ≥25%（与评分卡 target 一致）===
+    # 晋级矩阵行警告：2进3 成功率 <40% 标 ⚠（弱于健康区，但不等于未达标）
     g2 = next((g for g in prev_board_groups if g.get("prev_board") == 2), None)
     if g2:
         b2_promoted = len(g2.get("promoted") or [])
@@ -1542,6 +2054,9 @@ def _build_scorecard(
     # === 指标 6: 高度突破（今日最高板 ≥ 昨日最高板 - 1 即达标）===
     # 阈值放宽：连板高度可比昨日小幅回落 1 板，仍视为接力延续
     prev_max = int(prev_space.get("yesterday_board") or 0)
+    tier_max = max((int(g.get("prev_board") or 0) for g in prev_board_groups), default=0)
+    if tier_max > prev_max:
+        prev_max = tier_max
     today_max = int(highest_board or 0)
     if today_max > prev_max:
         score_6, height_text = 1.0, f"{today_max}板↑（昨{prev_max}板）"
@@ -1561,7 +2076,7 @@ def _build_scorecard(
         {"label": "高度突破",     "today": height_text,            "target": "≥昨高-1", "score": score_6, "raw": today_max - prev_max, "detail": f"今日最高{today_max}板 / 昨日{prev_max}板"},
     ]
     total_score = round(sum(ind["score"] for ind in indicators), 1)
-    # 决策映射（用户新口径）：
+    # 决策映射 → 明日接力参考（依据今日复盘六维）：
     #   ≤2 → 空仓
     #   3-4 → 轻仓 10-20%（仅 3进4 及以上）
     #   5   → 正常 30%（可做 2进3）
@@ -1572,7 +2087,7 @@ def _build_scorecard(
             "verdict": "重仓",
             "position": "≥50%",
             "ladders": "全梯队（2进3 / 3进4 / 4进5+）",
-            "note": "六维满分，全梯队接力"
+            "note": "六维满分，明日可全梯队接力",
         }
     elif total_score >= 5:
         decision, color = "正常", "#10b981"
@@ -1580,7 +2095,7 @@ def _build_scorecard(
             "verdict": "正常",
             "position": "30%",
             "ladders": "2进3 / 3进4 / 4进5+",
-            "note": "5/6 维达标，可做 2进3 起"
+            "note": "5/6 维达标，明日可做 2进3 起",
         }
     elif total_score >= 3:
         decision, color = "试错", "#fbbf24"
@@ -1588,7 +2103,7 @@ def _build_scorecard(
             "verdict": "轻仓",
             "position": "10-20%",
             "ladders": "3进4 及以上",
-            "note": "2进3 暂不参与"
+            "note": "明日 2进3 暂不参与",
         }
     else:  # total_score <= 2
         decision, color = "空仓", "#6b7280"
@@ -1633,13 +2148,12 @@ def _build_decision_headline(
     rep_gain = 0.0
     try:
         snap_file = DATA_DIR / "latest_snapshot.json"
-        if snap_file.exists():
-            snap = json.loads(snap_file.read_text())
-            cycle_phase = snap.get("phase", "") or ""
-            cycle_day = int(snap.get("phase_day", 0) or 0)
-            rep = snap.get("representative") or {}
-            rep_name = rep.get("name", "") or ""
-            rep_gain = float(rep.get("gain_10d", 0) or 0)
+        snap = load_json_file(snap_file) or {}
+        cycle_phase = snap.get("phase", "") or ""
+        cycle_day = int(snap.get("phase_day", 0) or 0)
+        rep = snap.get("representative") or {}
+        rep_name = rep.get("name", "") or ""
+        rep_gain = float(rep.get("gain_10d", 0) or 0)
     except Exception:
         pass
     cyc_tag = f"{cycle_phase}{cycle_day}日" if cycle_phase else "周期未知"
@@ -1788,23 +2302,166 @@ def _build_decision_headline(
     return "\n".join([line1, line2, line3, line4])
 
 
-def _save_review(review: DailyReview):
-    """保存复盘结果"""
-    data = asdict(review)
-    (DATA_DIR / "latest_review.json").write_text(
-        json.dumps(data, ensure_ascii=False, indent=2)
+def _flatten_failed_from_groups(groups: list[dict]) -> list[dict]:
+    """从晋级矩阵各组 failed 扁平化（API 同步写库用）。"""
+    out: list[dict] = []
+    for g in groups or []:
+        if not isinstance(g, dict):
+            continue
+        pb = int(g.get("prev_board") or 0)
+        for s in g.get("failed") or []:
+            if not isinstance(s, dict):
+                continue
+            row = dict(s)
+            row.setdefault("prev_board", pb)
+            out.append(row)
+    return out
+
+
+def _hydrate_review_from_limit_up_cache(rev_date_iso: str, out: dict) -> bool:
+    """从 limit_up_cache 刷新 limit_up_count / lianban_ladder / 板块概念统计（sync-persist 用）。"""
+    sk = re.sub(r"\D", "", str(rev_date_iso or ""))[:8]
+    if len(sk) != 8:
+        return False
+    try:
+        cache = load_json_file(DATA_DIR / "limit_up_cache.json") or {}
+    except Exception:
+        return False
+    limit_up_data = list(cache.get(sk) or [])
+    if not limit_up_data:
+        return False
+
+    lianban_data = _get_lianban_ladder(session_today_key=sk)
+    out["limit_up_count"] = len(limit_up_data)
+    out["main_board_limit_up"] = sum(
+        1 for s in limit_up_data
+        if not str(s.get("code", "")).startswith(("300", "301", "688", "8", "4"))
+    )
+    out["lianban_ladder"] = lianban_data
+    out["highest_board"] = max((s.get("board_count", 0) for s in lianban_data), default=0)
+    out["sector_zt_stats"] = _build_sector_zt_stats(lianban_data)
+    out["concept_zt_stats"] = _build_concept_zt_stats(lianban_data)
+    out["_limit_up_cache_hydrated"] = True
+    return True
+
+
+def rebuild_prev_board_groups_for_date(review_date_iso: str) -> list[dict]:
+    """按复盘日 limit_up_cache 键重建晋级矩阵（历史快照缺 groups 时 API 兜底）。"""
+    sk = re.sub(r"\D", "", str(review_date_iso or ""))[:8]
+    if len(sk) != 8:
+        return []
+    try:
+        cache = load_json_file(DATA_DIR / "limit_up_cache.json") or {}
+    except Exception:
+        return []
+    today_limit_up = cache.get(sk) or []
+    if not today_limit_up:
+        return []
+    lianban_data = _get_lianban_ladder(session_today_key=sk)
+    return _build_prev_board_groups(
+        today_limit_up,
+        lianban_data,
+        session_today_key=sk,
     )
 
-    # 追加历史
+
+def apply_prev_space_board_patch(
+    review: dict,
+    patch: dict | None,
+) -> dict:
+    """人工更正昨日空间板（如 cache lbc 偏低：昨利仁 8 板写成 7）。"""
+    if not isinstance(review, dict) or not isinstance(patch, dict) or not patch:
+        return review
+    out = dict(review)
+    relay = dict(out.get("relay_env") or {})
+    prev = dict(relay.get("prev_space_board_today") or {})
+    for k, v in patch.items():
+        if v is not None:
+            prev[k] = v
+    if prev.get("code"):
+        prev["code"] = _norm_zt_code(str(prev.get("code")))
+    relay["prev_space_board_today"] = prev
+    out["relay_env"] = relay
+    return out
+
+
+def sync_review_payload_for_api(review: dict, *, persist: bool = False) -> dict:
+    """GET /api/review 返回前：重建晋级矩阵/评分卡/空间板开盘，与连板天梯一致。
+
+    评分卡仅由 prev_board_groups 推导。历史落库常带旧口径矩阵（如 16/61），
+    若只在 groups 为空时才 rebuild，强刷页面仍会看到 26.2% 等旧数。
+    因此只要有复盘日且 limit_up_cache 可重建，一律用新矩阵覆盖后再算 scorecard。
+    persist=True 时将同步后的整包写回 DuckDB（latest_review + review_history）。
+    """
+    out = dict(review) if isinstance(review, dict) else {}
+    rev_date = str(out.get("date") or "")[:10]
+    groups = list(out.get("prev_board_groups") or [])
+    if rev_date:
+        rebuilt = rebuild_prev_board_groups_for_date(rev_date)
+        if rebuilt:
+            groups = rebuilt
+            out["prev_board_groups"] = groups
+            out["_prev_board_groups_rebuilt"] = True
+        _hydrate_review_from_limit_up_cache(rev_date, out)
+
+    if not groups:
+        return out
+
+    try:
+        out["relay_env"] = enrich_prev_space_board_open(
+            out.get("relay_env") or {},
+            rev_date,
+            groups,
+        )
+        out["promotion_summary"] = _build_promotion_summary(groups)
+        out["failed_promotion_list"] = _flatten_failed_from_groups(groups)
+        out["scorecard"] = _build_scorecard(
+            groups,
+            out.get("relay_env") or {},
+            out.get("sector_zt_stats") or [],
+            int(out.get("limit_up_count") or 0),
+            concept_zt_stats=out.get("concept_zt_stats") or [],
+            highest_board=int(out.get("highest_board") or 0),
+        )
+        out["_scorecard_synced"] = True
+        if persist:
+            persist_review_payload(out)
+            out["_persisted"] = True
+    except Exception as e:
+        import traceback
+
+        print(f"[复盘API] scorecard 同步失败: {e}")
+        traceback.print_exc()
+    return out
+
+
+def persist_review_payload(data: dict) -> None:
+    """将复盘 dict 写回 latest_review + review_history（与盘后 _save_review 同源）。"""
+    if not isinstance(data, dict) or not data.get("date"):
+        return
+    rev_date = str(data["date"])[:10]
+    dump_json_file(DATA_DIR / "latest_review.json", data)
     history_file = DATA_DIR / "review_history.json"
-    history = []
-    if history_file.exists():
-        try:
-            history = json.loads(history_file.read_text())
-        except Exception:
-            pass
-    # 去重
+    history = load_json_file(history_file)
+    if not isinstance(history, list):
+        history = []
+    history = [h for h in history if str(h.get("date") or "")[:10] != rev_date]
+    history.append(data)
+    history = history[-30:]
+    dump_json_file(history_file, history)
+    print(f"[复盘] 已写回库: {rev_date} prev_board_groups={len(data.get('prev_board_groups') or [])} 组")
+
+
+def _save_review(review: DailyReview):
+    """保存复盘结果（固定 UTF-8，避免 Windows 默认 GBK 无法写入 emoji/四字节字符）。"""
+    data = asdict(review)
+    dump_json_file(DATA_DIR / "latest_review.json", data)
+
+    history_file = DATA_DIR / "review_history.json"
+    history = load_json_file(history_file)
+    if not isinstance(history, list):
+        history = []
     history = [h for h in history if h.get("date") != review.date]
     history.append(data)
-    history = history[-30:]  # 保留30天
-    history_file.write_text(json.dumps(history, ensure_ascii=False, indent=2))
+    history = history[-30:]
+    dump_json_file(history_file, history)

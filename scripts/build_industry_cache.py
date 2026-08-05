@@ -9,7 +9,6 @@
   python3 scripts/build_industry_cache.py --workers 12 # 调并发
 """
 import argparse
-import json
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,24 +19,19 @@ sys.path.insert(0, str(ROOT))
 
 import src.config  # noqa: F401  触发 .env 加载
 from src.config import DATA_DIR
+from src.data.json_io import dump_json_file, load_json_file
 from src.data.ranking_scanner import _fetch_industry_emweb, fetch_full_market_spot
 
 CACHE_PATH = DATA_DIR / "industry_cache.json"
 
 
 def _load_cache() -> dict[str, str]:
-    if not CACHE_PATH.exists():
-        return {}
-    try:
-        return json.loads(CACHE_PATH.read_text())
-    except Exception:
-        return {}
+    data = load_json_file(CACHE_PATH)
+    return data if isinstance(data, dict) else {}
 
 
 def _save_cache(cache: dict[str, str]) -> None:
-    tmp = CACHE_PATH.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(cache, ensure_ascii=False, indent=2))
-    tmp.replace(CACHE_PATH)
+    dump_json_file(CACHE_PATH, cache, indent=2)
 
 
 def build(force: bool, workers: int, save_every: int) -> None:

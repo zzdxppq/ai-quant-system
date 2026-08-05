@@ -2,6 +2,20 @@
   "_comment": "SHA256 baselines for character-level frozen regions of src/static/index.html (Story dashboard-hits-table-display-2.4). Update only when story explicitly modifies the corresponding region. The market-cap cell at line 718 is intentionally NOT included — it is the single change point of this story (BR-2.1 v-if/v-else).",
   "_rebase_history": [
     {
+      "date": "2026-05-14",
+      "round": "昨日选股今日竞价 + 分时头部；选股表 thead/tbody 行区重算 SHA256",
+      "reason": "index.html 插入卡片后原 692–760 行号错位，改为 1034–1082 / 1084–1100 / 1103–1111 / 1112–1150。",
+      "regions_drifted": ["table_header", "before_board", "board_column", "after_board"],
+      "regions_line_only_shifted": []
+    },
+    {
+      "date": "2026-05-13",
+      "round": "2进3 缩量规则文案：昨/前日量比 → 昨/前日成交额比；表头/列区与当前 index.html 对齐",
+      "reason": "screener_prev_day_enrich 改用 prev_amount_ratio；index.html 说明行 + 692–760 行区内容与基线漂移后重算 SHA256。",
+      "regions_drifted": ["table_header", "before_board", "board_column", "after_board"],
+      "regions_line_only_shifted": []
+    },
+    {
       "date": "2026-05-08",
       "round": "QA round 1 — apply-qa-fixes",
       "reason": "Post-2.4 commits 37076ac (操作列日K按钮左对齐) + a037247 (操作建议 1进2 否决) modified index.html: column order swap (决策↔操作) + decision cell HTML rewrite. before_board / board_column content unchanged (line numbers only shifted). table_header / after_board content drifted.",
@@ -14,28 +28,28 @@
   "source_file": "src/static/index.html",
   "regions": {
     "table_header": {
-      "start": 692,
-      "end": 703,
+      "start": 1034,
+      "end": 1082,
       "description": "Screener-table <th> header rows (12 columns) — current order: 代码/名称/价格/涨幅/竞价涨幅/市值/板块/连板/10日涨幅/周期股/操作/决策 (post-37076ac column swap)",
-      "sha256": "0771256c4bf1248dff82c578dadb0355272a4b8960189b078b41c5b0ff18f041"
+      "sha256": "e205b9046b2a58d406d61fa5159b05c994f8721c4cbc2d25aba5c5ec11752a3a"
     },
     "before_board": {
-      "start": 706,
-      "end": 717,
+      "start": 1084,
+      "end": 1100,
       "description": "tr-open + first 5 columns (代码 / 名称 / 价格 / 涨幅 / 竞价涨幅) — frozen by BR-2.2",
-      "sha256": "262bb02a738e59c70b27b100a2ecab88e484f504441201d124cda6f358cfc021"
+      "sha256": "94694a38b49c5f3b589acc442b0affab6a9e591fa86f7301c8782072996dca9f"
     },
     "board_column": {
-      "start": 719,
-      "end": 727,
+      "start": 1103,
+      "end": 1111,
       "description": "板块列 td (v-if/v-else template) — frozen by BR-2.3 / BR-4.3 (only helper bodies move)",
       "sha256": "c640876d13883d935df765928cf98ca52d0d066a2448c00363f25b72c276cde9"
     },
     "after_board": {
-      "start": 728,
-      "end": 760,
+      "start": 1112,
+      "end": 1150,
       "description": "Last 5 columns (连板 / 10日涨幅 / 周期股 / 操作 / 决策) + closing </tr> — frozen by BR-2.2 (decision-cell HTML rewritten by a037247 1进2否决 commit; column order swap by 37076ac)",
-      "sha256": "8f4e160465cdad679204635873e922853a5306ceb2207d444cadbcae9c22391e"
+      "sha256": "0179fe122c6a5e316dee43e4f17ae726ad456875673133e72c14cc3868b71527"
     }
   }
 }

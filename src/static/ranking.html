@@ -27,8 +27,22 @@
         .header .nav a:hover, .header .nav a.active { border-color: #60a5fa; color: #60a5fa; }
         .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
         .card { background: #111827; border: 1px solid #1e2a45; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
-        .card-title { font-size: 14px; color: #8892a8; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .card-title { font-size: 14px; color: #8892a8; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
         .card-title .icon { font-size: 16px; }
+        /* 周期引擎阶段（与看板 index.html 一致） */
+        .phase-badge-sm {
+            font-size: 13px; font-weight: 700;
+            padding: 4px 12px; border-radius: 8px; white-space: nowrap;
+            border: 1px solid transparent;
+        }
+        .phase-breeding { background: #1a1a2e; color: #6b7280; border-color: #374151; }
+        .phase-small-start { background: #1a2332; color: #fbbf24; border-color: #92400e; }
+        .phase-chaos { background: #2a1a1a; color: #ef4444; border-color: #7f1d1d; }
+        .phase-small-done { background: #1a2e1a; color: #34d399; border-color: #065f46; }
+        .phase-full { background: #0f2a1a; color: #10b981; border-color: #047857; }
+        .phase-afterglow { background: #2a2a1a; color: #f59e0b; border-color: #92400e; }
+        .phase-ebb { background: #1a1a2a; color: #8b5cf6; border-color: #5b21b6; }
+        .header-phase-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
 
         /* 周期状态（从看板迁入）*/
         .rep {
@@ -93,6 +107,17 @@
         .ka-bullet.bonus { background:#0f2a1a; color:#34d399; }
         .ka-bullet.penalty { background:#2a1a1a; color:#fca5a5; }
         .pos { color:#ef4444; } .neg { color:#10b981; }
+        .kline-chart-tabs { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+        .kline-chart-tab {
+            background:#111827; border:1px solid #1e2a45; color:#8892a8;
+            padding:4px 12px; border-radius:6px; font-size:12px; cursor:pointer; font-weight:600;
+        }
+        .kline-chart-tab:hover { color:#93c5fd; border-color:#3a4568; }
+        .kline-chart-tab.active { background:#1e3a5f; color:#60a5fa; border-color:#60a5fa; }
+        .kline-modal-legend {
+            display:flex; flex-wrap:wrap; gap:10px; padding:8px 16px; border-top:1px solid #1e2a45;
+            font-size:11px; color:#a0aec0;
+        }
 
         /* Tab 切换 */
         .rank-tabs { display:flex; gap:8px; margin-bottom:12px; }
@@ -206,20 +231,73 @@
     </style>
 </head>
 <body>
+<script>
+/* 鉴权守卫（auth-1.0）：body 顶部、最早执行
+   - localStorage 已有有效 token → 放行（后台 me 探活）
+   - 过期 / 无 token → 清 + 跳 /login
+   注意：head 注入的 APP_ROOT / fetch 拦截在它之前已加载；head 注入 patch 的
+   fetch 会自动带 Authorization 头，所以下面的 /api/auth/me 一次能拿到 200/401
+*/
+(function () {
+  try {
+    var t = localStorage.getItem("auth_token");
+    var exp = localStorage.getItem("auth_expires");
+    var now = Date.now();
+    var loginPath = (window.appPath ? window.appPath("/login") : "/login");
+    if (!t || (exp && new Date(exp).getTime() < now)) {
+      try {
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("auth_email");
+        localStorage.removeItem("auth_expires");
+      } catch (e) {}
+      location.replace(loginPath);
+      return;
+    }
+    // 后台探活；401 时 fetch 拦截器会跳，这里不重复跳
+    var meUrl = window.appPath ? window.appPath("/api/auth/me") : "/api/auth/me";
+    fetch(meUrl, { headers: { "Authorization": "Bearer " + t } })
+      .then(function (r) {
+        if (r.status === 401) {
+          try {
+            localStorage.removeItem("auth_token");
+            localStorage.removeItem("auth_email");
+            localStorage.removeItem("auth_expires");
+          } catch (e) {}
+          location.replace(loginPath);
+        }
+      })
+      .catch(function () { /* 网络错误不阻塞页面渲染 */ });
+  } catch (e) { /* localStorage 不可用时不阻塞 */ }
+})();
+</script>
 <div id="app">
     <div class="header">
-        <h1>10日涨幅榜 TOP30</h1>
+        <div class="header-phase-wrap">
+            <h1>10日涨幅榜 TOP30</h1>
+            <span v-if="snapshot.phase" class="phase-badge-sm" :class="cyclePhaseClass">
+                {{ snapshot.phase }}<template v-if="snapshot.phase_day != null && snapshot.phase_day !== ''"> · 第 {{ snapshot.phase_day }} 天</template>
+            </span>
+        </div>
         <div class="nav">
             <a href="/">看板</a>
             <a href="/ranking" class="active">10日涨幅榜</a>
             <a href="/review">复盘</a>
+            <a href="/history">回测</a>
         </div>
     </div>
 
     <div class="container">
         <!-- 📊 周期状态（从看板迁入）= 周期代表股 + 龙头反馈 + 昨日涨停均价 -->
         <div class="card cycle-status">
-            <div class="card-title">📊 周期状态</div>
+            <div class="card-title">
+                <span>📊 周期状态</span>
+                <template v-if="snapshot.phase">
+                    <span class="phase-badge-sm" :class="cyclePhaseClass">
+                        当前阶段：{{ snapshot.phase }}<template v-if="snapshot.phase_day != null && snapshot.phase_day !== ''"> · 第 {{ snapshot.phase_day }} 天</template><span v-if="snapshotDataDate" style="margin-left:8px;font-size:11px;color:#6b7280;">（数据截至 {{ snapshotDataDate }}，交易日 18:00 盘后串行更新）</span>
+                    </span>
+                </template>
+                <span v-else style="font-size:12px;color:#6b7280;">当前阶段 —</span>
+            </div>
             <div class="rep" v-if="snapshot.representative">
                 <div class="label">周期代表股</div>
                 <div class="value">
@@ -344,7 +422,8 @@
                 <span class="icon">📊</span> 10日涨幅榜 TOP30
                 <span v-if="rankingLive" style="margin-left:8px;font-size:11px;color:#34d399;">● 实时</span>
                 <span v-if="rankingUpdatedAt" style="margin-left:auto;font-size:12px;color:#6b7280;">
-                    {{ rankingUpdatedAt }}
+                    <template v-if="rankingTradeDate">榜单日 {{ rankingTradeDate }}</template>
+                    <template v-if="rankingUpdatedAt"> · 更新 {{ rankingUpdatedAt }}</template>
                 </span>
             </div>
 
@@ -443,7 +522,7 @@
                             <td>{{ item.code }}</td>
                             <td>
                                 <a :href="'#'+item.code" @click.prevent="openKline(item.code, item.name)"
-                                   style="color:#60a5fa;text-decoration:none;cursor:pointer;" title="查看日K">
+                                   style="color:#60a5fa;text-decoration:none;cursor:pointer;" title="查看分时 / 日K / 周K">
                                     {{ item.name }}
                                 </a>
                             </td>
@@ -493,26 +572,64 @@
             </div>
         </div>
 
-        <!-- K 线 Modal（与 /review 同源）-->
+        <!-- K 线 Modal（与看板同源：分时 / 日K / 周K）-->
         <div v-if="klineModal.open" class="kline-modal-mask" @click="closeKline">
             <div class="kline-modal" @click.stop>
-                <div class="kline-modal-header">
-                    <span><b>{{ klineModal.code }} {{ klineModal.name }}</b> · 日K + 防线</span>
+                <div class="kline-modal-header" style="flex-wrap:wrap;">
+                    <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:0;">
+                        <span><b>{{ klineModal.code }} {{ klineModal.name }}</b></span>
+                        <div class="kline-chart-tabs">
+                            <button type="button" class="kline-chart-tab" :class="{ active: klineModal.chartTab === 'minute' }" @click="setKlineChartTab('minute')">分时</button>
+                            <button type="button" class="kline-chart-tab" :class="{ active: klineModal.chartTab === 'daily' }" @click="setKlineChartTab('daily')">日K</button>
+                            <button type="button" class="kline-chart-tab" :class="{ active: klineModal.chartTab === 'weekly' }" @click="setKlineChartTab('weekly')">周K</button>
+                            <span v-if="klineModal.chartTab === 'minute' && minuteFsChart" style="color:#6b7280;font-size:11px;">{{ minuteFsChart.subtitle }}</span>
+                        </div>
+                    </div>
                     <span style="margin-left:auto;display:flex;gap:8px;align-items:center;">
-                        <select v-model.number="klineModal.days" @change="reloadKline">
+                        <select v-show="klineModal.chartTab === 'daily'" v-model.number="klineModal.days" @change="reloadKlineChart">
                             <option :value="60">近60日</option>
                             <option :value="90">近90日</option>
                             <option :value="120">近120日</option>
                             <option :value="180">近180日</option>
+                        </select>
+                        <select v-show="klineModal.chartTab === 'weekly'" v-model.number="klineModal.weeks" @change="reloadKlineChart">
+                            <option :value="80">近80周</option>
+                            <option :value="120">近120周</option>
+                            <option :value="160">近160周</option>
+                            <option :value="200">近200周</option>
                         </select>
                         <button class="btn-kline-close" @click="closeKline">✕</button>
                     </span>
                 </div>
                 <div class="kline-modal-content">
                     <div class="kline-image-pane">
-                        <div v-if="klineModal.loading" style="text-align:center;color:#6b7280;padding:60px;">加载中…</div>
-                        <img v-else-if="klineModal.url" :src="klineModal.url" style="width:100%;display:block;border-radius:4px;">
-                        <div v-else style="text-align:center;color:#ef4444;padding:60px;">{{ klineModal.error || '加载失败' }}</div>
+                        <template v-if="klineModal.chartTab === 'minute'">
+                            <div v-if="klineModal.minuteLoading && !minuteFsChart" style="text-align:center;color:#6b7280;padding:60px;">加载分时…</div>
+                            <div v-else-if="klineModal.minuteError && !minuteFsChart" style="text-align:center;color:#ef4444;padding:60px;">{{ klineModal.minuteError }}</div>
+                            <div v-else-if="minuteFsChart" style="position:relative;width:100%;max-height:70vh;">
+                            <span v-if="klineModal.minuteRefreshing" style="position:absolute;top:8px;right:8px;z-index:2;font-size:11px;color:#94a3b8;background:rgba(15,23,42,0.88);padding:2px 8px;border-radius:4px;border:1px solid #334155;">更新中…</span>
+                            <svg :viewBox="`0 0 ${minuteFsChart.W} ${minuteFsChart.H}`" style="width:100%;max-height:70vh;display:block;background:#0a0e1a;border-radius:4px;">
+                                <line v-for="(ln, i) in minuteFsChart.hGrid" :key="'hg'+i"
+                                    :x1="minuteFsChart.padL" :y1="ln.y" :x2="minuteFsChart.padL + minuteFsChart.plotW" :y2="ln.y"
+                                    stroke="#1e2a45" stroke-dasharray="4 4" stroke-width="1" />
+                                <line v-if="minuteFsChart.preY != null" :x1="minuteFsChart.padL" :y1="minuteFsChart.preY"
+                                    :x2="minuteFsChart.padL + minuteFsChart.plotW" :y2="minuteFsChart.preY"
+                                    stroke="#94a3b8" stroke-dasharray="6 4" stroke-width="1.2" />
+                                <text v-for="(lb, i) in minuteFsChart.yLabelsL" :key="'yl'+i" :x="lb.x" :y="lb.y" :fill="lb.col" font-size="10">{{ lb.text }}</text>
+                                <text v-for="(lb, i) in minuteFsChart.yLabelsR" :key="'yr'+i" :x="lb.x" :y="lb.y" :fill="lb.col" font-size="10" text-anchor="end">{{ lb.text }}</text>
+                                <rect v-for="(b, i) in minuteFsChart.volBars" :key="'vb'+i" :x="b.x" :y="b.y" :width="b.w" :height="b.h" :fill="b.color" opacity="0.85" />
+                                <polyline v-if="minuteFsChart.avgPts" fill="none" :points="minuteFsChart.avgPts" stroke="#fbbf24" stroke-width="1.4" />
+                                <polyline v-if="minuteFsChart.pricePts" fill="none" :points="minuteFsChart.pricePts" stroke="#f8fafc" stroke-width="1.5" />
+                                <text v-for="(xl, i) in minuteFsChart.xLabels" :key="'xl'+i" :x="xl.x" :y="minuteFsChart.H - 6" fill="#6b7280" font-size="10" text-anchor="middle">{{ xl.t }}</text>
+                            </svg>
+                            </div>
+                            <div v-else style="text-align:center;color:#6b7280;padding:60px;">暂无分时数据</div>
+                        </template>
+                        <template v-else>
+                            <div v-if="klineModal.loading" style="text-align:center;color:#6b7280;padding:60px;">加载中…</div>
+                            <img v-else-if="klineModal.url" :src="klineModal.url" style="width:100%;display:block;border-radius:4px;">
+                            <div v-else style="text-align:center;color:#ef4444;padding:60px;">{{ klineModal.error || '加载失败' }}</div>
+                        </template>
                     </div>
                     <div class="kline-analysis-pane">
                         <div v-if="klineModal.analysisLoading" style="color:#6b7280;text-align:center;padding:40px;">分析中…</div>
@@ -542,12 +659,10 @@
                                 </span></div>
                             </div>
                             <div class="ka-section">
-                                <div class="ka-title">⚖️ 趋势开仓建议（评分≥70 入池）</div>
+                                <div class="ka-title">⚖️ 趋势开仓建议（初筛最高分入池）</div>
                                 <div class="ka-row">
                                     <span class="ka-label">是否入池</span>
-                                    <span class="ka-val" :class="klineModal.trendHit.total_score >= 70 ? 'pos' : 'neg'">
-                                        {{ klineModal.trendHit.total_score >= 70 ? '✅ 入池' : '⛔ 候选/落选' }}
-                                    </span>
+                                    <span class="ka-val pos">✅ 当日最高分</span>
                                 </div>
                                 <div class="ka-row"><span class="ka-label">总分</span><span class="ka-val pos"><b>{{ klineModal.trendHit.total_score }}</b>/110</span></div>
                                 <div class="ka-row"><span class="ka-label">竞价区间</span><span class="ka-val warn">
@@ -595,8 +710,8 @@
                         <template v-else-if="klineModal.analysis">
                             <div class="ka-section">
                                 <div class="ka-title">📊 当日数据</div>
-                                <div class="ka-row"><span class="ka-label">{{ klineModal.analysis.data_source === 'auction' ? '开盘价' : '当前价' }}</span><span class="ka-val">{{ klineModal.analysis.price }}</span></div>
-                                <div class="ka-row"><span class="ka-label">涨幅</span><span class="ka-val" :class="(klineModal.analysis.gain_pct||0) >= 0 ? 'pos' : 'neg'">{{ fmtPct(klineModal.analysis.gain_pct) }}</span></div>
+                                <div class="ka-row"><span class="ka-label">{{ klineModal.analysis.data_source === 'auction' ? '开盘价' : '当前价' }}</span><span class="ka-val">{{ klineModalLive.price ?? klineModal.analysis.price }}</span></div>
+                                <div class="ka-row"><span class="ka-label">涨幅</span><span class="ka-val" :class="(klineModalLive.pct ?? klineModal.analysis.gain_pct ?? 0) >= 0 ? 'pos' : 'neg'">{{ fmtPct(klineModalLive.pct ?? klineModal.analysis.gain_pct) }}</span></div>
                             </div>
                             <div class="ka-section">
                                 <div class="ka-title">🛡️ 防线判定</div>
@@ -605,27 +720,44 @@
                                 <div class="ka-row"><span class="ka-label">双线突破</span><span class="ka-val" :class="klineModal.analysis.above_both ? 'pos' : 'warn'">{{ klineModal.analysis.above_both ? '✅ 是' : '⚠️ 否' }}</span></div>
                             </div>
                             <div class="ka-section">
-                                <div class="ka-title">⚖️ 操作建议（v3.3）</div>
+                                <div class="ka-title">⚖️ 操作建议</div>
                                 <div class="ka-row"><span class="ka-label">是否可操作</span><span class="ka-val" :class="klineModal.analysis.operable ? 'pos' : 'neg'">{{ klineModal.analysis.operable ? '✅ 是' : '⛔ 否' }}</span></div>
                                 <div class="ka-row"><span class="ka-label">建议仓位</span><span class="ka-val pos">{{ klineModal.analysis.position }}</span></div>
-                                <div class="ka-row" v-if="klineModal.analysis.ladder_label"><span class="ka-label">推荐梯队</span><span class="ka-val">{{ klineModal.analysis.ladder_label }}</span></div>
-                                <div class="ka-row"><span class="ka-label">买入条件</span><span class="ka-val" style="font-size:11px;">{{ klineModal.analysis.buy_condition }}</span></div>
-                                <div class="ka-row" v-if="klineModal.analysis.stop_loss && klineModal.analysis.stop_loss !== '—'"><span class="ka-label">止损位</span><span class="ka-val warn" style="font-size:11px;">{{ klineModal.analysis.stop_loss }}</span></div>
+                                <div class="ka-row" v-if="klineModal.analysis.recommended_ladder || klineModal.analysis.ladder_label">
+                                    <span class="ka-label">推荐梯队</span><span class="ka-val">{{ klineModal.analysis.recommended_ladder || klineModal.analysis.ladder_label }}</span>
+                                </div>
+                                <div class="ka-row" v-if="klineModal.analysis.operable && klineModal.analysis.buy_condition">
+                                    <span class="ka-label">买入条件</span><span class="ka-val" style="font-size:11px;">{{ klineModal.analysis.buy_condition }}</span>
+                                </div>
+                                <div class="ka-row" v-if="klineModal.analysis.operable && klineModal.analysis.stop_loss && klineModal.analysis.stop_loss !== '—'">
+                                    <span class="ka-label">止损位</span><span class="ka-val warn" style="font-size:11px;">{{ klineModal.analysis.stop_loss }}</span>
+                                </div>
                                 <div class="ka-row" v-if="!klineModal.analysis.operable && klineModal.analysis.reversal_condition">
                                     <span class="ka-label">逆转条件</span>
-                                    <span class="ka-val" style="font-size:11px;color:#fbbf24;">⏳ {{ klineModal.analysis.reversal_condition }}</span>
+                                    <span class="ka-val" style="font-size:11px;color:#fbbf24;">{{ klineModal.analysis.reversal_condition }}</span>
                                 </div>
                             </div>
                             <div class="ka-section" v-if="(klineModal.analysis.checks||[]).length">
-                                <div class="ka-title">📋 综合打分</div>
+                                <div class="ka-title">{{ klineModal.analysis.checks_title || '📋 综合打分（v3.3 决策规则逐项）' }}</div>
                                 <div v-for="(c, i) in klineModal.analysis.checks" :key="'c-'+i" class="ka-bullet" :class="c.pass === false ? 'penalty' : 'bonus'">
                                     {{ c.pass === false ? '✗' : '✓' }} {{ c.label }}：<b>{{ c.value }}</b>
-                                    <span style="color:#6b7280;margin-left:6px;font-size:11px;">需 {{ c.need }}</span>
+                                    <span style="color:#6b7280;margin-left:4px;font-size:11px;">{{ c.hint || (c.pass ? '(达标)' : '(需 ' + c.need + ')') }}</span>
+                                    <span v-if="c.verdict" style="color:#f87171;margin-left:4px;font-size:11px;">→ {{ c.verdict }}</span>
                                 </div>
+                                <div v-if="klineModal.analysis.checks_conclusion" class="ka-bullet" style="margin-top:6px;color:#d1d5db;font-size:12px;">{{ klineModal.analysis.checks_conclusion }}</div>
                             </div>
                         </template>
                         <div v-else style="color:#6b7280;text-align:center;padding:40px;">{{ klineModal.analysisError || '解读加载失败' }}</div>
                     </div>
+                </div>
+                <div class="kline-modal-legend" v-if="klineModal.chartTab === 'daily'">
+                    <span style="color:#d946ef;">VARAB</span><span style="color:#ef4444;">起拔</span><span style="color:#ec4899;">秘线</span>
+                </div>
+                <div class="kline-modal-legend" v-else-if="klineModal.chartTab === 'weekly'">
+                    <span style="color:#fbbf24;">MA5</span><span style="color:#60a5fa;">MA10</span><span style="color:#a78bfa;">MA21</span><span style="color:#f472b6;">MA240</span>
+                </div>
+                <div class="kline-modal-legend" v-else>
+                    <span>柱：分成交量 · 左轴价格 · 右轴当日涨跌幅%（A 股惯例：相对昨收）</span>
                 </div>
             </div>
         </div>
@@ -633,52 +765,211 @@
 </div>
 
 <script>
+let _klineMinuteTimer = null
+function _stopKlineMinutePoll() {
+    if (_klineMinuteTimer) { clearInterval(_klineMinuteTimer); _klineMinuteTimer = null }
+}
+let _klineSpotTimer = null
+function _stopKlineSpotPoll() {
+    if (_klineSpotTimer) { clearInterval(_klineSpotTimer); _klineSpotTimer = null }
+}
 const { createApp, ref, computed, onMounted } = Vue
 createApp({
     setup() {
         // K 线 modal
         const klineModal = ref({
-            open:false, code:'', name:'', days:60,
-            url:'', loading:false, error:'',
-            analysis:null, analysisLoading:false, analysisError:'',
-            trendHit:null,  // 若该股属于趋势池/通过趋势初筛 → 用趋势分析视图
+            open: false, code: '', name: '', days: 60, weeks: 120,
+            chartTab: 'daily',
+            url: '', loading: false, error: '',
+            minutePayload: null, minuteLoading: false, minuteRefreshing: false, minuteError: '',
+            analysis: null, analysisLoading: false, analysisError: '',
+            trendHit: null,
         })
         function _findTrendHit(code) {
             const a = (trendPool.value.pool || []).find(h => h.code === code)
             if (a) return a
             return (trendPool.value.all_scored || []).find(h => h.code === code) || null
         }
-        function openKline(code, name) {
+        function _hasMinuteChart(m) {
+            const p = m.minutePayload
+            return !!(p && p.bars && p.bars.length)
+        }
+        let _minuteFetchInitial = null
+        let _minuteFetchBg = null
+        async function loadMinuteSeries(forceRefresh = false) {
+            const m = klineModal.value
+            if (!m.code || m.chartTab !== 'minute') return
+            if (forceRefresh) await refreshMarketSession()
+            if (forceRefresh && !shouldPollMinute()) return
+            const hadChart = _hasMinuteChart(m)
+            const prev = forceRefresh ? _minuteFetchBg : _minuteFetchInitial
+            if (prev) {
+                try { prev.abort() } catch (_) { /* ignore */ }
+            }
+            const ctrl = forceRefresh ? (_minuteFetchBg = new AbortController()) : (_minuteFetchInitial = new AbortController())
+            const signal = ctrl.signal
+            const timeoutMs = 120000
+            const timer = setTimeout(() => {
+                try { ctrl.abort() } catch (_) { /* ignore */ }
+            }, timeoutMs)
+            if (hadChart) {
+                m.minuteRefreshing = true
+            } else {
+                m.minuteLoading = true
+                m.minuteError = ''
+            }
+            try {
+                const refreshQ = forceRefresh ? 'refresh=1&' : 'refresh=0&'
+                const res = await fetch(`/api/minute/${m.code}?${refreshQ}_=${Date.now()}`, { signal })
+                const j = await res.json()
+                if (!j.bars || !j.bars.length) {
+                    if (!hadChart) {
+                        m.minutePayload = null
+                        m.minuteError = j.error || '无分时数据'
+                    }
+                } else {
+                    m.minutePayload = j
+                    m.minuteError = ''
+                }
+            } catch (e) {
+                if (e && e.name === 'AbortError') {
+                    if (forceRefresh) return
+                    if (!hadChart) m.minuteError = '分时加载超时，请重试'
+                } else if (!hadChart) {
+                    m.minuteError = '分时加载失败: ' + (e && e.message ? e.message : e)
+                    m.minutePayload = null
+                }
+            } finally {
+                clearTimeout(timer)
+                m.minuteLoading = false
+                m.minuteRefreshing = false
+            }
+        }
+        function reloadKlineChart() {
+            const m = klineModal.value
+            if (m.chartTab === 'minute') {
+                loadMinuteSeries()
+                return
+            }
+            m.url = ''
+            m.loading = true
+            m.error = ''
+            const ts = Date.now()
+            const url = m.chartTab === 'weekly'
+                ? `/api/kline-weekly/${m.code}?weeks=${m.weeks}&_=${ts}`
+                : `/api/kline/${m.code}?days=${m.days}&_=${ts}`
+            const ctrl = new AbortController()
+            let settled = false
+            const finish = (ok, errMsg) => {
+                if (settled) return
+                settled = true
+                clearTimeout(timer)
+                ctrl.abort()
+                if (ok) {
+                    // 不在此处赋 m.url；由 .then(blob) 里 URL.createObjectURL(blob) 设置 blob: URL
+                    // 否则浏览器会用原始 /api/kline 链接二次拉取（不过 fetch 拦截器、没带 Authorization → 401）
+                    m.error = ''
+                } else {
+                    m.error = errMsg || '加载失败（K线接口异常）'
+                }
+                m.loading = false
+            }
+            const timer = setTimeout(() => finish(false, 'K线加载超时，请重试'), 45000)
+            fetch(url, { signal: ctrl.signal })
+                .then((r) => {
+                    if (!r.ok) { finish(false, '加载失败（' + r.status + '）'); return null }
+                    return r.blob()
+                })
+                .then((blob) => {
+                    if (!blob) return
+                    const prev = m.url
+                    m.url = URL.createObjectURL(blob)
+                    if (prev && prev.startsWith('blob:')) { try { URL.revokeObjectURL(prev) } catch (e) {} }
+                    finish(true)
+                })
+                .catch((e) => {
+                    if (e && e.name === 'AbortError') return
+                    finish(false, '加载失败（K线接口异常）')
+                })
+        }
+        async function setKlineChartTab(tab) {
+            const m = klineModal.value
+            if (m.chartTab === tab) return
+            _stopKlineMinutePoll()
+            m.chartTab = tab
+            if (tab === 'minute') {
+                await refreshMarketSession()
+                loadMinuteSeries(false)
+                if (shouldPollMinute()) {
+                    _klineMinuteTimer = setInterval(() => {
+                        const x = klineModal.value
+                        if (x.open && x.chartTab === 'minute' && x.code) loadMinuteSeries(true)
+                    }, 20000)
+                }
+            } else {
+                reloadKlineChart()
+            }
+        }
+        async function openKline(code, name) {
+            await refreshMarketSession()
             klineModal.value.open = true
             klineModal.value.code = code
             klineModal.value.name = name || ''
             klineModal.value.days = 60
+            klineModal.value.weeks = 120
+            klineModal.value.chartTab = 'daily'
+            klineModal.value.minutePayload = null
+            klineModal.value.minuteError = ''
             klineModal.value.analysis = null
             klineModal.value.analysisError = ''
-            // 优先：从 Tab 上下文识别。趋势池里有 → 趋势视图；否则走 v3.3 接力分析
             const th = _findTrendHit(code)
-            klineModal.value.trendHit = (rankTab.value === 'trend' || th) ? th : null
-            reloadKline()
+            klineModal.value.trendHit = (rankTab.value === 'trend' && th) ? th : null
+            reloadKlineChart()
             if (klineModal.value.trendHit) {
                 klineModal.value.analysisLoading = false
             } else {
-                loadAnalysis()
+                setTimeout(() => loadAnalysis(), 600)
             }
+            startKlineModalLivePoll()
+        }
+        const klineModalLive = ref({ price: null, pct: null })
+        function _padCode6(x) {
+            const d = String(x || '').replace(/\D/g, '')
+            if (d.length >= 6) return d.slice(-6)
+            if (d.length > 0) return d.padStart(6, '0')
+            return ''
+        }
+        async function refreshKlineModalLive() {
+            if (!shouldPollLive()) return
+            const m = klineModal.value
+            if (!m.open || !m.code) return
+            const code = _padCode6(m.code)
+            if (!code) return
+            try {
+                const res = await fetch(`/api/hit-live?codes=${code}`).then(r => r.json())
+                const row = res[code] || res[String(code)] || {}
+                klineModalLive.value = {
+                    price: row.price != null ? row.price : null,
+                    pct: row.pct != null ? row.pct : null,
+                }
+            } catch (e) { /* ignore */ }
+        }
+        function startKlineModalLivePoll() {
+            _stopKlineSpotPoll()
+            klineModalLive.value = { price: null, pct: null }
+            if (!shouldPollLive()) return
+            void refreshKlineModalLive()
+            _klineSpotTimer = setInterval(refreshKlineModalLive, 3000)
         }
         function closeKline() {
+            _stopKlineMinutePoll()
+            _stopKlineSpotPoll()
+            klineModalLive.value = { price: null, pct: null }
             klineModal.value.open = false
             klineModal.value.url = ''
             klineModal.value.analysis = null
-        }
-        function reloadKline() {
-            const m = klineModal.value
-            m.loading = true; m.error = ''
-            const ts = Date.now()
-            const url = `/api/kline/${m.code}?days=${m.days}&_=${ts}`
-            const img = new Image()
-            img.onload = () => { m.url = url; m.loading = false }
-            img.onerror = () => { m.error = '加载失败（K线接口异常）'; m.loading = false }
-            img.src = url
+            klineModal.value.minutePayload = null
+            klineModal.value.chartTab = 'daily'
         }
         async function loadAnalysis() {
             const m = klineModal.value
@@ -701,20 +992,27 @@ createApp({
             if (s >= 75) return 's-mid'
             return 's-low'
         }
-        async function loadTrend() {
+        async function fetchJson(url, fallback) {
             try {
-                const [p, h] = await Promise.all([
-                    fetch('/api/trend-pool').then(r => r.json()),
-                    fetch('/api/trend-history').then(r => r.json()),
-                ])
-                trendPool.value = p || {}
-                trendHistory.value = h || {}
-            } catch (e) { console.error('趋势池加载失败:', e) }
+                const r = await fetch(url)
+                if (!r.ok) throw new Error(String(r.status))
+                return await r.json()
+            } catch (e) {
+                console.error('[涨幅榜]', url, e)
+                return fallback
+            }
+        }
+        async function loadTrend() {
+            const p = await fetchJson('/api/trend-pool', { pool: [], all_scored: [], rejected: [] })
+            const h = await fetchJson('/api/trend-history?light=1', { records: [], stats: {} })
+            trendPool.value = p || {}
+            trendHistory.value = h || { records: [], stats: {} }
         }
 
         const snapshot = ref({})
         const ranking = ref([])
         const rankingUpdatedAt = ref('')
+        const rankingTradeDate = ref('')
         const rankingLive = ref(false)
         const sentiment = ref({})
         const market = ref(null)
@@ -730,6 +1028,21 @@ createApp({
             if (p.includes("发酵")) return "#10b981"        // 绿
             if (p.includes("高潮")) return "#ef4444"        // 红警示降仓
             return "#6b7280"
+        })
+
+        const snapshotDataDate = computed(() => {
+            const d = String(snapshot.value?.updated_at || snapshot.value?.date || '').trim()
+            return d.length >= 10 ? d.slice(0, 19) : ''
+        })
+
+        /** 周期引擎阶段（snapshot.phase），与看板一致 */
+        const cyclePhaseClass = computed(() => {
+            const map = {
+                '孕育期': 'phase-breeding', '小周期启动': 'phase-small-start',
+                '混沌期': 'phase-chaos', '小周期完成': 'phase-small-done',
+                '完整周期': 'phase-full', '余温期': 'phase-afterglow', '退潮期': 'phase-ebb',
+            }
+            return map[snapshot.value.phase] || 'phase-breeding'
         })
 
         // ============= helpers =============
@@ -784,6 +1097,27 @@ createApp({
             return res
         })
 
+        function lianbanAggressionFromPct(pct) {
+            const p = Number(pct)
+            if (Number.isNaN(p)) return { aggression: '观望', canTrade: false, signal: '中性' }
+            if (p <= -9.5) return { aggression: '不操作', canTrade: false, signal: '跌停' }
+            if (p < -3) return { aggression: '不操作', canTrade: false, signal: '负反馈' }
+            if (p < 0) return { aggression: '谨慎', canTrade: true, signal: '中性' }
+            if (p <= 3) return { aggression: '正常', canTrade: true, signal: '正反馈' }
+            return { aggression: '积极', canTrade: true, signal: '强正反馈' }
+        }
+        function tierAggregateFromLeaders(list) {
+            const mbl = (list || []).filter(x => x && (x.signal || x.auction_change_pct != null))
+            if (!mbl.length) return null
+            const maxBc = Math.max(...mbl.map(x => Number(x.board_count || x.leader_gain_10d || 0)))
+            if (maxBc < 2) return null
+            const tier = mbl.filter(x => Number(x.board_count || x.leader_gain_10d || 0) === maxBc)
+            const pcts = tier.map(x => Number(x.auction_change_pct)).filter(n => !Number.isNaN(n))
+            if (!pcts.length) return null
+            const avg = pcts.reduce((a, b) => a + b, 0) / pcts.length
+            return { avgPct: avg, count: tier.length, boardCount: maxBc }
+        }
+
         const mainBoardLeadersGroup = computed(() => {
             let mbList = leader.value.main_board_leaders
             if (!mbList || !mbList.length) {
@@ -792,7 +1126,19 @@ createApp({
             }
             mbList = (mbList || []).filter(x => x && x.signal)
             if (!mbList.length) return null
+            const tierAgg = tierAggregateFromLeaders(mbList)
             const sigOrder = { '跌停': 4, '负反馈': 3, '中性': 2, '正反馈': 1, '强正反馈': 0 }
+            if (tierAgg && tierAgg.count > 1) {
+                const fb = lianbanAggressionFromPct(tierAgg.avgPct)
+                return {
+                    list: mbList,
+                    count: mbList.length,
+                    cardClass: signalClassMap[fb.signal] || 'leader-neutral',
+                    icon: signalIconMap[fb.signal] || '❓',
+                    badgeClass: getLeaderBadgeClass({ aggression: fb.aggression, can_trade: fb.canTrade }),
+                    aggregateText: fb.canTrade ? fb.aggression : '不操作',
+                }
+            }
             const worstSig = mbList.reduce((a, b) => (sigOrder[b.signal] ?? 0) > (sigOrder[a.signal] ?? 0) ? b : a)
             const aggOrder = { '不操作': 3, '观望': 3, '谨慎': 2, '正常': 1, '积极': 0 }
             const worstAgg = mbList.reduce((a, b) => (aggOrder[b.aggression] ?? 0) > (aggOrder[a.aggression] ?? 0) ? b : a)
@@ -1023,66 +1369,169 @@ createApp({
             return { score, level, icon, conclusion, reasons: reasons.join('；') }
         })
 
-        function isTradingTime() {
-            const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }))
-            const d = now.getDay()
-            if (d === 0 || d === 6) return false
-            const m = now.getHours() * 60 + now.getMinutes()
-            return (m >= 555 && m <= 690) || (m >= 780 && m <= 900)
+        const marketSession = ref({
+            trading_day: true,
+            intraday: false,
+            post_market: true,
+            eod_running: false,
+            poll_live: false,
+            poll_minute: false,
+            poll_screener_history_light: false,
+        })
+        async function refreshMarketSession() {
+            try {
+                const r = await fetch('/api/market-session')
+                if (r.ok) {
+                    const s = await r.json()
+                    marketSession.value = { ...marketSession.value, ...s }
+                }
+            } catch (_) { /* ignore */ }
+            return marketSession.value
+        }
+        function shouldPollLive() {
+            return !!marketSession.value.poll_live
+        }
+        function shouldPollMinute() {
+            return !!marketSession.value.poll_minute
         }
 
         async function loadRankingLive() {
             try {
-                const res = await fetch('/api/ranking-live').then(r => r.json())
+                const res = await fetchJson('/api/ranking-live', {})
                 if (res.ranking && res.ranking.length) {
                     ranking.value = res.ranking
                     rankingUpdatedAt.value = res.updated_at || ''
+                    rankingTradeDate.value = res.trade_date || (res.date || '').slice(0, 10)
                     rankingLive.value = !!res.live
                 }
-            } catch (e) { console.error('实时排行刷新失败:', e) }
+            } catch (e) {
+                console.error('[涨幅榜] ranking-live 失败', e)
+            }
         }
 
         async function loadData() {
-            const live = isTradingTime()
-            try {
-                const [snapRes, rankRes, sentRes, leaderRes, insightRes] = await Promise.all([
-                    fetch('/api/snapshot').then(r => r.json()),
-                    fetch('/api/gain-ranking').then(r => r.json()),
-                    fetch('/api/sentiment').then(r => r.json()),
-                    fetch('/api/leader').then(r => r.json()),
-                    fetch('/api/market-insight').then(r => r.json()),
-                ])
-                snapshot.value = snapRes
-                insight.value = insightRes || {}
-                // 交易时段：不让落盘静态数据覆盖 loadRankingLive 维护的实时数据
-                // 仅在首次（ranking 还为空）或非交易时段才用 gain-ranking 写入
-                if (!live || !ranking.value.length) {
-                    ranking.value = rankRes.ranking || []
-                    rankingUpdatedAt.value = rankRes.updated_at || rankRes.date || ''
-                    rankingLive.value = false
-                }
-                sentiment.value = sentRes || {}
-                market.value = sentRes?.market || null
-                leader.value = leaderRes
-            } catch (e) { console.error('加载数据失败:', e) }
-            if (live) loadRankingLive()
+            const emptyRank = { ranking: [], updated_at: '', date: '', live: false }
+            // 串行拉接口，避免并发打穿 DuckDB/行情原生库（Windows 0xC0000409）
+            const snapRes = await fetchJson('/api/snapshot', {})
+            const rankRes = await fetchJson('/api/gain-ranking', emptyRank)
+            const sentRes = await fetchJson('/api/sentiment', {})
+            const leaderRes = await fetchJson('/api/leader', {})
+            const insightRes = await fetchJson('/api/market-insight', {})
+            snapshot.value = snapRes || {}
+            insight.value = insightRes || {}
+            // 落盘 TOP30；实时重排由 loadRankingLive 单独维护（延迟启动，见 onMounted）
+            if (!rankingLive.value || !ranking.value.length) {
+                ranking.value = rankRes.ranking || []
+                rankingUpdatedAt.value = rankRes.updated_at || rankRes.date || ''
+                rankingTradeDate.value = rankRes.trade_date || (rankRes.date || '').slice(0, 10)
+            }
+            sentiment.value = sentRes || {}
+            market.value = sentRes?.market || null
+            leader.value = leaderRes || {}
         }
 
-        onMounted(() => { loadData(); loadTrend() })
+        const minuteFsChart = computed(() => {
+            const m = klineModal.value
+            const p = m.minutePayload
+            if (!p || !p.bars || !p.bars.length) return null
+            const bars = p.bars
+            const pre = Number(p.pre_close) || 0
+            const W = 700, H = 400
+            const padL = 52, padR = 56, padT = 18, padB = 36
+            const plotW = W - padL - padR
+            const priceH = 230, gap = 14
+            const volTop = padT + priceH + gap
+            const volH = H - volTop - padB
+            const prices = bars.map(b => Number(b.p))
+            const avgs = bars.map(b => Number(b.avg))
+            const lo = Math.min(pre > 0 ? pre : Math.min(...prices), ...prices, ...avgs)
+            const hi = Math.max(pre > 0 ? pre : Math.max(...prices), ...prices, ...avgs)
+            const pad = Math.max((hi - lo) * 0.08, (hi + lo) * 0.002) || 0.01
+            const min = lo - pad
+            const max = hi + pad
+            const span = max - min || 1
+            const preY = pre > 0 ? padT + ((max - pre) / span) * priceH : null
+            const n = bars.length
+            const dx = n > 1 ? plotW / (n - 1) : 0
+            const xOf = (i) => padL + (n === 1 ? plotW / 2 : i * dx)
+            const yP = (price) => padT + ((max - price) / span) * priceH
+            const pricePts = bars.map((b, i) => `${xOf(i).toFixed(1)},${yP(Number(b.p)).toFixed(1)}`).join(' ')
+            const avgPts = bars.map((b, i) => `${xOf(i).toFixed(1)},${yP(Number(b.avg)).toFixed(1)}`).join(' ')
+            const maxV = Math.max(...bars.map(b => Number(b.vol_bar) || 0), 1)
+            const barW = Math.max(plotW / n - 0.8, 0.8)
+            const volBars = bars.map((b, i) => {
+                const v = Number(b.vol_bar) || 0
+                const h = (v / maxV) * (volH - 4)
+                const up = Number(b.p) >= Number(b.avg)
+                return {
+                    x: (xOf(i) - barW / 2).toFixed(1),
+                    y: (volTop + volH - h - 2).toFixed(1),
+                    w: barW.toFixed(1),
+                    h: h.toFixed(1),
+                    color: up ? '#b91c1c' : '#0f766e',
+                }
+            })
+            const yticks = 5
+            const hGrid = []
+            const yLabelsL = []
+            const yLabelsR = []
+            for (let k = 0; k < yticks; k++) {
+                const frac = yticks === 1 ? 0 : k / (yticks - 1)
+                const price = max - frac * span
+                const y = padT + frac * priceH
+                hGrid.push({ y })
+                const col = pre > 0 && price > pre + 1e-9 ? '#fca5a5'
+                    : pre > 0 && price < pre - 1e-9 ? '#6ee7b7' : '#e2e8f0'
+                yLabelsL.push({ x: 4, y: y + 4, text: price.toFixed(2), col })
+                const pct = pre > 0 ? ((price / pre) - 1) * 100 : 0
+                const ps = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'
+                const colR = pct > 0.02 ? '#fca5a5' : pct < -0.02 ? '#6ee7b7' : '#e2e8f0'
+                yLabelsR.push({ x: W - 6, y: y + 4, text: ps, col: colR })
+            }
+            const xLabels = []
+            if (n >= 1) xLabels.push({ x: xOf(0), t: bars[0].t })
+            if (n >= 3) xLabels.push({ x: xOf(Math.floor(n / 2)), t: bars[Math.floor(n / 2)].t })
+            if (n >= 2) xLabels.push({ x: xOf(n - 1), t: bars[n - 1].t })
+            const td = p.trade_date || '—'
+            const lastT = bars[bars.length - 1].t || ''
+            return {
+                W, H, padL, padT, plotW, priceH, volTop, volH, preY,
+                hGrid, yLabelsL, yLabelsR, volBars, xLabels, pricePts, avgPts,
+                subtitle: `数据日 ${td} · 最新 ${lastT}`,
+            }
+        })
+
+        const DEFER_LIVE_MS = 45000
+        let livePollingStarted = false
+        onMounted(async () => {
+            await refreshMarketSession()
+            await loadData()
+            await loadTrend()
+            setTimeout(async () => {
+                await refreshMarketSession()
+                livePollingStarted = true
+                if (shouldPollLive()) void loadRankingLive()
+                startLivePolling()
+            }, DEFER_LIVE_MS)
+        })
         // 非 ranking 字段 60s 刷新一次（snapshot/sentiment/leader）
         setInterval(loadData, 60000)
         // 趋势池：60s 复盘后通常静态，60s 一次足够
         setInterval(loadTrend, 60000)
-        // ranking 单独维护：交易时段 10s/次，非交易 60s/次
+        // ranking 实时：首屏 45s 后再轮询；交易时段 10s/次，非交易 60s/次
         let liveTimer = null
         function startLivePolling() {
-            const interval = isTradingTime() ? 10000 : 60000
+            if (!livePollingStarted) return
             if (liveTimer) clearInterval(liveTimer)
-            liveTimer = setInterval(loadRankingLive, interval)
+            liveTimer = null
+            if (!shouldPollLive()) return
+            liveTimer = setInterval(loadRankingLive, 10000)
         }
-        startLivePolling()
-        // 每分钟检测一次是否跨过交易时段边界，及时切换 polling 频率
-        setInterval(startLivePolling, 60000)
+        setInterval(async () => {
+            if (!livePollingStarted) return
+            await refreshMarketSession()
+            startLivePolling()
+        }, 60000)
 
         function conceptSegCls(name, idx) {
             if (name === '其他') return 't30-c-rest'
@@ -1104,11 +1553,11 @@ createApp({
         }
 
         return {
-            snapshot, ranking, rankingUpdatedAt, rankingLive, sentiment, market, leader,
-            insight, attackPhase, phaseColor,
+            snapshot, snapshotDataDate, ranking, rankingUpdatedAt, rankingTradeDate, rankingLive, sentiment, market, leader,
+            insight, attackPhase, phaseColor, cyclePhaseClass,
             top30Stats, top30Verdict, relayVerdict,
             rankTab, trendPool, trendHistory, trendScoreCls,
-            klineModal, openKline, closeKline, reloadKline,
+            klineModal, klineModalLive, openKline, closeKline, reloadKlineChart, setKlineChartTab, loadMinuteSeries, minuteFsChart,
             progressPct, progressClass,
             leaderList, mainBoardLeadersGroup,
             ydayAvg, ydayAvgVerdict, ydayAvgClass, ydayAvgBadge,

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>登录 - AI 量化周期看板</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #0a0e1a;
+      color: #e0e6ed;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      width: 100%;
+      max-width: 400px;
+      background: #0f1525;
+      border: 1px solid #1e2a45;
+      border-radius: 12px;
+      padding: 32px 28px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    }
+    h1 {
+      margin: 0 0 4px 0;
+      font-size: 22px;
+      color: #e0e6ed;
+    }
+    .sub {
+      margin: 0 0 24px 0;
+      font-size: 13px;
+      color: #6b7280;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #9ca3af;
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      background: #1a2332;
+      border: 1px solid #2a3548;
+      border-radius: 6px;
+      color: #e0e6ed;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus {
+      border-color: #3b82f6;
+    }
+    .field { margin-bottom: 16px; }
+    button {
+      width: 100%;
+      padding: 11px 16px;
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    button:hover:not(:disabled) { background: #2563eb; }
+    button:disabled { background: #2a3548; cursor: not-allowed; opacity: 0.6; }
+    .msg {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.5;
+      display: none;
+    }
+    .msg.ok { display: block; background: #0f2a1a; color: #4ade80; border: 1px solid #10b981; }
+    .msg.err { display: block; background: #2a1a1a; color: #fca5a5; border: 1px solid #ef4444; }
+    .msg.info { display: block; background: #1a2332; color: #60a5fa; border: 1px solid #3b82f6; }
+    .footer { margin-top: 20px; font-size: 11px; color: #4b5563; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>AI 量化周期看板</h1>
+    <p class="sub">使用白名单邮箱登录</p>
+
+    <div class="field">
+      <label for="email">邮箱</label>
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="email" />
+    </div>
+
+    <button id="send-btn" type="button">发送验证码</button>
+
+    <div id="code-area" style="display:none; margin-top: 16px;">
+      <div class="field">
+        <label for="code">验证码（6 位）</label>
+        <input id="code" type="text" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" />
+      </div>
+      <button id="verify-btn" type="button">登录</button>
+    </div>
+
+    <div id="msg" class="msg"></div>
+    <p class="footer">12 小时有效 · 滑动续期</p>
+  </div>
+
+  <script>
+    (function () {
+      // 已有有效 token → 直接回主页
+      try {
+        var t = localStorage.getItem("auth_token");
+        var exp = localStorage.getItem("auth_expires");
+        if (t && exp && new Date(exp).getTime() > Date.now()) {
+          var home = (window.appPath ? window.appPath("/") : "/");
+          location.replace(home);
+          return;
+        } else if (t) {
+          localStorage.removeItem("auth_token");
+          localStorage.removeItem("auth_email");
+          localStorage.removeItem("auth_expires");
+        }
+      } catch (e) {}
+
+      var emailEl = document.getElementById("email");
+      var sendBtn = document.getElementById("send-btn");
+      var codeEl = document.getElementById("code");
+      var verifyBtn = document.getElementById("verify-btn");
+      var codeArea = document.getElementById("code-area");
+      var msgEl = document.getElementById("msg");
+
+      function showMsg(text, kind) {
+        msgEl.className = "msg " + (kind || "info");
+        msgEl.textContent = text;
+      }
+      function clearMsg() {
+        msgEl.className = "msg";
+        msgEl.textContent = "";
+      }
+
+      function postJSON(path, body) {
+        var url = window.appPath ? window.appPath(path) : path;
+        return fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body || {}),
+        });
+      }
+
+      var cooldownLeft = 0;
+      var cooldownTimer = null;
+      function startCooldown(seconds) {
+        cooldownLeft = seconds;
+        sendBtn.disabled = true;
+        function tick() {
+          if (cooldownLeft <= 0) {
+            sendBtn.disabled = false;
+            sendBtn.textContent = "发送验证码";
+            if (cooldownTimer) clearInterval(cooldownTimer);
+            cooldownTimer = null;
+            return;
+          }
+          sendBtn.textContent = "重新发送 (" + cooldownLeft + "s)";
+          cooldownLeft -= 1;
+        }
+        tick();
+        cooldownTimer = setInterval(tick, 1000);
+      }
+
+      sendBtn.addEventListener("click", function () {
+        clearMsg();
+        var email = (emailEl.value || "").trim();
+        if (!email) {
+          showMsg("请输入邮箱", "err");
+          return;
+        }
+        sendBtn.disabled = true;
+        sendBtn.textContent = "发送中...";
+        postJSON("/api/auth/request-code", { email: email })
+          .then(function (r) {
+            return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+          })
+          .then(function (out) {
+            if (out.ok) {
+              codeArea.style.display = "block";
+              codeEl.focus();
+              if (out.j && out.j.mock) {
+                showMsg("开发模式：验证码已 print 到服务端 stdout", "info");
+              } else {
+                showMsg("验证码已发送到 " + email + "（5 分钟内有效）", "ok");
+              }
+              var ra = (out.j && out.j.retry_after) || 60;
+              startCooldown(ra);
+            } else {
+              sendBtn.disabled = false;
+              sendBtn.textContent = "发送验证码";
+              var err = (out.j && out.j.error) || "send_failed";
+              if (err === "email_not_allowed") {
+                showMsg("该邮箱不在登录白名单内", "err");
+              } else if (err === "too_frequent") {
+                showMsg("请求过于频繁，请稍后再试", "err");
+                startCooldown((out.j && out.j.retry_after) || 60);
+              } else if (err === "invalid_email") {
+                showMsg("邮箱格式不正确", "err");
+              } else {
+                showMsg("发送失败：" + err, "err");
+              }
+            }
+          })
+          .catch(function (e) {
+            sendBtn.disabled = false;
+            sendBtn.textContent = "发送验证码";
+            showMsg("网络错误：" + (e && e.message || e), "err");
+          });
+      });
+
+      function doVerify() {
+        clearMsg();
+        var email = (emailEl.value || "").trim();
+        var code = (codeEl.value || "").trim();
+        if (!email || !code) {
+          showMsg("请输入邮箱和验证码", "err");
+          return;
+        }
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = "验证中...";
+        postJSON("/api/auth/verify-code", { email: email, code: code })
+          .then(function (r) {
+            return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+          })
+          .then(function (out) {
+            if (out.ok) {
+              try {
+                localStorage.setItem("auth_token", out.j.token);
+                localStorage.setItem("auth_email", out.j.email);
+                localStorage.setItem("auth_expires", out.j.expires_at);
+              } catch (e) {}
+              showMsg("登录成功，正在跳转...", "ok");
+              var home = window.appPath ? window.appPath("/") : "/";
+              setTimeout(function () { location.replace(home); }, 300);
+            } else {
+              verifyBtn.disabled = false;
+              verifyBtn.textContent = "登录";
+              var err = (out.j && out.j.error) || "verify_failed";
+              if (err === "code_invalid") {
+                showMsg("验证码错误或已过期", "err");
+                codeEl.select();
+              } else if (err === "too_many_attempts") {
+                showMsg("试错次数过多，请重新获取验证码", "err");
+                codeArea.style.display = "none";
+                codeEl.value = "";
+                sendBtn.disabled = false;
+                sendBtn.textContent = "发送验证码";
+              } else if (err === "invalid_code_format") {
+                showMsg("验证码必须是 6 位数字", "err");
+              } else if (err === "email_not_allowed") {
+                showMsg("该邮箱不在登录白名单内", "err");
+              } else {
+                showMsg("登录失败：" + err, "err");
+              }
+            }
+          })
+          .catch(function (e) {
+            verifyBtn.disabled = false;
+            verifyBtn.textContent = "登录";
+            showMsg("网络错误：" + (e && e.message || e), "err");
+          });
+      }
+
+      verifyBtn.addEventListener("click", doVerify);
+      codeEl.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") doVerify();
+      });
+      // 仅允许数字
+      codeEl.addEventListener("input", function () {
+        codeEl.value = codeEl.value.replace(/\D/g, "").slice(0, 6);
+      });
+    })();
+  </script>
+</body>
+</html>

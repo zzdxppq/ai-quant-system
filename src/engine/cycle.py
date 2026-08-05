@@ -6,7 +6,6 @@
 3. 自动判定周期状态（孕育→小周期启动→小周期完成→完整周期→余温→退潮）
 4. 识别混沌期（前任没到100%就衰退，新标的接榜但也未达100%）
 """
-import json
 from dataclasses import dataclass, field, asdict
 from datetime import date, datetime
 from enum import Enum
@@ -16,6 +15,7 @@ from typing import Optional
 import pandas as pd
 
 from src.config import CYCLE_CONFIG, DATA_DIR, now_cn
+from src.data.json_io import dump_json_file, load_json_file
 
 
 class CyclePhase(str, Enum):
@@ -47,7 +47,8 @@ class CycleSnapshot:
     """周期快照（某一天的完整状态）"""
     date: str
     phase: str                           # 当前阶段
-    phase_day: int = 0                   # 阶段持续天数
+    phase_day: int = 0                   # 阶段持续天数（每交易日 run_cycle_update +1）
+    phase_entered_date: str = ""         # 进入当前阶段的日期 YYYY-MM-DD
     representative: Optional[dict] = None  # 代表股信息
     candidates: list = field(default_factory=list)  # 候选池（所有被跟踪标的）
     prev_cycle: Optional[dict] = None    # 上轮周期信息
@@ -64,6 +65,7 @@ class CycleEngine:
         # 当前状态
         self.phase = CyclePhase.BREEDING
         self.phase_day = 0
+        self.phase_entered_date: str = ""
         self.tracked: dict[str, TrackedStock] = {}  # code -> TrackedStock
         self.representative: Optional[TrackedStock] = None
         self.prev_cycle: Optional[dict] = None  # 上轮周期信息
@@ -235,12 +237,20 @@ class CycleEngine:
 
         # 规则4：余温期 → 检查是否退潮
         if self.phase == CyclePhase.AFTERGLOW:
-            if self.representative:
-                rep = self.tracked.get(self.representative.code)
-                if rep is None or (top_stock and top_stock.code != self.representative.code):
-                    self._enter_ebb()
-                else:
-                    self.phase_day += 1
+            if not self.representative:
+                # 代表股已谢幕（跌出跟踪池）但阶段仍为余温：仍按交易日累加天数
+                self.phase_day += 1
+                return
+            rep = self.tracked.get(self.representative.code)
+            if rep is None:
+                # 仍在 self.representative 但已跌出跟踪池：继续余温计时，不立刻转退潮
+                self.phase_day += 1
+                return
+            if top_stock and top_stock.code != self.representative.code:
+                # 新龙接棒 → 退潮
+                self._enter_ebb()
+            else:
+                self.phase_day += 1
             return
 
         # 规则5：退潮期 → 检查新周期种子
@@ -301,9 +311,13 @@ class CycleEngine:
 
     # === 状态进入方法 ===
 
+    def _mark_phase_entered(self):
+        self.phase_entered_date = now_cn().strftime("%Y-%m-%d")
+
     def _enter_breeding(self):
         self.phase = CyclePhase.BREEDING
         self.phase_day = 1
+        self._mark_phase_entered()
         self.representative = None
 
     def _enter_small_cycle_start(self, candidates: list[TrackedStock]):
@@ -318,21 +332,25 @@ class CycleEngine:
 
         self.phase = CyclePhase.SMALL_CYCLE_START
         self.phase_day = 1
+        self._mark_phase_entered()
         # 代表股 = 候选中涨幅最高的
         self.representative = max(candidates, key=lambda s: s.gain_10d)
 
     def _enter_small_cycle_done(self, top: TrackedStock):
         self.phase = CyclePhase.SMALL_CYCLE_DONE
         self.phase_day = 1
+        self._mark_phase_entered()
         self.representative = top
 
     def _enter_full_cycle(self):
         self.phase = CyclePhase.FULL_CYCLE
         self.phase_day = 1
+        self._mark_phase_entered()
 
     def _enter_afterglow(self):
         self.phase = CyclePhase.AFTERGLOW
         self.phase_day = 1
+        self._mark_phase_entered()
 
     def _enter_ebb(self):
         # 代表股谢幕 → 归档到 prev_cycle 并清空，避免快照继续显示陈旧代表股
@@ -345,11 +363,13 @@ class CycleEngine:
             }
         self.phase = CyclePhase.EBB
         self.phase_day = 1
+        self._mark_phase_entered()
         self.representative = None
 
     def _enter_chaos(self):
         self.phase = CyclePhase.CHAOS
         self.phase_day = 1
+        self._mark_phase_entered()
 
     # === 快照与持久化 ===
 
@@ -384,6 +404,7 @@ class CycleEngine:
             date=today,
             phase=self.phase.value,
             phase_day=self.phase_day,
+            phase_entered_date=self.phase_entered_date or "",
             representative=rep_dict,
             candidates=candidates[:20],  # 只保留top20
             prev_cycle=self.prev_cycle,
@@ -394,20 +415,20 @@ class CycleEngine:
         state = {
             "phase": self.phase.value,
             "phase_day": self.phase_day,
+            "phase_entered_date": self.phase_entered_date or "",
             "representative": asdict(self.representative) if self.representative else None,
             "tracked": {k: asdict(v) for k, v in self.tracked.items()},
             "prev_cycle": self.prev_cycle,
             "updated_at": now_cn().isoformat(),
         }
-        self.state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2))
+        dump_json_file(self.state_file, state)
 
     def _load_state(self):
         """从 JSON 加载状态"""
-        if not self.state_file.exists():
-            return
-
         try:
-            state = json.loads(self.state_file.read_text())
+            state = load_json_file(self.state_file)
+            if state is None:
+                return
 
             # 恢复 phase
             phase_str = state.get("phase", "孕育期")
@@ -417,6 +438,11 @@ class CycleEngine:
                     break
 
             self.phase_day = state.get("phase_day", 0)
+            self.phase_entered_date = str(state.get("phase_entered_date") or "")
+            if not self.phase_entered_date:
+                raw = str(state.get("updated_at") or "")[:10]
+                if len(raw) == 10:
+                    self.phase_entered_date = raw
 
             # 恢复 tracked
             for code, data in state.get("tracked", {}).items():

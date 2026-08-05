@@ -21,13 +21,10 @@
   Q2 高低切换：高位崩盘 + 低位（45-60%）承接 → 新一轮启动
   Q3 攻击数趋势：连续 3 日递减 → 退潮
 """
-from __future__ import annotations
-import json
 from typing import Optional
 
-import pandas as pd
-
 from src.config import DATA_DIR
+from src.data.json_io import dump_json_file, load_json_file
 
 
 def evaluate_active_attack(
@@ -141,12 +138,8 @@ _HISTORY_FILE = DATA_DIR / "active_attack_history.json"
 
 
 def _load_history() -> list[dict]:
-    if not _HISTORY_FILE.exists():
-        return []
-    try:
-        return json.loads(_HISTORY_FILE.read_text())
-    except Exception:
-        return []
+    data = load_json_file(_HISTORY_FILE)
+    return data if isinstance(data, list) else []
 
 
 def _append_history(date_str: str, attack_count: int) -> list[dict]:
@@ -156,7 +149,7 @@ def _append_history(date_str: str, attack_count: int) -> list[dict]:
     hist.append({"date": date_str, "attack_count": int(attack_count)})
     hist = sorted(hist, key=lambda h: h["date"])[-90:]
     try:
-        _HISTORY_FILE.write_text(json.dumps(hist, ensure_ascii=False, indent=2))
+        dump_json_file(_HISTORY_FILE, hist)
     except Exception:
         pass
     return hist

@@ -9,7 +9,6 @@
 输入：当日 ranking (list[dict]) + 前一日 ranking (list[dict], 可选)
 输出：MarketInsight 结构化分析
 """
-import json
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 from collections import Counter, defaultdict
@@ -17,6 +16,7 @@ from collections import Counter, defaultdict
 import pandas as pd
 
 from src.config import DATA_DIR, now_cn
+from src.data.json_io import dump_json_file, load_json_file
 
 
 # ── 数据结构 ──────────────────────────────────────────────────────────
@@ -450,47 +450,185 @@ def analyze_market_insight(
     )
 
 
-def _compute_market_breadth() -> Optional[dict]:
-    """计算市场广度：上证指数 + 涨跌家数"""
-    try:
-        from src.data.sina_api import fetch_realtime_batch
-        # 上证指数 sh000001
-        idx_df = fetch_realtime_batch(["sh000001"])
-        sh_close, sh_pct = None, None
-        if idx_df is not None and not idx_df.empty:
-            r = idx_df.iloc[0]
-            close = float(r.get("close", 0) or 0)
-            pre = float(r.get("pre_close", 0) or 0)
-            if close > 0 and pre > 0:
-                sh_close = round(close, 2)
-                sh_pct = round((close / pre - 1) * 100, 2)
-    except Exception as e:
-        print(f"[市场广度] 上证指数拉取失败: {e}")
-        sh_close, sh_pct = None, None
+def _breadth_looks_stale(breadth: dict | None) -> bool:
+    """有指数但涨跌家数全 0 / 标记不可用 → 多为 spot 统计失败后的旧快照。"""
+    if not breadth or not isinstance(breadth, dict):
+        return True
+    if breadth.get("counts_unavailable"):
+        return True
+    adv = int(breadth.get("advance") or 0)
+    dec = int(breadth.get("decline") or 0)
+    if adv > 0 or dec > 0:
+        return False
+    return breadth.get("sh_close") is not None
 
-    advance = decline = flat = 0
+
+def _count_advance_decline_from_spot(spot: pd.DataFrame) -> tuple[int, int, int]:
+    """全市场涨跌家数：优先 change_pct，其次 close vs pre_close；排除 ST/退市。"""
+    if spot is None or spot.empty:
+        return 0, 0, 0
+    df = spot.copy()
+    if "code" not in df.columns:
+        return 0, 0, 0
+    df["code"] = df["code"].astype(str)
+    if "name" in df.columns:
+        name_u = df["name"].astype(str).str.upper()
+        name_raw = df["name"].astype(str)
+        df = df[
+            ~name_u.str.contains("ST", regex=False)
+            & ~name_raw.str.contains("退", regex=False)
+        ].copy()
+    if df.empty:
+        return 0, 0, 0
+
+    if "change_pct" in df.columns:
+        df["change_pct"] = pd.to_numeric(df["change_pct"], errors="coerce")
+        valid = df["change_pct"].notna()
+        if int(valid.sum()) >= 3 and float(df.loc[valid, "change_pct"].abs().sum()) > 0:
+            sub = df.loc[valid]
+            return (
+                int((sub["change_pct"] > 0).sum()),
+                int((sub["change_pct"] < 0).sum()),
+                int((sub["change_pct"] == 0).sum()),
+            )
+
+    for col in ("close", "pre_close"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    if "close" not in df.columns or "pre_close" not in df.columns:
+        return 0, 0, 0
+    df = df[(df["close"] > 0) & (df["pre_close"] > 0)].copy()
+    if df.empty:
+        return 0, 0, 0
+    return (
+        int((df["close"] > df["pre_close"]).sum()),
+        int((df["close"] < df["pre_close"]).sum()),
+        int((df["close"] == df["pre_close"]).sum()),
+    )
+
+
+def _fetch_sh_index_quote() -> tuple[Optional[float], Optional[float]]:
+    """上证指数收盘与涨跌幅(%)。"""
+    batches = []
+    try:
+        from src.data.sina_api import fetch_realtime_batch as sina_batch
+
+        batches.append(sina_batch)
+    except Exception:
+        pass
+    try:
+        from src.data.fetcher import fetch_realtime_batch as fetcher_batch
+
+        batches.append(fetcher_batch)
+    except Exception:
+        pass
+    for fetch_batch in batches:
+        try:
+            idx_df = fetch_batch(["sh000001"])
+            if idx_df is not None and not idx_df.empty:
+                r = idx_df.iloc[0]
+                close = float(r.get("close", 0) or 0)
+                pre = float(r.get("pre_close", 0) or 0)
+                if close > 0 and pre > 0:
+                    return round(close, 2), round((close / pre - 1) * 100, 2)
+                pct = r.get("change_pct")
+                if close > 0 and pct is not None:
+                    try:
+                        return round(close, 2), round(float(pct), 2)
+                    except (TypeError, ValueError):
+                        pass
+        except Exception as e:
+            print(f"[市场广度] 上证指数拉取失败: {e}")
+    return None, None
+
+
+def _count_breadth_via_tencent_stock_basic() -> tuple[int, int, int]:
+    """东财/新浪全市场 spot 不可用时：用本地 stock_basic + 腾讯批量行情统计涨跌家数。"""
+    try:
+        from src.data.structured_store import load_stock_basic_full_df
+        from src.data.tencent_api import fetch_stock_details
+
+        basic = load_stock_basic_full_df(min_rows=2500)
+        if basic is None or basic.empty:
+            print("[市场广度] stock_basic 不足，跳过腾讯批量")
+            return 0, 0, 0
+        codes = basic["code"].astype(str).str.zfill(6).str[-6:].tolist()
+        print(f"[市场广度] 腾讯批量统计涨跌家数，共 {len(codes)} 只…")
+        spot = fetch_stock_details(codes, batch_size=80)
+        adv, dec, flat = _count_advance_decline_from_spot(spot)
+        if adv > 0 or dec > 0:
+            print(f"[市场广度] 腾讯批量完成：涨{adv} 跌{dec} 平{flat}")
+        return adv, dec, flat
+    except Exception as e:
+        print(f"[市场广度] 腾讯批量失败: {e}")
+        return 0, 0, 0
+
+
+def _load_spot_for_breadth() -> pd.DataFrame:
+    """全市场 spot（禁止用 MOCK 小样本，避免涨跌家数显示 0/4）。"""
+    import os
+
+    if os.getenv("MOCK", "0") == "1":
+        return pd.DataFrame()
+
+    best: pd.DataFrame | None = None
+
+    def _maybe_take(df: pd.DataFrame | None, label: str) -> None:
+        nonlocal best
+        if df is None or df.empty:
+            return
+        if len(df) < 500:
+            print(f"[市场广度] {label} 样本过少({len(df)}只)，跳过")
+            return
+        if best is None or len(df) > len(best):
+            best = df
+
+    try:
+        from src.data.ranking_scanner import fetch_full_market_spot
+
+        _maybe_take(fetch_full_market_spot(), "东财spot_em")
+    except Exception as e:
+        print(f"[市场广度] fetch_full_market_spot 失败: {e}")
+
+    try:
+        from src.data.fetcher import fetch_realtime_spot
+
+        _maybe_take(fetch_realtime_spot(), "fetcher")
+    except Exception as e:
+        print(f"[市场广度] fetch_realtime_spot 失败: {e}")
+
     try:
         from src.data.sina_spot_api import fetch_a_share_list_sina
-        spot = fetch_a_share_list_sina()
-        if spot is not None and not spot.empty:
-            spot["close"] = pd.to_numeric(spot["close"], errors="coerce").fillna(0)
-            spot["pre_close"] = pd.to_numeric(spot["pre_close"], errors="coerce").fillna(0)
-            spot = spot[(spot["close"] > 0) & (spot["pre_close"] > 0)]
-            advance = int((spot["close"] > spot["pre_close"]).sum())
-            decline = int((spot["close"] < spot["pre_close"]).sum())
-            flat = int((spot["close"] == spot["pre_close"]).sum())
+
+        _maybe_take(fetch_a_share_list_sina(), "新浪")
     except Exception as e:
-        print(f"[市场广度] 涨跌家数拉取失败: {e}")
+        print(f"[市场广度] 新浪 spot 失败: {e}")
+
+    return best if best is not None else pd.DataFrame()
+
+
+def _compute_market_breadth() -> Optional[dict]:
+    """计算市场广度：上证指数 + 涨跌家数（多源 spot，与 sentiment 一致）。"""
+    sh_close, sh_pct = _fetch_sh_index_quote()
+
+    spot = _load_spot_for_breadth()
+    advance, decline, flat = _count_advance_decline_from_spot(spot)
+    if advance == 0 and decline == 0:
+        advance, decline, flat = _count_breadth_via_tencent_stock_basic()
 
     if sh_close is None and advance == 0 and decline == 0:
         return None
-    return {
+
+    out: dict = {
         "sh_close": sh_close,
         "sh_pct": sh_pct,
-        "advance": advance,
-        "decline": decline,
-        "flat": flat,
+        "advance": advance if (advance or decline) else None,
+        "decline": decline if (advance or decline) else None,
+        "flat": flat if (advance or decline) else None,
     }
+    if out["advance"] is None and sh_close is not None:
+        out["counts_unavailable"] = True
+    return out
 
 
 # ── 持久化 ────────────────────────────────────────────────────────────
@@ -499,19 +637,19 @@ def save_insight(insight: MarketInsight) -> None:
     """保存分析结果到 JSON"""
     data = asdict(insight)
     path = DATA_DIR / "latest_insight.json"
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    dump_json_file(path, data)
 
 
 def load_prev_ranking() -> list[dict]:
     """从 cycle_history 中取前一日的 ranking（若有），否则返回空"""
     # 先尝试从 latest_ranking.json 读取（作为 prev 的来源在每日更新前保留旧值）
     prev_path = DATA_DIR / "prev_ranking.json"
-    if prev_path.exists():
-        try:
-            data = json.loads(prev_path.read_text())
-            return data.get("ranking", [])
-        except Exception:
-            pass
+    try:
+        data = load_json_file(prev_path)
+        if data is not None:
+            return data.get("ranking", []) or []
+    except Exception:
+        pass
     return []
 
 
@@ -519,8 +657,6 @@ def rotate_ranking_for_prev() -> None:
     """在每日更新前，将当前 latest_ranking 存为 prev_ranking"""
     cur = DATA_DIR / "latest_ranking.json"
     prev = DATA_DIR / "prev_ranking.json"
-    if cur.exists():
-        try:
-            prev.write_text(cur.read_text())
-        except Exception:
-            pass
+    data = load_json_file(cur)
+    if data is not None:
+        dump_json_file(prev, data)

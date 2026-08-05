@@ -18,12 +18,10 @@ namespace 同 in-place + cache fallback chain）；解析顺序对齐
 - ScreenerHit dataclass 不扩展（BR-3.6）：top_concepts / industry 仅在
   运行时 dict 层注入，与 ranking 路径模式一致
 """
-from __future__ import annotations
-
-import json
 from typing import Optional
 
 from src.config import DATA_DIR
+from src.data.json_io import load_json_file
 
 
 # ============================================================
@@ -49,10 +47,8 @@ def _load_concept_heats_safe(c_map: dict[str, list[str]]) -> list:
     try:
         from src.engine.concept_stats import aggregate_concept_limit_ups
         lu_file = DATA_DIR / "limit_up_cache.json"
-        if not lu_file.exists():
-            return []
-        lu = json.loads(lu_file.read_text(encoding="utf-8")) or {}
-        if not lu:
+        lu = load_json_file(lu_file)
+        if not isinstance(lu, dict) or not lu:
             return []
         latest = sorted(lu.keys())[-1]
         return aggregate_concept_limit_ups(lu.get(latest, []) or [], c_map)
@@ -64,9 +60,10 @@ def _load_industry_cache_safe() -> dict[str, str]:
     """Load `industry_cache.json` → {code: industry}; {} on any error."""
     try:
         ic_file = DATA_DIR / "industry_cache.json"
-        if not ic_file.exists():
+        data = load_json_file(ic_file)
+        if not isinstance(data, dict):
             return {}
-        data = json.loads(ic_file.read_text(encoding="utf-8")) or {}
+        data = data or {}
         return {str(k): str(v) for k, v in data.items() if v}
     except Exception:
         return {}

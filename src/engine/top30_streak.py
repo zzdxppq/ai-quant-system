@@ -13,27 +13,25 @@
   "prev_by_code": {code: count}    # 上一交易日的最终计数（用于增量）
 }
 """
-import json
 from typing import Iterable
 
 from src.config import DATA_DIR, now_cn
+from src.data.json_io import dump_json_file, load_json_file
 
 
 _STATE_FILE = DATA_DIR / "top30_streak_state.json"
 
 
 def _load_state() -> dict:
-    if _STATE_FILE.exists():
-        try:
-            return json.loads(_STATE_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    data = load_json_file(_STATE_FILE)
+    if isinstance(data, dict):
+        return data
     return {"today_date": "", "today_by_code": {}, "prev_by_code": {}}
 
 
 def _save_state(state: dict) -> None:
     try:
-        _STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2))
+        dump_json_file(_STATE_FILE, state)
     except Exception:
         pass
 

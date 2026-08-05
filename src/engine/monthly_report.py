@@ -3,11 +3,11 @@
 每月1日自动生成上月报告，或手动触发。
 内容：胜率/盈亏/连板分布/情绪准确率/偏差分析/优化建议
 """
-import json
 from datetime import datetime, timedelta
 from typing import Optional
 
 from src.config import DATA_DIR, now_cn
+from src.data.json_io import dump_json_file
 from src.engine.screener_history import _load as load_history, calc_win_stats
 
 
@@ -124,6 +124,6 @@ def generate_monthly_report(year: int = None, month: int = None) -> dict:
 
     # 保存
     report_file = DATA_DIR / f"report_{year}_{month:02d}.json"
-    report_file.write_text(json.dumps(report, ensure_ascii=False, indent=2))
+    dump_json_file(report_file, report)
 
     return report

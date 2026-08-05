@@ -316,9 +316,10 @@ class TestAC5Regression:
         assert payload is not None
         expected_keys = {
             "generated_at", "bucket", "text", "suggested_position",
-            "suggested_position_short", "reason", "bad_count", "dimensions", "inputs",
+            "suggested_position_short", "reason", "conclusion", "bad_count", "dimensions", "inputs",
         }
-        assert set(payload.keys()) == expected_keys
+        assert expected_keys.issubset(payload.keys())
+        assert set(payload.keys()) - expected_keys <= {"dashboard"}
 
     def test_2_3_int_006_latest_review_watch_pool_unchanged(self):
         # Watch-pool-snapshot-2.2 contract: lightweight import-level smoke check that

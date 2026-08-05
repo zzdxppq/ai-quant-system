@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>复盘 · AI量化周期看板</title>
     <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+    <script src="/static/js/minute-fs-chart.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #0a0e1a; color: #e0e6ed; min-height: 100vh; }
@@ -81,11 +82,24 @@
             flex: 1; padding: 14px 16px; overflow: auto;
             background: #0d1220; font-size: 13px; color: #e0e6ed; line-height: 1.7;
         }
+        .minute-fs-svg-wrap { position:relative;width:100%;max-height:70vh;overflow:hidden; }
+        .minute-fs-svg-wrap svg { width:100%;max-height:70vh;display:block; }
+        .minute-signal-legend { display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px;font-size:11px; }
+        .minute-signal-legend .sig-kind { cursor:pointer;opacity:0.45; }
+        .minute-signal-legend .sig-kind.on { opacity:1;font-weight:600; }
+        .minute-fs-refresh-hint { position:absolute;top:8px;right:8px;z-index:2;font-size:11px;color:#94a3b8;background:rgba(15,23,42,0.88);padding:2px 8px;border-radius:4px;border:1px solid #334155; }
         .kline-modal-legend {
             display: flex; flex-wrap: wrap; gap: 12px;
             padding: 10px 16px; border-top: 1px solid #1e2a45;
             font-size: 11px; color: #a0aec0; flex-shrink: 0;
         }
+        .kline-chart-tabs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+        .kline-chart-tab {
+            background: #111827; border: 1px solid #1e2a45; color: #8892a8;
+            padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 600;
+        }
+        .kline-chart-tab:hover { color: #93c5fd; border-color: #3a4568; }
+        .kline-chart-tab.active { background: #1e3a5f; color: #60a5fa; border-color: #60a5fa; }
         /* 解读区组件 */
         .ka-section { margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px dashed #1e2a45; }
         .ka-section:last-child { border-bottom: none; }
@@ -329,7 +343,7 @@
             border-radius:6px; font-size:14px; line-height:1.7; color:#e0e6ed;
             white-space: pre-line; /* 让 \n 渲染为换行 */
         }
-        /* 今日决策行（评分卡底部）*/
+        /* 明日决策行（评分卡底部，依据今日复盘）*/
         .today-action {
             margin-top: 12px; padding: 10px 14px;
             background: #0d1220; border-radius: 6px;
@@ -379,6 +393,45 @@
     </style>
 </head>
 <body>
+<script>
+/* 鉴权守卫（auth-1.0）：body 顶部、最早执行
+   - localStorage 已有有效 token → 放行（后台 me 探活）
+   - 过期 / 无 token → 清 + 跳 /login
+   注意：head 注入的 APP_ROOT / fetch 拦截在它之前已加载；head 注入 patch 的
+   fetch 会自动带 Authorization 头，所以下面的 /api/auth/me 一次能拿到 200/401
+*/
+(function () {
+  try {
+    var t = localStorage.getItem("auth_token");
+    var exp = localStorage.getItem("auth_expires");
+    var now = Date.now();
+    var loginPath = (window.appPath ? window.appPath("/login") : "/login");
+    if (!t || (exp && new Date(exp).getTime() < now)) {
+      try {
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("auth_email");
+        localStorage.removeItem("auth_expires");
+      } catch (e) {}
+      location.replace(loginPath);
+      return;
+    }
+    // 后台探活；401 时 fetch 拦截器会跳，这里不重复跳
+    var meUrl = window.appPath ? window.appPath("/api/auth/me") : "/api/auth/me";
+    fetch(meUrl, { headers: { "Authorization": "Bearer " + t } })
+      .then(function (r) {
+        if (r.status === 401) {
+          try {
+            localStorage.removeItem("auth_token");
+            localStorage.removeItem("auth_email");
+            localStorage.removeItem("auth_expires");
+          } catch (e) {}
+          location.replace(loginPath);
+        }
+      })
+      .catch(function () { /* 网络错误不阻塞页面渲染 */ });
+  } catch (e) { /* localStorage 不可用时不阻塞 */ }
+})();
+</script>
 <div id="app">
     <div class="header">
         <h1>复盘 · 决策中心</h1>
@@ -386,14 +439,15 @@
             <a href="/">看板</a>
             <a href="/ranking">10日涨幅榜</a>
             <a href="/review" class="active">复盘</a>
+            <a href="/history">回测</a>
         </div>
     </div>
 
     <div class="container">
         <!-- Tab 切换 -->
         <div class="tabs">
-            <button class="tab-btn" :class="{active: activeTab === 'daily'}" @click="activeTab = 'daily'">今日复盘</button>
-            <button class="tab-btn" :class="{active: activeTab === 'monthly'}" @click="activeTab = 'monthly'">月度复盘</button>
+            <button class="tab-btn" :class="{active: activeTab === 'daily'}" @click="switchTab('daily')">今日复盘</button>
+            <button class="tab-btn" :class="{active: activeTab === 'monthly'}" @click="switchTab('monthly')">月度复盘</button>
         </div>
 
         <div v-show="activeTab === 'daily'">
@@ -404,36 +458,38 @@
             <button class="tab-btn" :class="{active: dailySubTab === 'ladder'}" @click="dailySubTab = 'ladder'">🪜 连板天梯</button>
         </div>
 
+        <div v-if="!review.date" class="card empty-state" style="margin-bottom:12px;">
+            <p style="margin-bottom:10px;">暂无复盘数据（可能尚未跑盘后复盘或数据未入库）</p>
+            <button class="btn" @click="runReview">刷新复盘</button>
+        </div>
+
         <div v-show="dailySubTab === 'relay'">
         <!-- 市场广度（上证指数 + 涨跌家数）-->
-        <div v-if="insight.breadth" class="breadth-bar">
+        <div v-if="displayInsight.breadth" class="breadth-bar">
             <div class="breadth-cell">
                 <span class="bc-label">上证指数</span>
-                <span class="bc-value" :class="(insight.breadth.sh_pct||0) >= 0 ? 'gain-pos' : 'gain-neg'">
-                    {{ insight.breadth.sh_close ?? '—' }}
+                <span class="bc-value" :class="(displayInsight.breadth.sh_pct||0) >= 0 ? 'gain-pos' : 'gain-neg'">
+                    {{ displayInsight.breadth.sh_close ?? '—' }}
                     <span style="font-size:13px;font-weight:600;">
-                        {{ insight.breadth.sh_pct == null ? '' : ((insight.breadth.sh_pct >= 0 ? '+' : '') + insight.breadth.sh_pct + '%') }}
+                        {{ displayInsight.breadth.sh_pct == null ? '' : fmtPct(displayInsight.breadth.sh_pct) }}
                     </span>
                 </span>
             </div>
             <div class="breadth-cell">
                 <span class="bc-label">上涨家数</span>
-                <span class="bc-value gain-pos">{{ insight.breadth.advance ?? '—' }}</span>
+                <span class="bc-value gain-pos">{{ breadthAdvance }}</span>
             </div>
             <div class="breadth-cell">
                 <span class="bc-label">下跌家数</span>
-                <span class="bc-value gain-neg">{{ insight.breadth.decline ?? '—' }}</span>
+                <span class="bc-value gain-neg">{{ breadthDecline }}</span>
             </div>
-            <div class="breadth-cell" v-if="insight.breadth.flat != null">
+            <div class="breadth-cell" v-if="displayInsight.breadth.flat != null && !displayInsight.breadth.counts_unavailable">
                 <span class="bc-label">平盘</span>
-                <span class="bc-value" style="color:#6b7280;">{{ insight.breadth.flat }}</span>
+                <span class="bc-value" style="color:#6b7280;">{{ displayInsight.breadth.flat }}</span>
             </div>
             <div class="breadth-cell" style="margin-left:auto;justify-content:center;">
                 <span class="bc-label">涨跌比</span>
-                <span class="bc-value"
-                      :class="(insight.breadth.advance||0) > (insight.breadth.decline||0) ? 'gain-pos' : 'gain-neg'">
-                    {{ insight.breadth.decline > 0 ? (insight.breadth.advance / insight.breadth.decline).toFixed(2) : '—' }}
-                </span>
+                <span class="bc-value" :class="breadthRatioClass">{{ breadthRatio }}</span>
             </div>
         </div>
 
@@ -465,14 +521,15 @@
                     </tr>
                 </tbody>
             </table>
-            <!-- 今日决策（基于总分自动映射） -->
+            <!-- 明日决策（今日复盘六维评分 → 次日接力参考） -->
             <div v-if="review.scorecard.today_action" class="today-action">
                 <span class="ta-tag" :class="taActionCls">
-                    🎯 今日决策：{{ review.scorecard.today_action.verdict }}
+                    🎯 明日决策：{{ review.scorecard.today_action.verdict }}
                 </span>
+                <span class="ta-detail" style="color:#8892a8;font-size:11px;margin-right:6px;">（据今日复盘）</span>
                 <span class="ta-detail">
                     总分 <b>{{ review.scorecard.total_score }}/6</b> →
-                    仓位 <b style="color:#fbbf24;">{{ review.scorecard.today_action.position }}</b>
+                    明日仓位 <b style="color:#fbbf24;">{{ review.scorecard.today_action.position }}</b>
                     | 推荐梯队 <b style="color:#60a5fa;">{{ review.scorecard.today_action.ladders }}</b>
                 </span>
                 <span v-if="review.scorecard.today_action.note" class="ta-note">
@@ -577,7 +634,7 @@
         <div class="card">
             <div class="card-title">🎯 次日关注标的池
                 <span style="margin-left:auto;font-size:11px;color:#6b7280;font-weight:400;">
-                    主板 + (流通市值&lt;100亿 AND ≥2连板) 或 (top30·gain≥45% AND 首板)
+                    主板 + 流通市值≤100亿 + ≥2连板
                 </span>
             </div>
             <div v-if="watchPool.length" class="watch-pool-grid">
@@ -714,7 +771,9 @@
             <div v-for="grp in boardGroups" :key="grp.prev_board" class="ladder-row">
                 <div class="ladder-board" :class="boardCls(grp.prev_board)">
                     <template v-if="grp.prev_board === 0">新进</template>
-                    <template v-else>{{ grp.prev_board }}板→{{ grp.next_board }}板</template>
+                    <template v-else>{{ grp.prev_board }}进{{ grp.next_board }}
+                        <span v-if="ladderPromoRate(grp)" class="lb-rate" style="color:#60a5fa;font-size:11px;margin-left:4px;">{{ ladderPromoRate(grp) }}</span>
+                    </template>
                     <span class="lb-count">
                         ✓{{ grp.promoted.length }}
                         <template v-if="grp.failed.length">/✗{{ grp.failed.length }}</template>
@@ -804,10 +863,12 @@
 
         </div><!-- end v-show daily -->
 
-        <div v-show="activeTab === 'monthly'">
+        <div v-if="activeTab === 'monthly'">
         <!-- 月度复盘（基于选股记录·每日盘后更新） -->
-        <div class="card">
-            <div class="card-title">📊 月度复盘
+        <!-- 月份选择器 + 核心绩效对比卡（本月 vs 上月） -->
+        <div class="card" style="margin-bottom:12px;">
+            <div class="card-title" style="margin-bottom:10px;">📊 月度复盘
+                <span style="font-size:11px;color:#6b7280;font-weight:400;margin-left:8px;" v-if="histUpdatedAt">数据更新至 {{ histUpdatedAt }}</span>
                 <div style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px;">
                     <select v-model="histYear" @change="onHistYearChange" style="background:#0d1220;color:#e0e6ed;border:1px solid #2a3050;border-radius:4px;padding:2px 6px;font-size:12px;">
                         <option value="">选择年</option>
@@ -817,141 +878,269 @@
                         <option value="">选择月</option>
                         <option v-for="m in histMonthsForYear(histYear)" :key="m" :value="m">{{ m }}月</option>
                     </select>
-                    <button class="btn" style="font-size:11px;padding:2px 8px;" @click="loadHistory()" :disabled="histLoading" title="重新拉取选股记录">{{ histLoading ? '加载中…' : '刷新' }}</button>
-                    <a class="btn" style="font-size:11px;padding:2px 8px;text-decoration:none;" :href="histAllLink">查看所有 →</a>
+                    <button class="btn" style="font-size:11px;padding:2px 8px;" @click="loadHistory()" :disabled="histLoading">{{ histLoading ? '加载中…' : '刷新' }}</button>
+                    <a class="btn" style="font-size:11px;padding:2px 8px;text-decoration:none;" :href="histAllLink">全部历史 →</a>
                 </div>
             </div>
 
-            <!-- 4 张胜率卡 -->
-            <div class="hist-stats-row">
-                <div class="hist-stat-card">
-                    <div class="hsc-label">本周胜率</div>
-                    <div class="hsc-rate" :class="rateClass(histStats.weekly)">{{ histLoaded ? statRate(histStats.weekly) + '%' : '—' }}</div>
-                    <div class="hsc-detail">{{ histLoaded ? statDetail(histStats.weekly) : '加载中…' }}</div>
+            <!-- 核心绩效对比卡（本月 vs 上月） -->
+            <div style="font-size:11px;color:#6b7280;margin-bottom:6px;" v-if="histBacktestRule">{{ histBacktestRule }}</div>
+            <div v-if="histStats.monthly && (histStats.monthly.trades > 0 || histStats.monthly.signal_count > 0)">
+                <div class="hist-compare-grid">
+                    <div class="hist-compare-card">
+                        <div class="hcc-label">交易次数</div>
+                        <div class="hcc-val">{{ histStats.monthly.trades }}</div>
+                        <div class="hcc-prev">上月 {{ histStats.prev_monthly ? histStats.prev_monthly.trades : '—' }}</div>
+                        <div class="hcc-delta" :class="deltaClass(histStats.monthly.trades - (histStats.prev_monthly ? histStats.prev_monthly.trades : 0))">{{ deltaText(histStats.monthly.trades, histStats.prev_monthly ? histStats.prev_monthly.trades : 0, '') }}</div>
+                    </div>
+                    <div class="hist-compare-card">
+                        <div class="hcc-label">样本数</div>
+                        <div class="hcc-val" style="color:#a0aec0;">{{ histStats.monthly.sample_count ?? histStats.monthly.signal_count ?? '—' }}</div>
+                        <div class="hcc-prev">上月 {{ histStats.prev_monthly ? (histStats.prev_monthly.sample_count ?? histStats.prev_monthly.signal_count ?? '—') : '—' }}</div>
+                        <div class="hcc-delta" :class="deltaClass((histStats.monthly.sample_count ?? 0) - (histStats.prev_monthly ? (histStats.prev_monthly.sample_count ?? 0) : 0))">{{ deltaText(histStats.monthly.sample_count, histStats.prev_monthly ? histStats.prev_monthly.sample_count : 0, '') }}</div>
+                    </div>
+                    <div class="hist-compare-card">
+                        <div class="hcc-label">交易/样本</div>
+                        <div class="hcc-val" style="color:#60a5fa;">{{ histStats.monthly.trade_sample_ratio != null ? histStats.monthly.trade_sample_ratio + '%' : '—' }}</div>
+                        <div class="hcc-prev">上月 {{ histStats.prev_monthly && histStats.prev_monthly.trade_sample_ratio != null ? histStats.prev_monthly.trade_sample_ratio + '%' : '—' }}</div>
+                        <div class="hcc-delta" :class="deltaClass((histStats.monthly.trade_sample_ratio || 0) - (histStats.prev_monthly ? (histStats.prev_monthly.trade_sample_ratio || 0) : 0))">{{ deltaText(histStats.monthly.trade_sample_ratio, histStats.prev_monthly ? histStats.prev_monthly.trade_sample_ratio : 0, '%') }}</div>
+                    </div>
+                    <div class="hist-compare-card">
+                        <div class="hcc-label">胜率</div>
+                        <div class="hcc-val" :class="rateClass(histStats.monthly)">{{ histStats.monthly.win_rate }}%</div>
+                        <div class="hcc-prev">上月 {{ histStats.prev_monthly ? histStats.prev_monthly.win_rate + '%' : '—' }}</div>
+                        <div class="hcc-delta" :class="deltaClass(histStats.monthly.win_rate - (histStats.prev_monthly ? histStats.prev_monthly.win_rate : 0))">{{ deltaText(histStats.monthly.win_rate, histStats.prev_monthly ? histStats.prev_monthly.win_rate : 0, '%') }}</div>
+                    </div>
+                    <div class="hist-compare-card">
+                        <div class="hcc-label">平均单笔收益</div>
+                        <div class="hcc-val" :class="numClass(histStats.monthly.avg_return)">{{ histStats.monthly.avg_return != null ? histStats.monthly.avg_return + '%' : '—' }}</div>
+                        <div class="hcc-prev">上月 {{ histStats.prev_monthly && histStats.prev_monthly.avg_return != null ? histStats.prev_monthly.avg_return + '%' : '—' }}</div>
+                        <div class="hcc-delta" :class="deltaClass(histStats.monthly.avg_return - (histStats.prev_monthly ? histStats.prev_monthly.avg_return : 0))">{{ deltaText(histStats.monthly.avg_return, histStats.prev_monthly ? histStats.prev_monthly.avg_return : 0, '%') }}</div>
+                    </div>
+                    <div class="hist-compare-card">
+                        <div class="hcc-label">盈亏比</div>
+                        <div class="hcc-val">{{ histStats.monthly.win_loss_ratio || '—' }}</div>
+                        <div class="hcc-prev">上月 {{ histStats.prev_monthly ? histStats.prev_monthly.win_loss_ratio || '—' : '—' }}</div>
+                        <div class="hcc-delta" :class="deltaClass(histStats.monthly.win_loss_ratio - (histStats.prev_monthly ? histStats.prev_monthly.win_loss_ratio : 0))">{{ deltaText(histStats.monthly.win_loss_ratio, histStats.prev_monthly ? histStats.prev_monthly.win_loss_ratio : 0, '') }}</div>
+                    </div>
+                    <div class="hist-compare-card">
+                        <div class="hcc-label">累计收益</div>
+                        <div class="hcc-val" :class="numClass(histStats.monthly.cumulative_return)">{{ histStats.monthly.cumulative_return != null ? histStats.monthly.cumulative_return + '%' : '—' }}</div>
+                        <div class="hcc-prev">上月 {{ histStats.prev_monthly && histStats.prev_monthly.cumulative_return != null ? histStats.prev_monthly.cumulative_return + '%' : '—' }}</div>
+                        <div class="hcc-delta" :class="deltaClass(histStats.monthly.cumulative_return - (histStats.prev_monthly ? histStats.prev_monthly.cumulative_return : 0))">{{ deltaText(histStats.monthly.cumulative_return, histStats.prev_monthly ? histStats.prev_monthly.cumulative_return : 0, '%') }}</div>
+                    </div>
+                    <div class="hist-compare-card">
+                        <div class="hcc-label">最大回撤</div>
+                        <div class="hcc-val" style="color:#ef4444;">{{ histStats.monthly.max_drawdown != null ? histStats.monthly.max_drawdown + '%' : '—' }}</div>
+                        <div class="hcc-prev">上月 {{ histStats.prev_monthly && histStats.prev_monthly.max_drawdown != null ? histStats.prev_monthly.max_drawdown + '%' : '—' }}</div>
+                        <div class="hcc-delta" :class="deltaClass((histStats.prev_monthly ? histStats.prev_monthly.max_drawdown : 0) - histStats.monthly.max_drawdown)">{{ deltaText(histStats.prev_monthly ? histStats.prev_monthly.max_drawdown : 0, histStats.monthly.max_drawdown, '%') }}</div>
+                    </div>
+                    <div class="hist-compare-card">
+                        <div class="hcc-label">涨停转化率</div>
+                        <div class="hcc-val">{{ histStats.monthly.signal_to_limit_pct != null ? histStats.monthly.signal_to_limit_pct + '%' : (histStats.monthly.zt_rate + '%') }}</div>
+                        <div class="hcc-prev">上月 {{ histStats.prev_monthly ? (histStats.prev_monthly.signal_to_limit_pct ?? histStats.prev_monthly.zt_rate) + '%' : '—' }}</div>
+                        <div class="hcc-delta" :class="deltaClass((histStats.monthly.signal_to_limit_pct ?? histStats.monthly.zt_rate) - (histStats.prev_monthly ? (histStats.prev_monthly.signal_to_limit_pct ?? histStats.prev_monthly.zt_rate) : 0))">{{ deltaText(histStats.monthly.signal_to_limit_pct ?? histStats.monthly.zt_rate, histStats.prev_monthly ? (histStats.prev_monthly.signal_to_limit_pct ?? histStats.prev_monthly.zt_rate) : 0, '%') }}</div>
+                    </div>
                 </div>
-                <div class="hist-stat-card">
-                    <div class="hsc-label">本月胜率</div>
-                    <div class="hsc-rate" :class="rateClass(histStats.monthly)">{{ histLoaded ? statRate(histStats.monthly) + '%' : '—' }}</div>
-                    <div class="hsc-detail">{{ histLoaded ? statDetail(histStats.monthly) : '加载中…' }}</div>
-                </div>
-                <div class="hist-stat-card">
-                    <div class="hsc-label">本年胜率</div>
-                    <div class="hsc-rate" :class="rateClass(histStats.yearly)">{{ histLoaded ? statRate(histStats.yearly) + '%' : '—' }}</div>
-                    <div class="hsc-detail">{{ histLoaded ? statDetail(histStats.yearly) : '加载中…' }}</div>
-                </div>
-                <div class="hist-stat-card">
-                    <div class="hsc-label">总胜率</div>
-                    <div class="hsc-rate" :class="rateClass(histStats.total)">{{ histLoaded ? statRate(histStats.total) + '%' : '—' }}</div>
-                    <div class="hsc-detail">{{ histLoaded ? statDetail(histStats.total) : '加载中…' }}</div>
+            </div>
+            <div v-else-if="histLoaded && histStats.monthly" style="margin-top:10px;font-size:12px;color:#6b7280;">本月无交易</div>
+        </div>
+
+        <!-- 近6个月趋势图 + 本月 vs 历史均值 -->
+        <div class="card" style="margin-bottom:12px;">
+            <!-- 近6个月趋势图 -->
+            <div v-if="histTrendChart" class="hist-trend-wrap" style="margin-bottom:16px;">
+                <div style="font-size:12px;color:#6b7280;margin-bottom:8px;">近6个月趋势</div>
+                <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;width:100%;">
+                    <svg :viewBox="`0 0 ${histTrendChart.W} ${histTrendChart.H}`" class="hist-trend-svg" style="flex:1;min-width:280px;" preserveAspectRatio="none">
+                        <line v-for="(yt, yi) in histTrendChart.yTicks" :key="'g'+yi"
+                              :x1="histTrendChart.padL" :y1="yt.y"
+                              :x2="histTrendChart.W - histTrendChart.padR" :y2="yt.y"
+                              stroke="#1e2a45" stroke-width="1"/>
+                        <text v-for="(yt, yi) in histTrendChart.yTicks" :key="'y'+yi"
+                              :x="histTrendChart.padL - 4" :y="yt.y + 4"
+                              text-anchor="end" fill="#6b7280" font-size="10">{{ yt.label }}</text>
+                        <text v-for="(lb, i) in histTrendChart.xLabels" :key="'x'+i"
+                              :x="histTrendChart.xAt(i)"
+                              :y="histTrendChart.H - 8"
+                              text-anchor="middle" fill="#6b7280" font-size="10">{{ lb }}</text>
+                        <polyline v-if="histTrendChart.wrLine" :points="histTrendChart.wrPoints"
+                                  fill="none" stroke="#ef4444" stroke-width="2" stroke-linejoin="round"/>
+                        <polyline v-if="histTrendChart.trLine" :points="histTrendChart.trPoints"
+                                  fill="none" stroke="#60a5fa" stroke-width="2" stroke-linejoin="round"/>
+                        <polyline v-if="histTrendChart.arLine" :points="histTrendChart.arPoints"
+                                  fill="none" stroke="#34d399" stroke-width="2" stroke-linejoin="round"/>
+                        <circle v-for="(pt, i) in histTrendChart.wrPts" :key="'wr'+i"
+                                :cx="pt.x" :cy="pt.y" r="3" fill="#ef4444"/>
+                        <circle v-for="(pt, i) in histTrendChart.trPts" :key="'tr'+i"
+                                :cx="pt.x" :cy="pt.y" r="3" fill="#60a5fa"/>
+                        <circle v-for="(pt, i) in histTrendChart.arPts" :key="'ar'+i"
+                                :cx="pt.x" :cy="pt.y" r="3" fill="#34d399"/>
+                    </svg>
+                    <div style="font-size:11px;color:#6b7280;padding-top:4px;">
+                        <div style="margin-bottom:4px;"><span style="display:inline-block;width:12px;height:3px;background:#ef4444;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>胜率%</div>
+                        <div style="margin-bottom:4px;"><span style="display:inline-block;width:12px;height:3px;background:#60a5fa;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>交易次数</div>
+                        <div><span style="display:inline-block;width:12px;height:3px;background:#34d399;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>平均单笔收益%</div>
+                    </div>
                 </div>
             </div>
 
-            <!-- 分维度胜率 -->
-            <div v-if="histStats.by_board && Object.keys(histStats.by_board).length" style="margin-top:14px;padding-top:14px;border-top:1px dashed #2a3050;">
-                <div style="font-size:13px;color:#8892a8;margin-bottom:10px;">
-                    分维度胜率（{{ histScopeLabel }}）
-                </div>
-                <div style="display:flex;gap:24px;flex-wrap:wrap;">
-                    <div style="flex:1;min-width:200px;">
-                        <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">按连板类型</div>
-                        <div v-for="(s, label) in histStats.by_board" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
-                            <span style="width:50px;color:#a0aec0;">{{ label }}</span>
-                            <div style="flex:1;height:16px;background:#1a2040;border-radius:4px;overflow:hidden;">
-                                <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: rateBarColor(s.win_rate), display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
-                                    {{ s.win_rate }}%
-                                </div>
-                            </div>
-                            <span style="width:40px;color:#6b7280;font-size:11px;">{{ s.wins }}/{{ s.trades }}</span>
+            <!-- 本月 vs 历史均值对比表 -->
+            <div v-if="histAvgStats && histStats.monthly && histStats.monthly.trades > 0">
+                <div style="font-size:12px;color:#6b7280;margin-bottom:8px;">本月 vs 历史均值（近6个月）</div>
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+                    <div v-for="item in [
+                        {label:'交易次数', curr: histStats.monthly.trades, avg: histAvgStats.trades, fmt: v => v},
+                        {label:'胜率', curr: histStats.monthly.win_rate, avg: histAvgStats.win_rate, fmt: v => v+'%'},
+                        {label:'平均收益', curr: histStats.monthly.avg_return, avg: histAvgStats.avg_return, fmt: v => v+'%'},
+                        {label:'涨停转化率', curr: (histStats.monthly.signal_to_limit_pct ?? histStats.monthly.zt_rate), avg: (histAvgStats.signal_to_limit_pct ?? histAvgStats.zt_rate), fmt: v => v+'%'}
+                    ]" :key="item.label" style="background:#0d1220;border:1px solid #1e2a45;border-radius:8px;padding:10px 8px;text-align:center;">
+                        <div style="font-size:11px;color:#6b7280;margin-bottom:4px;">{{ item.label }}</div>
+                        <div style="font-size:18px;font-weight:700;color:#e0e6ed;">{{ item.fmt(item.curr != null ? item.curr : 0) }}</div>
+                        <div style="font-size:10px;color:#6b7280;margin-top:2px;">均值 {{ item.fmt(item.avg != null ? item.avg : 0) }}</div>
+                        <div style="font-size:11px;font-weight:600;margin-top:2px;" :class="deltaClass(item.curr - item.avg)">
+                            {{ deltaText(item.curr, item.avg, item.label.includes('%') ? '%' : '') }}
                         </div>
                     </div>
-                    <div style="flex:1;min-width:200px;" v-if="histStats.by_emotion && Object.keys(histStats.by_emotion).length">
-                        <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">按市场情绪</div>
-                        <div v-for="(s, label) in histStats.by_emotion" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
-                            <span style="width:100px;color:#a0aec0;font-size:11px;">{{ label }}</span>
-                            <div style="flex:1;height:16px;background:#1a2040;border-radius:4px;overflow:hidden;">
-                                <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: rateBarColor(s.win_rate), display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
-                                    {{ s.win_rate }}%
-                                </div>
-                            </div>
-                            <span style="width:40px;color:#6b7280;font-size:11px;">{{ s.wins }}/{{ s.trades }}</span>
-                        </div>
-                    </div>
-                    <div style="flex:1;min-width:200px;" v-if="histStats.by_cycle_stock && Object.keys(histStats.by_cycle_stock).length">
-                        <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">按是否周期股</div>
-                        <div v-for="(s, label) in histStats.by_cycle_stock" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
-                            <span style="width:70px;color:#a0aec0;">{{ label }}</span>
-                            <div style="flex:1;height:16px;background:#1a2040;border-radius:4px;overflow:hidden;">
-                                <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: rateBarColor(s.win_rate), display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
-                                    {{ s.win_rate }}%
-                                </div>
-                            </div>
-                            <span style="width:40px;color:#6b7280;font-size:11px;">{{ s.wins }}/{{ s.trades }}</span>
-                        </div>
-                    </div>
-                    <div style="flex:1;min-width:200px;" v-if="histStats.by_outcome && Object.keys(histStats.by_outcome).length">
-                        <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">按结果分类</div>
-                        <div v-for="(s, label) in histStats.by_outcome" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
-                            <span style="width:70px;color:#a0aec0;">{{ label }}</span>
-                            <span style="font-weight:700;color:#e0e6ed;">{{ s.trades }} 笔</span>
-                            <span style="color:#6b7280;font-size:11px;">占比 {{ histStats.total.trades > 0 ? (s.trades / histStats.total.trades * 100).toFixed(0) : 0 }}%</span>
-                        </div>
-                    </div>
-                </div>
-                <!-- 开仓指导（资深龙头选手视角，多维深度分析） -->
-                <div v-if="histStats.suggestion" style="margin-top:14px;padding:14px 16px;background:#0d1220;border-left:4px solid #fbbf24;border-radius:6px;">
-                    <div style="font-size:11px;color:#fbbf24;margin-bottom:8px;font-weight:600;letter-spacing:0.5px;">📌 开仓指导 · 龙头视角</div>
-                    <!-- 兼容旧字符串格式 -->
-                    <div v-if="typeof histStats.suggestion === 'string'" style="font-size:13px;color:#e0e6ed;line-height:1.6;">{{ histStats.suggestion }}</div>
-                    <template v-else>
-                        <div v-if="histStats.suggestion.headline" style="font-size:14px;color:#e0e6ed;line-height:1.5;font-weight:600;margin-bottom:8px;">
-                            {{ histStats.suggestion.headline }}
-                        </div>
-                        <div v-if="histStats.suggestion.rules && histStats.suggestion.rules.length" style="margin-bottom:6px;">
-                            <div style="font-size:11px;color:#34d399;font-weight:600;margin-bottom:3px;">✓ 执行规则</div>
-                            <div v-for="r in histStats.suggestion.rules" :key="r"
-                                 style="font-size:12px;color:#c9d1d9;line-height:1.6;padding:2px 0;">• {{ r }}</div>
-                        </div>
-                        <div v-if="histStats.suggestion.risks && histStats.suggestion.risks.length" style="margin-bottom:6px;">
-                            <div style="font-size:11px;color:#ef4444;font-weight:600;margin-bottom:3px;">⚠ 风险/规避</div>
-                            <div v-for="r in histStats.suggestion.risks" :key="r"
-                                 style="font-size:12px;color:#c9d1d9;line-height:1.6;padding:2px 0;">• {{ r }}</div>
-                        </div>
-                        <div v-if="histStats.suggestion.notes && histStats.suggestion.notes.length"
-                             style="margin-top:8px;padding-top:6px;border-top:1px dashed #2a3050;">
-                            <div v-for="r in histStats.suggestion.notes" :key="r"
-                                 style="font-size:11px;color:#8892a8;line-height:1.5;padding:1px 0;">{{ r }}</div>
-                        </div>
-                    </template>
                 </div>
             </div>
         </div>
 
-        <!-- 历史选股记录（按选定年/月） -->
-        <div class="card">
-            <div class="card-title">
-                历史选股记录（{{ histRecords.length }} 条 · {{ histScopeLabel }}）
+        <!-- 本月盈亏归因 · 按连板类型（合并胜率表） -->
+        <div class="card" style="margin-bottom:12px;">
+            <div class="card-title">📈 本月盈亏归因 · 按连板类型
+                <span style="font-size:11px;color:#6b7280;font-weight:400;margin-left:8px;">笔数 ≥ 5 样本才纳入统计</span>
             </div>
-            <div style="max-height:600px;overflow-y:auto;">
+            <div v-if="histStats.monthly && histStats.monthly.trades > 0">
+                <div class="attribution-table-wrap">
+                <table class="attribution-table">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left;padding:7px 10px;color:#6b7280;white-space:nowrap;">连板类型</th>
+                            <th style="padding:7px 8px;color:#6b7280;text-align:right;">笔数</th>
+                            <th style="padding:7px 8px;color:#6b7280;text-align:right;">胜率</th>
+                            <th style="padding:7px 8px;color:#6b7280;text-align:right;">均收益</th>
+                            <th style="padding:7px 8px;color:#6b7280;text-align:right;">累计收益</th>
+                            <th style="padding:7px 8px;color:#6b7280;min-width:160px;">收益贡献占比</th>
+                            <th style="padding:7px 8px;color:#6b7280;text-align:left;">问题/亮点</th>
+                            <th style="padding:7px 8px;color:#6b7280;text-align:right;">上月胜率</th>
+                            <th style="padding:7px 8px;color:#6b7280;text-align:right;">胜率变化</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template v-for="(s, label) in histStats.by_board" :key="label">
+                            <tr :class="{'attr-row-warn': (s.trades || 0) < 5}" :title="(s.trades || 0) < 5 ? '样本较少，谨慎参考' : ''">
+                                <td style="padding:7px 10px;color:#a0aec0;font-weight:600;white-space:nowrap;">{{ label }}</td>
+                                <td style="padding:7px 8px;color:#e0e6ed;text-align:right;font-weight:600;">{{ s.trades || 0 }}</td>
+                                <td style="padding:7px 8px;text-align:right;" :class="rateClass(s)">
+                                    <span style="font-weight:600;">{{ s.win_rate != null ? s.win_rate + '%' : '—' }}</span>
+                                </td>
+                                <td style="padding:7px 8px;color:#e0e6ed;text-align:right;">{{ s.avg_return != null ? s.avg_return + '%' : '—' }}</td>
+                                <td style="padding:7px 8px;text-align:right;" :class="numClass(boardTotalReturn(s))">
+                                    <span style="font-weight:600;">{{ boardTotalReturn(s) != null ? boardTotalReturn(s).toFixed(1) + '%' : '—' }}</span>
+                                </td>
+                                <td style="padding:7px 8px;">
+                                    <div class="share-bar-wrap">
+                                        <div class="share-bar-track">
+                                            <div class="share-bar-fill" :style="{width: boardSharePct(s) + '%', background: rateBarColor(s.win_rate || 0)}"></div>
+                                        </div>
+                                        <span class="share-bar-label">{{ boardShare(s) }}</span>
+                                    </div>
+                                </td>
+                                <td style="padding:7px 8px;font-size:11px;color:#8892a8;">
+                                    <span v-for="tag in boardTags(label)" :key="tag" style="display:inline-block;margin-right:4px;padding:1px 6px;border-radius:4px;background:#1e2a45;">{{ tag }}</span>
+                                    <span v-if="!boardTags(label).length">—</span>
+                                </td>
+                                <td style="padding:7px 8px;color:#6b7280;text-align:right;">{{ prevBoardWinRate(label) }}</td>
+                                <td style="padding:7px 8px;text-align:right;" :class="deltaClass(boardWinRateDelta(s, label))">
+                                    <span style="font-weight:600;">{{ boardWinRateDeltaText(s, label) }}</span>
+                                </td>
+                            </tr>
+                        </template>
+                        <tr v-if="Object.keys(histStats.by_board || {}).length === 0">
+                            <td colspan="9" style="padding:24px;text-align:center;color:#4b5563;">暂无数据</td>
+                        </tr>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+            <div v-else style="padding:20px;text-align:center;color:#4b5563;font-size:13px;">本月无交易记录</div>
+        </div>
+
+        <!-- 问题诊断与下月改进建议 -->
+        <div class="card" v-if="histImprovements.length" style="margin-bottom:12px;">
+            <div class="card-title">🔍 问题诊断与下月改进建议</div>
+            <div style="padding:12px 16px;background:#0d1220;border-radius:6px;">
+                <div v-for="(tip, i) in histImprovements" :key="i" style="font-size:13px;color:#c9d1d9;line-height:1.7;padding:4px 0;">
+                    {{ i + 1 }}. {{ tip }}
+                </div>
+            </div>
+        </div>
+
+        <!-- 动态开仓指导 -->
+        <div class="card" v-if="histActiveSuggestion" style="margin-bottom:12px;">
+            <div class="card-title" style="cursor:pointer;" @click="histGuideOpen = !histGuideOpen">
+                <span style="font-size:13px;">🎯 动态开仓指导</span>
+                <span style="font-size:12px;color:#6b7280;font-weight:400;margin-left:6px;">基于本月数据生成</span>
+                <span style="margin-left:auto;font-size:12px;color:#6b7280;transition:transform 0.2s;" :style="{transform: histGuideOpen ? 'rotate(0deg)' : 'rotate(-90deg)'}">▼</span>
+            </div>
+            <div v-show="histGuideOpen" style="padding:16px;background:#0d1220;border-left:4px solid #fbbf24;border-radius:6px;margin-top:8px;">
+                <div v-if="typeof histActiveSuggestion === 'string'" style="font-size:13px;color:#e0e6ed;line-height:1.7;">{{ histActiveSuggestion }}</div>
+                <template v-else>
+                    <div v-if="histActiveSuggestion.headline" style="font-size:15px;color:#e0e6ed;font-weight:600;margin-bottom:10px;line-height:1.5;">
+                        {{ histActiveSuggestion.headline }}
+                    </div>
+                    <div v-if="histActiveSuggestion.rules && histActiveSuggestion.rules.length" style="margin-bottom:10px;">
+                        <div style="font-size:11px;color:#34d399;font-weight:700;margin-bottom:5px;letter-spacing:0.3px;">✅ 执行规则</div>
+                        <div v-for="r in histActiveSuggestion.rules" :key="r"
+                             style="font-size:13px;color:#c9d1d9;line-height:1.7;padding:2px 0;">• {{ r }}</div>
+                    </div>
+                    <div v-if="histActiveSuggestion.risks && histActiveSuggestion.risks.length" style="margin-bottom:10px;">
+                        <div style="font-size:11px;color:#ef4444;font-weight:700;margin-bottom:5px;letter-spacing:0.3px;">❌ 风险规避</div>
+                        <div v-for="r in histActiveSuggestion.risks" :key="r"
+                             style="font-size:13px;color:#c9d1d9;line-height:1.7;padding:2px 0;">• {{ r }}</div>
+                    </div>
+                    <div v-if="histActiveSuggestion.notes && histActiveSuggestion.notes.length"
+                         style="margin-top:10px;padding-top:8px;border-top:1px dashed #2a3050;">
+                        <div v-for="r in histActiveSuggestion.notes" :key="r"
+                             style="font-size:12px;color:#8892a8;line-height:1.6;padding:1px 0;">{{ r }}</div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- 历史选股记录（按选定年/月，可折叠） -->
+        <div class="card">
+            <div class="card-title" style="cursor:pointer;" @click="histTableOpen = !histTableOpen">
+                <span>历史选股记录（{{ histRecords.length }} 条 · {{ histScopeLabel }}）</span>
+                <span style="margin-left:8px;font-size:12px;color:#6b7280;transition:transform 0.2s;" :style="{transform: histTableOpen ? 'rotate(0deg)' : 'rotate(-90deg)'}">▼</span>
+            </div>
+            <div v-show="histTableOpen" style="max-height:600px;overflow-y:auto;">
                 <table v-if="histRecords.length" class="hist-table">
                     <thead>
                         <tr>
-                            <th>日期</th><th>代码</th><th>名称</th><th>连板</th>
-                            <th>开盘价</th><th>竞价涨幅</th>
+                            <th>日期</th>
+                            <th>代码</th>
+                            <th>名称</th>
+                            <th>连板 / 晋级</th>
+                            <th>开盘价</th>
+                            <th>竞价涨幅</th>
                             <th title="竞价换手率(%)">竞价换手</th>
-                            <th>收盘价</th><th>收盘涨幅</th><th>次日竞价</th><th>次日收盘涨幅</th>
+                            <th>收盘价</th>
+                            <th title="相对昨收 (close/pre_close-1)，非竞价→收盘">收盘涨幅</th>
+                            <th>次日竞价</th>
+                            <th>次日收盘涨幅</th>
                             <th>10日涨幅</th>
-                            <th title="当日复盘 1进2 成功率">1进2</th>
+                            <th title="选股日依赖的昨日1进2晋级率（归档时复盘 scorecard）">1进2</th>
                             <th title="当日板块/概念集中度">集中度</th>
-                            <th>周期股</th><th>周期计数</th>
                             <th>胜负</th>
                             <th title="v3.3 决策快照（开仓/空仓 + 仓位 + 梯队）">决策</th>
-                            <th>备注</th>
                         </tr>
                     </thead>
                     <tbody>
                         <template v-for="(group, date) in histGroupedRecords" :key="date">
                             <tr>
-                                <td colspan="20" class="date-group">
+                                <td colspan="17" class="date-group">
                                     {{ date }}（{{ group.length }} 只）
                                     <span v-if="dailyEnv(group)" style="margin-left:16px;font-weight:400;font-size:12px;color:#a0aec0;">
                                         <template v-if="dailyEnv(group).market_limit_down !== null && dailyEnv(group).market_limit_down !== undefined">
@@ -973,32 +1162,24 @@
                                 <td>{{ r.date }}</td>
                                 <td>{{ r.code }}</td>
                                 <td>{{ r.name }}</td>
-                                <td>{{ r.continuous_limit_up }}板</td>
-                                <td>{{ r.open_price || '-' }}</td>
+                                <td>
+                                    <span>{{ r.continuous_limit_up }}板</span>
+                                    <span v-if="r.board_label" style="color:#60a5fa;margin-left:4px;font-size:11px;">{{ r.board_label }}</span>
+                                </td>
+                                <td>{{ fmtPrice(r.open_price) }}</td>
                                 <td :class="numClass(r.auction_gain)">{{ fmtPct(r.auction_gain) }}</td>
-                                <td>{{ r.auction_turnover != null ? r.auction_turnover + '%' : '—' }}</td>
-                                <td>{{ r.close_price || '-' }}</td>
+                                <td>{{ fmtPctPlain(r.auction_turnover) }}</td>
+                                <td>{{ fmtPrice(r.close_price) }}</td>
                                 <td :class="numClass(r.day_change)">{{ fmtPct(r.day_change) }}</td>
                                 <td :class="numClass(r.next_day_auction_gain)">{{ fmtPct(r.next_day_auction_gain) }}</td>
                                 <td :class="numClass(r.next_day_close_gain)">{{ fmtPct(r.next_day_close_gain) }}</td>
-                                <td :class="(r.gain_10d||0) >= 0 ? 'gain-pos' : 'gain-neg'">
-                                    {{ r.gain_10d ? (r.gain_10d > 0 ? '+' : '') + r.gain_10d + '%' : '-' }}
-                                </td>
-                                <td>{{ r.b1_rate != null ? r.b1_rate + '%' : '—' }}</td>
-                                <td>{{ r.concentration != null ? r.concentration + '%' : '—' }}</td>
+                                <td :class="numClass(r.gain_10d)">{{ fmtPct(r.gain_10d) }}</td>
+                                <td>{{ fmtPctPlain(r.b1_rate) }}</td>
+                                <td>{{ fmtPctPlain(r.concentration) }}</td>
                                 <td>
-                                    <span v-if="r.is_cycle_stock === true" class="tag" style="background:#3b0a0a;color:#ef4444;">是</span>
-                                    <span v-else-if="r.is_cycle_stock === false" class="tag" style="background:#0a2a1a;color:#10b981;">否</span>
-                                    <span v-else class="tag" style="background:#1a1a2e;color:#6b7280;">-</span>
-                                </td>
-                                <td>
-                                    <span v-if="r.top30_streak" style="color:#fbbf24;font-weight:600;">{{ r.top30_streak }}天</span>
-                                    <span v-else style="color:#4b5563;">-</span>
-                                </td>
-                                <td>
-                                    <span v-if="r.is_win === true" class="tag" style="background:#3b0a0a;color:#ef4444;">盈</span>
-                                    <span v-else-if="r.is_win === false" class="tag" style="background:#0a2a1a;color:#10b981;">亏</span>
-                                    <span v-else class="tag" style="background:#1a1a2e;color:#6b7280;">待定</span>
+                                    <span v-if="r.is_win === true" class="tag tag-win">盈</span>
+                                    <span v-else-if="r.is_win === false" class="tag tag-lose">亏</span>
+                                    <span v-else class="tag tag-pending">待定</span>
                                     <span v-if="r.is_zhaban" class="tag" style="background:#78350f;color:#fbbf24;margin-left:2px;">炸</span>
                                 </td>
                                 <td style="font-size:11px;line-height:1.5;" :title="r.decision && r.decision.reason || ''">
@@ -1015,10 +1196,6 @@
                                     </template>
                                     <span v-else style="color:#4b5563;">—</span>
                                 </td>
-                                <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">
-                                    <span v-if="r.sanbanzhu" style="color:#ef4444;font-weight:600;" :title="r.sanbanzhu_detail">⚠️三板组</span>
-                                    <span v-if="r.board_label" style="color:#6b7280;">{{ r.board_label }}</span>
-                                </td>
                             </tr>
                         </template>
                     </tbody>
@@ -1031,34 +1208,85 @@
         </div><!-- end v-show monthly -->
     </div>
 
-    <!-- ===== K 线图 Modal （双栏：图左 + 解读右，与看板一致） ===== -->
+    <!-- ===== K 线图 Modal ===== -->
     <div v-if="klineModal.open" class="kline-modal-mask" @click="closeKline">
         <div class="kline-modal" @click.stop>
-            <div class="kline-modal-header">
-                <span><b>{{ klineModal.code }} {{ klineModal.name }}</b> · 日K + 防线</span>
+            <div class="kline-modal-header" style="flex-wrap:wrap;">
+                <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:0;">
+                    <span><b>{{ klineModal.code }} {{ klineModal.name }}</b></span>
+                    <div class="kline-chart-tabs">
+                        <button type="button" class="kline-chart-tab" :class="{ active: klineModal.chartTab === 'minute' }" @click="setKlineChartTab('minute')">分时</button>
+                        <button type="button" class="kline-chart-tab" :class="{ active: klineModal.chartTab === 'daily' }" @click="setKlineChartTab('daily')">日K</button>
+                        <button type="button" class="kline-chart-tab" :class="{ active: klineModal.chartTab === 'weekly' }" @click="setKlineChartTab('weekly')">周K</button>
+                        <span v-if="klineModal.chartTab === 'minute' && minuteFsChart" style="color:#6b7280;font-size:11px;">{{ minuteFsChart.subtitle }}</span>
+                    </div>
+                </div>
                 <span style="margin-left:auto;display:flex;gap:8px;align-items:center;">
-                    <select v-model.number="klineModal.days" @change="reloadKline" style="background:#0d1220;color:#e0e6ed;border:1px solid #2a3050;border-radius:4px;padding:2px 6px;font-size:12px;">
+                    <select v-show="klineModal.chartTab === 'daily'" v-model.number="klineModal.days" @change="reloadKlineChart" style="background:#0d1220;color:#e0e6ed;border:1px solid #2a3050;border-radius:4px;padding:2px 6px;font-size:12px;">
                         <option :value="60">近60日</option>
                         <option :value="90">近90日</option>
                         <option :value="120">近120日</option>
                         <option :value="180">近180日</option>
+                    </select>
+                    <select v-show="klineModal.chartTab === 'weekly'" v-model.number="klineModal.weeks" @change="reloadKlineChart" style="background:#0d1220;color:#e0e6ed;border:1px solid #2a3050;border-radius:4px;padding:2px 6px;font-size:12px;">
+                        <option :value="80">近80周</option>
+                        <option :value="120">近120周</option>
+                        <option :value="160">近160周</option>
+                        <option :value="200">近200周</option>
                     </select>
                     <button class="btn-kline-close" @click="closeKline">✕</button>
                 </span>
             </div>
             <div class="kline-modal-content">
                 <div class="kline-image-pane">
-                    <div v-if="klineModal.loading" style="text-align:center;color:#6b7280;padding:60px;">加载中…</div>
-                    <img v-else-if="klineModal.url" :src="klineModal.url" style="width:100%;display:block;border-radius:4px;">
-                    <div v-else style="text-align:center;color:#ef4444;padding:60px;">{{ klineModal.error || '加载失败' }}</div>
+                    <template v-if="klineModal.chartTab === 'minute'">
+                        <div v-if="klineModal.minuteLoading && !minuteFsChart" style="text-align:center;color:#6b7280;padding:60px;">加载分时…</div>
+                        <div v-else-if="klineModal.minuteError && !minuteFsChart" style="text-align:center;color:#ef4444;padding:60px;">{{ klineModal.minuteError }}</div>
+                        <div v-else-if="minuteFsChart" class="minute-fs-svg-wrap">
+                        <span v-if="klineModal.minuteRefreshing" class="minute-fs-refresh-hint">更新中…</span>
+                        <div v-if="minuteFsChart.signalLegend && minuteFsChart.signalLegend.length" class="minute-signal-legend">
+                            <span style="color:#6b7280;">7格×1.4%</span>
+                            <span v-for="(lg, i) in minuteFsChart.signalLegend" :key="'sl'+i"
+                                class="sig-kind" :class="{ on: isMinuteSignalKindOn(lg.kind) }"
+                                :style="{color: lg.color}" @click="toggleMinuteSignalKind(lg.kind)">● {{ lg.label }}</span>
+                        </div>
+                        <svg :viewBox="`0 0 ${minuteFsChart.W} ${minuteFsChart.H}`" preserveAspectRatio="xMidYMid meet" style="background:#0a0e1a;border-radius:4px;">
+                            <defs><clipPath :id="'minutePriceClipRv'+klineModal.code"><rect :x="minuteFsChart.clipPrice.x" :y="minuteFsChart.clipPrice.y" :width="minuteFsChart.clipPrice.w" :height="minuteFsChart.clipPrice.h" /></clipPath></defs>
+                            <line v-for="(ln, i) in minuteFsChart.hGrid" :key="'hg'+i" :x1="minuteFsChart.padL" :y1="ln.y" :x2="minuteFsChart.padL + minuteFsChart.plotW" :y2="ln.y"
+                                :stroke="ln.zero ? '#94a3b8' : '#3d4f6f'" :stroke-dasharray="ln.zero ? '0' : '4 4'" :stroke-width="ln.zero ? 1.35 : 1.05" />
+                            <line v-if="minuteFsChart.preY != null" :x1="minuteFsChart.padL" :y1="minuteFsChart.preY" :x2="minuteFsChart.padL + minuteFsChart.plotW" :y2="minuteFsChart.preY" stroke="#cbd5e1" stroke-dasharray="6 4" />
+                            <text v-for="(lb, i) in minuteFsChart.yLabelsL" :key="'yl'+i" :x="lb.x" :y="lb.y" :fill="lb.col" font-size="10">{{ lb.text }}</text>
+                            <text v-for="(lb, i) in minuteFsChart.yLabelsR" :key="'yr'+i" :x="lb.x" :y="lb.y" :fill="lb.col" font-size="10" text-anchor="end">{{ lb.text }}</text>
+                            <rect v-for="(b, i) in minuteFsChart.volBars" :key="'vb'+i" :x="b.x" :y="b.y" :width="b.w" :height="b.h" :fill="b.color" opacity="0.92" />
+                            <g :clip-path="'url(#minutePriceClipRv'+klineModal.code+')'">
+                                <path v-if="minuteFsChart.avgPathD" :d="minuteFsChart.avgPathD" fill="none" stroke="#94a3b8" stroke-width="1.45" />
+                                <path v-if="minuteFsChart.pricePathD" :d="minuteFsChart.pricePathD" fill="none" stroke="#38bdf8" stroke-width="1.75" />
+                            </g>
+                            <g v-for="(mk, i) in minuteFsChart.signalMarkers" :key="'sig'+i">
+                                <polygon v-if="mk.side === 'buy'" :points="mk.points" :fill="mk.color" />
+                                <polygon v-else :points="mk.points" :fill="mk.color" />
+                            </g>
+                            <text v-for="(xl, i) in minuteFsChart.xLabels" :key="'xl'+i" :x="xl.x" :y="minuteFsChart.H - 6" fill="#94a3b8" font-size="10" text-anchor="middle">{{ xl.t }}</text>
+                        </svg>
+                        </div>
+                        <div v-else style="text-align:center;color:#6b7280;padding:60px;">暂无分时数据</div>
+                    </template>
+                    <template v-else>
+                        <div v-if="klineModal.loading && !klineModal.url" style="text-align:center;color:#6b7280;padding:60px;">加载中…</div>
+                        <div v-else-if="klineModal.url" style="position:relative;">
+                            <span v-if="klineModal.klineRefreshing" class="minute-fs-refresh-hint">更新中…</span>
+                            <img :src="klineModal.url" style="width:100%;display:block;border-radius:4px;">
+                        </div>
+                        <div v-else style="text-align:center;color:#ef4444;padding:60px;">{{ klineModal.error || '加载失败' }}</div>
+                    </template>
                 </div>
                 <div class="kline-analysis-pane">
                     <div v-if="klineModal.analysisLoading" style="color:#6b7280;text-align:center;padding:40px;">分析中…</div>
                     <template v-else-if="klineModal.analysis">
                         <div class="ka-section">
                             <div class="ka-title">📊 当日竞价数据 <small v-if="klineModal.analysis.data_source !== 'auction'" style="color:#fbbf24;">⚠️ 无竞价数据，回退 K 线收盘</small></div>
-                            <div class="ka-row"><span class="ka-label">{{ klineModal.analysis.data_source === 'auction' ? '开盘价' : '当前价' }}</span><span class="ka-val">{{ klineModal.analysis.price }}</span></div>
-                            <div class="ka-row"><span class="ka-label">{{ klineModal.analysis.data_source === 'auction' ? '竞价涨幅' : '今日涨幅' }}</span><span class="ka-val" :class="(klineModal.analysis.gain_pct||0) >= 0 ? 'pos' : 'neg'">{{ fmtPct(klineModal.analysis.gain_pct) }}</span></div>
+                            <div class="ka-row"><span class="ka-label">{{ klineModal.analysis.data_source === 'auction' ? '开盘价' : '当前价' }}</span><span class="ka-val">{{ klineModalLive.price ?? klineModal.analysis.price }}</span></div>
+                            <div class="ka-row"><span class="ka-label">{{ klineModal.analysis.data_source === 'auction' ? '竞价涨幅' : '今日涨幅' }}</span><span class="ka-val" :class="(klineModalLive.pct ?? klineModal.analysis.gain_pct ?? 0) >= 0 ? 'pos' : 'neg'">{{ fmtPct(klineModalLive.pct ?? klineModal.analysis.gain_pct) }}</span></div>
                             <div class="ka-row"><span class="ka-label">{{ klineModal.analysis.data_source === 'auction' ? '竞价成交(手)' : '成交量(手)' }}</span><span class="ka-val">{{ Number(klineModal.analysis.volume_lots||0).toLocaleString() }}</span></div>
                         </div>
                         <div class="ka-section">
@@ -1079,33 +1307,46 @@
                                 <span class="ka-label">连板指数</span><span class="ka-val" :class="(klineModal.analysis.market_ctx.lianban_index_pct||0) >= 0 ? 'pos' : 'neg'">{{ fmtPct(klineModal.analysis.market_ctx.lianban_index_pct) }}</span>
                             </div>
                             <div class="ka-row" v-if="klineModal.analysis.market_ctx?.b1_rate != null">
-                                <span class="ka-label">1进2成功率</span><span class="ka-val">{{ klineModal.analysis.market_ctx.b1_rate }}%</span>
+                                <span class="ka-label">1进2成功率</span>
+                                <span class="ka-val">
+                                    {{ klineModal.analysis.market_ctx.b1_rate }}%
+                                    <small v-if="klineModal.analysis.market_ctx.b1_review_date" style="color:#6b7280;margin-left:4px;">复盘 {{ klineModal.analysis.market_ctx.b1_review_date }}</small>
+                                    <small v-if="klineModal.analysis.market_ctx.b1_env_level" style="color:#9ca3af;">({{ klineModal.analysis.market_ctx.b1_env_level }})</small>
+                                </span>
                             </div>
                         </div>
                         <div class="ka-section">
-                            <div class="ka-title">⚖️ 操作建议（v3.3 同源）</div>
+                            <div class="ka-title">⚖️ 操作建议</div>
                             <div class="ka-row"><span class="ka-label">是否可操作</span><span class="ka-val" :class="klineModal.analysis.operable ? 'pos' : 'neg'">{{ klineModal.analysis.operable ? '✅ 是' : '⛔ 否' }}</span></div>
                             <div class="ka-row"><span class="ka-label">建议仓位</span><span class="ka-val pos">{{ klineModal.analysis.position }}</span></div>
-                            <div class="ka-row" v-if="klineModal.analysis.ladder_label"><span class="ka-label">推荐梯队</span><span class="ka-val">{{ klineModal.analysis.ladder_label }}</span></div>
-                            <div class="ka-row"><span class="ka-label">买入条件</span><span class="ka-val" style="font-size:11px;">{{ klineModal.analysis.buy_condition }}</span></div>
-                            <div class="ka-row" v-if="klineModal.analysis.stop_loss && klineModal.analysis.stop_loss !== '—'"><span class="ka-label">止损位</span><span class="ka-val warn" style="font-size:11px;">{{ klineModal.analysis.stop_loss }}</span></div>
+                            <div class="ka-row" v-if="klineModal.analysis.recommended_ladder || klineModal.analysis.ladder_label">
+                                <span class="ka-label">推荐梯队</span><span class="ka-val">{{ klineModal.analysis.recommended_ladder || klineModal.analysis.ladder_label }}</span>
+                            </div>
+                            <div class="ka-row" v-if="klineModal.analysis.operable && klineModal.analysis.buy_condition">
+                                <span class="ka-label">买入条件</span><span class="ka-val" style="font-size:11px;">{{ klineModal.analysis.buy_condition }}</span>
+                            </div>
+                            <div class="ka-row" v-if="klineModal.analysis.operable && klineModal.analysis.stop_loss && klineModal.analysis.stop_loss !== '—'">
+                                <span class="ka-label">止损位</span><span class="ka-val warn" style="font-size:11px;">{{ klineModal.analysis.stop_loss }}</span>
+                            </div>
                             <div class="ka-row" v-if="!klineModal.analysis.operable && klineModal.analysis.reversal_condition">
                                 <span class="ka-label">逆转条件</span>
-                                <span class="ka-val" style="font-size:11px;color:#fbbf24;">⏳ {{ klineModal.analysis.reversal_condition }}</span>
+                                <span class="ka-val" style="font-size:11px;color:#fbbf24;">{{ klineModal.analysis.reversal_condition }}</span>
                             </div>
                         </div>
                         <div class="ka-section" v-if="(klineModal.analysis.checks||[]).length">
-                            <div class="ka-title">📋 综合打分（v3.3 决策规则逐项）</div>
+                            <div class="ka-title">{{ klineModal.analysis.checks_title || '📋 综合打分（v3.3 决策规则逐项）' }}</div>
                             <div v-for="(c, i) in klineModal.analysis.checks" :key="'c-'+i" class="ka-bullet" :class="c.pass === false ? 'penalty' : 'bonus'">
                                 {{ c.pass === false ? '✗' : '✓' }} {{ c.label }}：<b>{{ c.value }}</b>
-                                <span style="color:#6b7280;margin-left:6px;font-size:11px;">需 {{ c.need }}</span>
+                                <span style="color:#6b7280;margin-left:4px;font-size:11px;">{{ c.hint || (c.pass ? '(达标)' : '(需 ' + c.need + ')') }}</span>
+                                <span v-if="c.verdict" style="color:#f87171;margin-left:4px;font-size:11px;">→ {{ c.verdict }}</span>
                             </div>
+                            <div v-if="klineModal.analysis.checks_conclusion" class="ka-bullet" style="margin-top:6px;color:#d1d5db;font-size:12px;">{{ klineModal.analysis.checks_conclusion }}</div>
                         </div>
                     </template>
                     <div v-else style="color:#6b7280;text-align:center;padding:40px;">{{ klineModal.analysisError || '解读加载失败' }}</div>
                 </div>
             </div>
-            <div class="kline-modal-legend">
+            <div class="kline-modal-legend" v-if="klineModal.chartTab === 'daily'">
                 <span style="color:#d946ef;">━ VARAB 综合均线</span>
                 <span style="color:#ef4444;">━ 起拔线</span>
                 <span style="color:#22c55e;">┄ 最近涨停高</span>
@@ -1115,6 +1356,19 @@
                 <span style="color:#fbbf24;">◆ 突破</span>
                 <span style="color:#10b981;">● 拉升</span>
                 <span style="color:#60a5fa;">▼ 超跌</span>
+            </div>
+            <div class="kline-modal-legend" v-else-if="klineModal.chartTab === 'weekly'">
+                <span style="color:#fbbf24;">━ MA5</span>
+                <span style="color:#60a5fa;">━ MA10</span>
+                <span style="color:#a78bfa;">━ MA21</span>
+                <span style="color:#f472b6;">━ MA240</span>
+            </div>
+            <div class="kline-modal-legend" v-else>
+                <span style="color:#38bdf8;">━ 现价</span>
+                <span style="color:#94a3b8;">━ 均价</span>
+                <span style="color:#6b7280;">7格×1.4% · 柱：分成交量 · 左价右涨跌幅%</span>
+                <span style="color:#22c55e;">▲ 做T买</span>
+                <span style="color:#ef4444;">▼ 做T卖</span>
             </div>
         </div>
     </div>
@@ -1126,17 +1380,39 @@
 .sb-val { font-size:18px;font-weight:700;color:#e0e6ed;margin-top:2px; }
 .tag-win { background: #3b0a0a; color: #ef4444; display:inline-block; padding:1px 6px; border-radius:4px; font-size:11px; }
 .tag-lose { background: #0a2a1a; color: #10b981; display:inline-block; padding:1px 6px; border-radius:4px; font-size:11px; }
+.tag-pending { background: #1a1a2e; color: #6b7280; display:inline-block; padding:1px 6px; border-radius:4px; font-size:11px; }
 
-/* 月度复盘 — 4 张胜率卡 */
-.hist-stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
-.hist-stat-card { background:#0d1220; border:1px solid #1e2a45; border-radius:10px; padding:14px; text-align:center; }
-.hsc-label { font-size:12px; color:#8892a8; margin-bottom:6px; }
-.hsc-rate { font-size:28px; font-weight:700; }
-.hsc-detail { font-size:11px; color:#6b7280; margin-top:2px; }
-/* 中国市场习惯：高胜率→红，低胜率→绿 */
-.hsc-rate.rate-high { color:#ef4444; }
-.hsc-rate.rate-mid  { color:#fbbf24; }
-.hsc-rate.rate-low  { color:#10b981; }
+/* 月度复盘 — 核心绩效对比卡 */
+.hist-compare-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; margin-top:12px; }
+.hist-compare-card { background:#0d1220;border:1px solid #1e2a45;border-radius:10px;padding:10px 8px;text-align:center; min-width:0; }
+.hcc-label { font-size:10px;color:#8892a8;margin-bottom:4px;white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.hcc-val { font-size:17px;font-weight:700;color:#e0e6ed; }
+.hist-trend-wrap { width:100%; overflow:hidden; }
+.hist-trend-svg { width:100%; min-height:240px; display:block; background:#0d1220;border-radius:8px; }
+.hcc-prev { font-size:10px;color:#6b7280;margin-top:2px; }
+.hcc-delta { font-size:11px;font-weight:600;margin-top:2px; }
+.hcc-up { color:#ef4444; } .hcc-down { color:#10b981; } .hcc-flat { color:#6b7280; }
+.hcc-zm { font-size:10px;padding:1px 4px;border-radius:3px;margin-top:2px;display:inline-block; }
+.hcc-zm-up { background:#1a3a2a;color:#34d399; } .hcc-zm-down { background:#3a1a1a;color:#ef4444; }
+
+/* 月度复盘 — 收益贡献占比柱状条 */
+.share-bar-wrap { display:flex; align-items:center; gap:8px; }
+.share-bar-track { flex:1; height:12px; background:#1a2040; border-radius:4px; overflow:hidden; min-width:60px; }
+.share-bar-fill { height:100%; border-radius:4px; transition:width 0.5s ease; min-width:4px; }
+.share-bar-label { font-size:11px; color:#a0aec0; min-width:32px; text-align:right; }
+
+/* 归因表样式 */
+.attr-row-warn { background:rgba(251,191,36,0.05); }
+.attribution-table { width:100%; border-collapse:collapse; }
+.attribution-table th { text-align:left; padding:7px 10px; font-size:11px; color:#6b7280; border-bottom:1px solid #1e2a45; font-weight:500; }
+.attribution-table td { padding:7px 8px; font-size:12px; border-bottom:1px solid #0d1220; }
+.attribution-table tr:hover td { background:#0d1220; }
+
+@media (max-width: 1200px) { .hist-compare-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 900px) { .hist-compare-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 600px) { .hist-compare-grid { grid-template-columns: repeat(2, 1fr); } }
+
+@media (max-width: 768px) { .attribution-table { font-size:11px; } }
 
 /* 月度复盘 — 历史选股记录表 */
 .hist-table { width:100%; border-collapse:collapse; }
@@ -1145,13 +1421,17 @@
 .hist-table tr:hover td { background:#0d1220; }
 .hist-table .date-group { background:#0d1220; padding:6px 12px; font-size:12px; color:#60a5fa; font-weight:600; border-left:3px solid #3b82f6; }
 .tag { display:inline-block; padding:1px 6px; border-radius:4px; font-size:11px; }
-
-@media (max-width: 768px) {
-    .hist-stats-row { grid-template-columns: repeat(2, 1fr); }
-}
 </style>
 
 <script>
+let _klineMinuteTimer = null
+function _stopKlineMinutePoll() {
+    if (_klineMinuteTimer) { clearInterval(_klineMinuteTimer); _klineMinuteTimer = null }
+}
+let _klineSpotTimer = null
+function _stopKlineSpotPoll() {
+    if (_klineSpotTimer) { clearInterval(_klineSpotTimer); _klineSpotTimer = null }
+}
 const { createApp, ref, computed, onMounted } = Vue
 createApp({
     setup() {
@@ -1177,37 +1457,232 @@ createApp({
             return ''
         }
 
-        // K 线 modal（复用看板逻辑）
-        const klineModal = ref({
-            open: false, code: '', name: '', days: 60,
-            url: '', loading: false, error: '',
-            analysis: null, analysisLoading: false, analysisError: '',
+        const marketSession = ref({
+            trading_day: true,
+            intraday: false,
+            post_market: true,
+            eod_running: false,
+            poll_live: false,
+            poll_minute: false,
+            poll_screener_history_light: false,
         })
-        function openKline(code, name) {
+        async function refreshMarketSession() {
+            try {
+                const r = await fetch('/api/market-session')
+                if (r.ok) {
+                    const s = await r.json()
+                    marketSession.value = { ...marketSession.value, ...s }
+                }
+            } catch (_) { /* ignore */ }
+            return marketSession.value
+        }
+        function shouldPollLive() {
+            return !!marketSession.value.poll_live
+        }
+        function shouldPollMinute() {
+            return !!marketSession.value.poll_minute
+        }
+
+        // K 线 modal
+        const klineModal = ref({
+            open: false, code: '', name: '', days: 60, weeks: 120,
+            chartTab: 'daily',
+            url: '', loading: false, error: '',
+            minutePayload: null, minuteLoading: false, minuteRefreshing: false, minuteError: '',
+            analysis: null, analysisLoading: false, analysisError: '',
+            klineForceRefresh: false, klineRefreshing: false,
+        })
+        function _hasMinuteChart(m) {
+            const p = m.minutePayload
+            return !!(p && p.bars && p.bars.length)
+        }
+        let _minuteFetchInitial = null
+        let _minuteFetchBg = null
+        async function loadMinuteSeries(forceRefresh = false) {
+            const m = klineModal.value
+            if (!m.code || m.chartTab !== 'minute') return
+            if (forceRefresh) await refreshMarketSession()
+            if (forceRefresh && !shouldPollMinute()) return
+            const hadChart = _hasMinuteChart(m)
+            const prev = forceRefresh ? _minuteFetchBg : _minuteFetchInitial
+            if (prev) {
+                try { prev.abort() } catch (_) { /* ignore */ }
+            }
+            const ctrl = forceRefresh ? (_minuteFetchBg = new AbortController()) : (_minuteFetchInitial = new AbortController())
+            const signal = ctrl.signal
+            const timeoutMs = 120000
+            const timer = setTimeout(() => {
+                try { ctrl.abort() } catch (_) { /* ignore */ }
+            }, timeoutMs)
+            if (hadChart) {
+                m.minuteRefreshing = true
+            } else {
+                m.minuteLoading = true
+                m.minuteError = ''
+            }
+            try {
+                const refreshQ = forceRefresh ? 'refresh=1&' : 'refresh=0&'
+                const res = await fetch(`/api/minute/${m.code}?${refreshQ}_=${Date.now()}`, { signal })
+                const j = await res.json()
+                if (!j.bars || !j.bars.length) {
+                    if (!hadChart) {
+                        m.minutePayload = null
+                        m.minuteError = j.error || '无分时数据'
+                    }
+                } else {
+                    m.minutePayload = j
+                    initMinuteSignalFilter(j)
+                    m.minuteError = ''
+                }
+            } catch (e) {
+                if (e && e.name === 'AbortError') {
+                    if (forceRefresh) return
+                    if (!hadChart) m.minuteError = '分时加载超时，请重试'
+                } else if (!hadChart) {
+                    m.minuteError = '分时加载失败: ' + (e && e.message ? e.message : e)
+                    m.minutePayload = null
+                }
+            } finally {
+                clearTimeout(timer)
+                m.minuteLoading = false
+                m.minuteRefreshing = false
+            }
+        }
+        let _klineBgRefreshTimer = null
+        function _stopKlineBgRefresh() {
+            if (_klineBgRefreshTimer) { clearTimeout(_klineBgRefreshTimer); _klineBgRefreshTimer = null }
+        }
+        function scheduleKlineBgRefresh() {
+            if (!shouldPollLive()) return
+            _stopKlineBgRefresh()
+            const code = klineModal.value.code
+            _klineBgRefreshTimer = setTimeout(() => {
+                _klineBgRefreshTimer = null
+                const m = klineModal.value
+                if (!m.open || m.code !== code || m.chartTab === 'minute') return
+                m.klineForceRefresh = true
+                reloadKlineChart()
+            }, 500)
+        }
+        function reloadKlineChart() {
+            const m = klineModal.value
+            if (m.chartTab === 'minute') {
+                loadMinuteSeries()
+                return
+            }
+            const bg = !!m.klineForceRefresh
+            if (!bg) { m.url = ''; m.loading = true } else { m.klineRefreshing = true }
+            m.error = ''
+            const ts = Date.now()
+            const rf = m.klineForceRefresh ? '&refresh=1' : ''
+            const url = m.chartTab === 'weekly'
+                ? `/api/kline-weekly/${m.code}?weeks=${m.weeks}${rf}&_=${ts}`
+                : `/api/kline/${m.code}?days=${m.days}${rf}&_=${ts}`
+            const ctrl = new AbortController()
+            let settled = false
+            const finish = (ok, errMsg) => {
+                if (settled) return
+                settled = true
+                clearTimeout(timer)
+                ctrl.abort()
+                if (ok) { m.error = ''; m.klineForceRefresh = false }
+                else { m.error = errMsg || '加载失败（K线接口异常）' }
+                m.loading = false
+                m.klineRefreshing = false
+            }
+            const timer = setTimeout(() => finish(false, 'K线加载超时，请重试'), 45000)
+            fetch(url, { signal: ctrl.signal })
+                .then((r) => {
+                    if (!r.ok) { finish(false, '加载失败（' + r.status + '）'); return null }
+                    return r.blob()
+                })
+                .then((blob) => {
+                    if (!blob) return
+                    const prev = m.url
+                    m.url = URL.createObjectURL(blob)
+                    if (prev && prev.startsWith('blob:')) { try { URL.revokeObjectURL(prev) } catch (e) {} }
+                    finish(true)
+                })
+                .catch((e) => {
+                    if (e && e.name === 'AbortError') return
+                    finish(false, '加载失败（K线接口异常）')
+                })
+        }
+        async function setKlineChartTab(tab) {
+            const m = klineModal.value
+            if (m.chartTab === tab) return
+            _stopKlineMinutePoll()
+            m.chartTab = tab
+            if (tab === 'minute') {
+                await refreshMarketSession()
+                loadMinuteSeries(false)
+                if (shouldPollMinute()) {
+                    _klineMinuteTimer = setInterval(() => {
+                        const x = klineModal.value
+                        if (x.open && x.chartTab === 'minute' && x.code) loadMinuteSeries(true)
+                    }, 20000)
+                }
+            } else {
+                reloadKlineChart()
+            }
+        }
+        const klineModalLive = ref({ price: null, pct: null })
+        function _padCode6(x) {
+            const d = String(x || '').replace(/\D/g, '')
+            if (d.length >= 6) return d.slice(-6)
+            if (d.length > 0) return d.padStart(6, '0')
+            return ''
+        }
+        async function refreshKlineModalLive() {
+            if (!shouldPollLive()) return
+            const m = klineModal.value
+            if (!m.open || !m.code) return
+            const code = _padCode6(m.code)
+            if (!code) return
+            try {
+                const res = await fetch(`/api/hit-live?codes=${code}`).then(r => r.json())
+                const row = res[code] || res[String(code)] || {}
+                klineModalLive.value = {
+                    price: row.price != null ? row.price : null,
+                    pct: row.pct != null ? row.pct : null,
+                }
+            } catch (e) { /* ignore */ }
+        }
+        function startKlineModalLivePoll() {
+            _stopKlineSpotPoll()
+            klineModalLive.value = { price: null, pct: null }
+            if (!shouldPollLive()) return
+            void refreshKlineModalLive()
+            _klineSpotTimer = setInterval(refreshKlineModalLive, 3000)
+        }
+        async function openKline(code, name) {
+            await refreshMarketSession()
             klineModal.value.open = true
             klineModal.value.code = code
             klineModal.value.name = name || ''
             klineModal.value.days = 60
+            klineModal.value.weeks = 120
+            klineModal.value.chartTab = 'daily'
+            klineModal.value.minutePayload = null
+            klineModal.value.minuteError = ''
             klineModal.value.analysis = null
             klineModal.value.analysisError = ''
-            reloadKline()
-            loadAnalysis()
+            klineModal.value.klineForceRefresh = false
+            reloadKlineChart()
+            scheduleKlineBgRefresh()
+            setTimeout(() => loadAnalysis(), 600)
+            startKlineModalLivePoll()
         }
         function closeKline() {
+            _stopKlineMinutePoll()
+            _stopKlineSpotPoll()
+            _stopKlineBgRefresh()
+            klineModalLive.value = { price: null, pct: null }
             klineModal.value.open = false
             klineModal.value.url = ''
             klineModal.value.analysis = null
-        }
-        function reloadKline() {
-            const m = klineModal.value
-            m.loading = true
-            m.error = ''
-            const ts = Date.now()
-            const url = `/api/kline/${m.code}?days=${m.days}&_=${ts}`
-            const img = new Image()
-            img.onload = () => { m.url = url; m.loading = false }
-            img.onerror = () => { m.error = '加载失败（K线接口异常）'; m.loading = false }
-            img.src = url
+            klineModal.value.minutePayload = null
+            klineModal.value.chartTab = 'daily'
         }
         async function loadAnalysis() {
             const m = klineModal.value
@@ -1224,8 +1699,38 @@ createApp({
                 m.analysisLoading = false
             }
         }
+        const minuteSignalOn = ref({})
+        function initMinuteSignalFilter(payload) {
+            const base = { ...(payload?.signal_filter_default || {}) }
+            for (const lg of (payload?.signal_legend || [])) {
+                if (lg && lg.kind && base[lg.kind] === undefined) base[lg.kind] = lg.default_on !== false
+            }
+            minuteSignalOn.value = base
+        }
+        function isMinuteSignalKindOn(kind) {
+            if (!kind) return true
+            return minuteSignalOn.value[kind] !== false
+        }
+        function toggleMinuteSignalKind(kind) {
+            const next = { ...minuteSignalOn.value }
+            next[kind] = !isMinuteSignalKindOn(kind)
+            minuteSignalOn.value = next
+        }
+        const minuteFsChart = computed(() => {
+            const m = klineModal.value
+            const mp = m.minutePayload
+            const pre = mp && mp.pre_close != null ? Number(mp.pre_close) : null
+            return window.buildMinuteFsChart?.({
+                minutePayload: mp,
+                code: m.code,
+                name: m.name,
+                preCloseLive: pre,
+                signalOn: minuteSignalOn.value,
+            }) ?? null
+        })
+
         const insight = ref({})
-        const showFailed = ref(false)
+        const showFailed = ref(true)
         const ladderOpen = ref(false)   // 连板天梯默认折叠
         const sectorOpen = ref(false)   // 板块涨停分布默认折叠
         const conceptOpen = ref(true)   // 最强概念梯队默认展开
@@ -1240,10 +1745,15 @@ createApp({
             by_board: {}, by_emotion: {}, by_outcome: {}, by_cycle_stock: {},
         })
         const histPeriods = ref([])  // [{year, month}]
+        const histMonthlyTrend = ref([])  // 近6个月趋势 [{label, trades, win_rate, avg_return, zt_rate}]
+        const histMonthlyReview = ref(null)
         const histYear = ref('')
         const histMonth = ref('')
         const histLoading = ref(false)
         const histLoaded = ref(false)   // 首次加载完成标记，未完成前不显示「无数据」
+        const histDimsOpen = ref(true)  // 分维度胜率默认展开
+        const histGuideOpen = ref(true) // 开仓指导默认展开
+        const histTableOpen = ref(true) // 历史记录表格默认展开
 
         const histAvailableYears = computed(() => {
             const ys = new Set()
@@ -1320,16 +1830,251 @@ createApp({
         function ciTagLabel(tag) {
             return { new_entry: '新进', accelerating: '加速', sustained: '持续', decelerating: '减速', exhausting: '退潮' }[tag] || tag
         }
+        function fmtNum(v, digits = 2) {
+            if (v === null || v === undefined || v === '') return '—'
+            const n = Number(v)
+            if (!Number.isFinite(n)) return '—'
+            return n.toFixed(digits)
+        }
+        function fmtPrice(v) {
+            return fmtNum(v, 2)
+        }
         function fmtPct(v) {
-            if (v === null || v === undefined || v === '' || isNaN(v)) return '-'
-            const n = Number(v); return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
+            if (v === null || v === undefined || v === '') return '—'
+            const n = Number(v)
+            if (!Number.isFinite(n)) return '—'
+            return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
+        }
+        function fmtPctPlain(v) {
+            if (v === null || v === undefined || v === '') return '—'
+            const n = Number(v)
+            if (!Number.isFinite(n)) return '—'
+            return n.toFixed(2) + '%'
         }
         function numClass(v) {
             if (v === null || v === undefined || v === '' || isNaN(v)) return ''
             return Number(v) >= 0 ? 'gain-pos' : 'gain-neg'
         }
+        function deltaClass(delta) {
+            if (delta === null || delta === undefined || isNaN(delta)) return 'hcc-flat'
+            return delta > 0 ? 'hcc-up' : delta < 0 ? 'hcc-down' : 'hcc-flat'
+        }
+        function deltaText(curr, prev, suffix) {
+            if (curr === null || curr === undefined || isNaN(curr)) return '—'
+            const delta = curr - (prev || 0)
+            if (delta === 0) return '0' + suffix
+            const sign = delta > 0 ? '+' : ''
+            return sign + delta.toFixed(suffix === '%' ? 1 : 0) + suffix
+        }
 
-        // 今日决策标签样式（依据评分卡 verdict）
+        // 近6个月趋势图（SVG 折线图）
+        const histTrendChart = computed(() => {
+            const data = histMonthlyTrend.value
+            if (!data || data.length < 2) return null
+            const W = 960, H = 260, padL = 44, padR = 24, padT = 18, padB = 48
+            const plotW = W - padL - padR
+            const plotH = H - padT - padB
+
+            const wrVals = data.map(d => d.win_rate || 0)
+            const trVals = data.map(d => d.trades || 0)
+            const arVals = data.map(d => d.avg_return != null ? d.avg_return : 0)
+
+            const normSeries = (vals) => {
+                const minV = Math.min(...vals)
+                const maxV = Math.max(...vals)
+                const span = maxV - minV || 1
+                return { vals, minV, maxV, span }
+            }
+            const wrN = normSeries(wrVals)
+            const trN = normSeries(trVals)
+            const arN = normSeries(arVals)
+
+            const yTicks = [
+                { y: padT + plotH * 0.25, label: '胜率' },
+                { y: padT + plotH * 0.5, label: '笔数' },
+                { y: padT + plotH * 0.75, label: '收益' },
+            ]
+
+            const xLabels = data.map(d => d.label)
+            const xAt = (i) => {
+                const n = data.length
+                if (n <= 1) return padL + plotW / 2
+                return padL + (i / (n - 1)) * plotW
+            }
+
+            const linePoints = (series) => {
+                const { vals, minV, span } = series
+                return vals.map((v, i) => {
+                    const x = xAt(i)
+                    const y = padT + plotH - ((v - minV) / span) * plotH
+                    return { x, y, raw: v }
+                })
+            }
+            const wrPts = linePoints(wrN)
+            const trPts = linePoints(trN)
+            const arPts = linePoints(arN)
+
+            const polyline = (pts) => pts.length < 2
+                ? ''
+                : pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
+
+            const points = (pts) => pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
+
+            return {
+                W, H, padL, padR, padT, padB,
+                yTicks,
+                xLabels,
+                xAt,
+                wrPts, trPts, arPts,
+                wrLine: polyline(wrPts),
+                trLine: polyline(trPts),
+                arLine: polyline(arPts),
+                wrPoints: points(wrPts),
+                trPoints: points(trPts),
+                arPoints: points(arPts),
+                wrRaw: wrVals,
+                trRaw: trVals,
+                arRaw: arVals,
+            }
+        })
+
+        // 历史均值（近6个月，不含当月）— 优先 monthly-review API
+        const histAvgStats = computed(() => {
+            const apiAvg = histMonthlyReview.value?.history_avg
+            if (apiAvg && typeof apiAvg === 'object') {
+                return {
+                    trades: apiAvg.weekly_trades != null ? Math.round(apiAvg.weekly_trades * 4 * 10) / 10 : 0,
+                    win_rate: apiAvg.win_rate ?? 0,
+                    avg_return: apiAvg.avg_return ?? 0,
+                    zt_rate: apiAvg.signal_to_limit_pct ?? 0,
+                    signal_to_limit_pct: apiAvg.signal_to_limit_pct ?? 0,
+                    weekly_trades: apiAvg.weekly_trades ?? 0,
+                    board_2_3_win_rate: apiAvg.board_2_3_win_rate,
+                    board_3_4_win_rate: apiAvg.board_3_4_win_rate,
+                    board_4_5_win_rate: apiAvg.board_4_5_win_rate,
+                }
+            }
+            const data = histMonthlyTrend.value
+            if (!data || data.length === 0) return null
+            const avg = (key) => {
+                const vals = data.map(d => d[key]).filter(v => v != null)
+                return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
+            }
+            const trades = avg('trades')
+            const win_rate = avg('win_rate')
+            const avg_return = avg('avg_return')
+            const zt_rate = avg('zt_rate')
+            return {
+                trades: Math.round(trades * 10) / 10,
+                win_rate: Math.round(win_rate * 10) / 10,
+                avg_return: Math.round(avg_return * 100) / 100,
+                zt_rate: Math.round(zt_rate * 100) / 100,
+                signal_to_limit_pct: Math.round(zt_rate * 100) / 100,
+            }
+        })
+
+        const histUpdatedAt = computed(() => histMonthlyReview.value?.updated_at || '')
+
+        const histBacktestRule = computed(() =>
+            histMonthlyReview.value?.backtest_rule
+            || histStats.value?.backtest_rule
+            || '收益回测：收盘买→次日收盘卖 · 仅策略开仓计交易 · 建议仓位加权按日复利')
+
+        const histActiveSuggestion = computed(() =>
+            histMonthlyReview.value?.suggestion || histStats.value?.suggestion || null)
+
+        const histImprovements = computed(() => {
+            const tips = histMonthlyReview.value?.improvement_suggestions
+            return Array.isArray(tips) ? tips : []
+        })
+
+        function _compareHint(label, delta, curr, avg) {
+            if (curr == null || avg == null || isNaN(curr) || isNaN(avg)) return '样本不足'
+            if (Math.abs(delta) <= (label.includes('胜率') ? 3 : 0.5)) return '接近常态'
+            return delta > 0 ? '高于常态' : '低于常态'
+        }
+
+        const histCompareRows = computed(() => {
+            const m = histStats.value?.monthly
+            const avg = histAvgStats.value
+            if (!m || !avg || !m.trades) return []
+            const rows = [
+                { label: '胜率', curr: m.win_rate, avg: avg.win_rate, suffix: '%' },
+                { label: '2进3胜率', curr: histStats.value?.by_board?.['2进3']?.win_rate, avg: avg.board_2_3_win_rate, suffix: '%' },
+                { label: '3进4胜率', curr: histStats.value?.by_board?.['3进4']?.win_rate, avg: avg.board_3_4_win_rate, suffix: '%' },
+                { label: '4进5胜率', curr: histStats.value?.by_board?.['4进5']?.win_rate, avg: avg.board_4_5_win_rate, suffix: '%' },
+                { label: '平均收益', curr: m.avg_return, avg: avg.avg_return, suffix: '%' },
+                { label: '周交易频率', curr: m.trades / 4, avg: avg.weekly_trades, suffix: '' },
+                { label: '涨停转化率', curr: (m.signal_to_limit_pct ?? m.zt_rate), avg: (avg.signal_to_limit_pct ?? avg.zt_rate), suffix: '%' },
+            ]
+            return rows.filter(r => r.curr != null || r.avg != null).map(r => {
+                const curr = r.curr != null ? Number(r.curr) : null
+                const av = r.avg != null ? Number(r.avg) : null
+                const delta = (curr != null && av != null) ? curr - av : null
+                const fmtN = (v) => v == null || isNaN(v) ? '—' : (r.suffix === '%' ? v.toFixed(1) + '%' : v.toFixed(2))
+                return {
+                    label: r.label,
+                    delta,
+                    fmtCurr: fmtN(curr),
+                    fmtAvg: fmtN(av),
+                    fmtDelta: delta == null ? '—' : deltaText(curr, av, r.suffix),
+                    hint: _compareHint(r.label, delta, curr, av),
+                }
+            })
+        })
+
+        function boardTags(label) {
+            const bd = histMonthlyReview.value?.board_breakdown?.[label]
+            if (bd && Array.isArray(bd.tags) && bd.tags.length) return bd.tags
+            const s = histStats.value?.by_board?.[label]
+            if (!s) return []
+            const tags = []
+            if ((s.trades || 0) < 3) tags.push('样本少')
+            const tr = boardTotalReturn(s)
+            const monthTr = histStats.value?.monthly?.cumulative_return
+            if (tr != null && monthTr) {
+                if (tr > 0 && Math.abs(tr) >= Math.abs(monthTr) * 0.4) tags.push('主要盈利源')
+                if (tr < 0 && Math.abs(tr) >= Math.abs(monthTr) * 0.4) tags.push('主要亏损源')
+            }
+            return tags
+        }
+
+        // 连板类型归因表 helpers
+        function boardTotalReturn(s) {
+            if (s && s.total_return != null) return Number(s.total_return)
+            if (!s || s.trades == null || s.avg_return == null) return null
+            return s.avg_return * s.trades
+        }
+        function boardShare(s) {
+            if (!histStats.monthly || !histStats.monthly.trades || !s || !s.trades) return '—'
+            return ((s.trades / histStats.monthly.trades) * 100).toFixed(0) + '%'
+        }
+        function boardSharePct(s) {
+            if (!histStats.monthly || !histStats.monthly.trades || !s || !s.trades) return 0
+            return parseFloat(((s.trades / histStats.monthly.trades) * 100).toFixed(1))
+        }
+        function prevBoardWinRate(label) {
+            const pm = histStats.value?.prev_monthly_by_board
+            if (!pm || !label) return '—'
+            const s = pm[label]
+            return s && s.win_rate != null ? s.win_rate + '%' : '—'
+        }
+        function boardWinRateDelta(s, label) {
+            if (!s || s.win_rate == null) return null
+            const pm = histStats.value?.prev_monthly_by_board
+            if (!pm || !label) return null
+            const prev = pm[label]
+            if (!prev || prev.win_rate == null) return null
+            return s.win_rate - prev.win_rate
+        }
+        function boardWinRateDeltaText(s, label) {
+            const d = boardWinRateDelta(s, label)
+            if (d === null || d === undefined) return '—'
+            const sign = d > 0 ? '+' : ''
+            return sign + d.toFixed(1) + '%'
+        }
+
+        // 明日决策标签样式（依据评分卡 verdict）
         const taActionCls = computed(() => {
             const v = review.value?.scorecard?.today_action?.verdict
             if (v === '重仓') return 'ta-go'
@@ -1344,6 +2089,15 @@ createApp({
         const totalFailed = computed(() =>
             boardGroups.value.reduce((sum, g) => sum + (g.failed?.length || 0), 0)
         )
+
+        function ladderPromoRate(grp) {
+            if (!grp || grp.prev_board === 0) return ''
+            const p = (grp.promoted || []).length
+            const f = (grp.failed || []).length
+            const t = p + f
+            if (!t) return ''
+            return `${p}/${t}=${Math.round((p / t) * 1000) / 10}%`
+        }
 
         function boardCls(prevBoard) {
             if (prevBoard === 0) return 'lb-1'  // 新进
@@ -1412,10 +2166,21 @@ createApp({
             return sectorLeaderSet.value.has(String(code))
         }
 
+        async function fetchJson(url, fallback) {
+            try {
+                const r = await fetch(url)
+                if (!r.ok) throw new Error(String(r.status))
+                return await r.json()
+            } catch (e) {
+                console.error('[复盘]', url, e)
+                return fallback
+            }
+        }
+
         async function loadDaily() {
             const [revRes, insightRes] = await Promise.all([
-                fetch('/api/review').then(r => r.json()),
-                fetch('/api/market-insight').then(r => r.json()),
+                fetchJson('/api/review', {}),
+                fetchJson('/api/market-insight?refresh_breadth=0', {}),
             ])
             review.value = revRes || {}
             insight.value = insightRes || {}
@@ -1427,11 +2192,51 @@ createApp({
                 const params = []
                 if (histYear.value)  params.push('year='  + histYear.value)
                 if (histMonth.value) params.push('month=' + histMonth.value)
-                const url = '/api/screener-history' + (params.length ? '?' + params.join('&') : '')
-                const res = await fetch(url).then(r => r.json())
-                histRecords.value = res.records || []
-                histStats.value = res.stats || histStats.value
+                const q = params.length ? params.join('&') + '&' : ''
+                const url = '/api/screener-history?' + q + 'light=1'
+                const reviewUrl = '/api/monthly-review?' + q.replace(/&$/, '')
+                const [res, reviewRes] = await Promise.all([
+                    fetch(url).then(r => {
+                        if (!r.ok) throw new Error('HTTP ' + r.status)
+                        return r.json()
+                    }),
+                    fetch(reviewUrl).then(r => r.ok ? r.json() : null).catch(() => null),
+                ])
+                histRecords.value = Array.isArray(res.records) ? res.records : []
+                if (histRecords.value.length === 0) {
+                    console.warn('[月度复盘] records 为空，请检查 API 或筛选条件', { url })
+                }
+                // 更健壮的 stats 验证
+                const st = res.stats
+                if (st && typeof st === 'object' && 'total' in st && 'monthly' in st && 'weekly' in st && 'yearly' in st) {
+                    // 即使 total.trades === 0 也接受（避免误判导致 histStats 为空）
+                    histStats.value = st
+                    console.debug('[月度复盘] stats 更新', {
+                        monthly_trades: st.monthly?.trades,
+                        total_trades: st.total?.trades,
+                    })
+                } else {
+                    console.warn('[月度复盘] stats 格式异常:', st)
+                }
                 histPeriods.value = res.available_periods || []
+                histMonthlyTrend.value = Array.isArray(res.monthly_trend) ? res.monthly_trend : []
+                if (reviewRes && !reviewRes.error) {
+                    histMonthlyReview.value = reviewRes
+                    if (Array.isArray(reviewRes.trend_data) && reviewRes.trend_data.length) {
+                        histMonthlyTrend.value = reviewRes.trend_data.map(d => ({
+                            year: parseInt(String(d.month).slice(0, 4), 10),
+                            month: parseInt(String(d.month).slice(5, 7), 10),
+                            label: String(d.month).slice(5, 7).replace(/^0/, '') + '月',
+                            trades: d.total_trades,
+                            win_rate: d.win_rate,
+                            avg_return: d.avg_return,
+                            zt_rate: d.signal_to_limit_pct,
+                            signal_count: d.signal_count,
+                        }))
+                    }
+                } else {
+                    histMonthlyReview.value = null
+                }
                 console.debug('[月度复盘] loadHistory 完成', {
                     url, records: histRecords.value.length,
                     periods: histPeriods.value.length,
@@ -1455,11 +2260,24 @@ createApp({
             loadHistory()
         }
 
+        const histMonthlyLoaded = ref(false)
+
         async function loadData() {
-            await Promise.all([loadDaily(), loadHistoryInitial()])
+            await loadDaily()
         }
 
-        // 首次挂载：先无参拉一次拿到 available_periods，再默认选「最新年+月」
+        async function ensureMonthlyLoaded() {
+            if (histMonthlyLoaded.value) return
+            histMonthlyLoaded.value = true
+            await loadHistoryInitial()
+        }
+
+        function switchTab(tab) {
+            activeTab.value = tab
+            if (tab === 'monthly') ensureMonthlyLoaded()
+        }
+
+        // 首次进入月度：先无参拉一次拿到 available_periods，再默认选「最新年+月」
         // 后续 loadHistory 不再越权改用户的选择
         async function loadHistoryInitial() {
             await loadHistory()
@@ -1472,31 +2290,100 @@ createApp({
         }
 
         async function runReview() {
-            await fetch('/api/review/run', { method: 'POST' })
-            setTimeout(loadData, 3000)
+            try {
+                const r = await fetch('/api/review/run', { method: 'POST' }).then(x => x.json())
+                if (r.status !== 'ok') {
+                    alert((r && r.msg) || '复盘未生成（可能无涨停数据）')
+                    return
+                }
+                await loadDaily()
+                if (activeTab.value === 'monthly') await loadHistory()
+            } catch (e) {
+                alert('刷新复盘失败: ' + (e && e.message))
+            }
         }
 
-        onMounted(loadData)
+        function sbzHistLine(r) {
+            if (!r || r.sanbanzhu) return ''
+            const d = String(r.sanbanzhu_detail || '').trim()
+            if (!d || d.includes('未获取到龙虎榜') || d.includes('无龙虎榜数据') || d.includes('未上榜，未检测')) {
+                return '未上榜，未检测'
+            }
+            if (d.includes('未发现三板组')) return '已检测：未见三板组席位'
+            if (d.includes('发现1个')) return '已检测：仅单席位命中'
+            if (d.includes('检查失败')) return d
+            return d.length > 36 ? d.slice(0, 36) + '…' : d
+        }
+
+        const displayInsight = computed(() => {
+            const ins = insight.value || {}
+            const rb = review.value?.market_breadth
+            if (rb && typeof rb === 'object' && (rb.sh_close != null || rb.advance != null)) {
+                return { ...ins, breadth: rb }
+            }
+            return ins
+        })
+
+        const breadthAdvance = computed(() => {
+            const b = displayInsight.value?.breadth
+            if (!b || b.counts_unavailable) return '—'
+            const v = b.advance
+            return v === null || v === undefined ? '—' : v
+        })
+        const breadthDecline = computed(() => {
+            const b = displayInsight.value?.breadth
+            if (!b || b.counts_unavailable) return '—'
+            const v = b.decline
+            return v === null || v === undefined ? '—' : v
+        })
+        const breadthRatio = computed(() => {
+            const b = displayInsight.value?.breadth
+            if (!b || b.counts_unavailable) return '—'
+            const a = Number(b.advance)
+            const d = Number(b.decline)
+            if (!Number.isFinite(a) || !Number.isFinite(d) || d <= 0) return '—'
+            return (a / d).toFixed(2)
+        })
+        const breadthRatioClass = computed(() => {
+            const b = displayInsight.value?.breadth
+            if (!b || b.counts_unavailable) return ''
+            const a = Number(b.advance) || 0
+            const d = Number(b.decline) || 0
+            return a > d ? 'gain-pos' : 'gain-neg'
+        })
+
+        onMounted(async () => {
+            await refreshMarketSession()
+            await loadData()
+        })
         return {
-            review, insight, activeTab, dailySubTab,
+            review, insight, displayInsight, activeTab, dailySubTab,
+            breadthAdvance, breadthDecline, breadthRatio, breadthRatioClass,
             lbtQualClass, turnoverQualClass,
-            klineModal, openKline, closeKline, reloadKline, loadAnalysis,
+            klineModal, klineModalLive, openKline, closeKline, reloadKlineChart, setKlineChartTab, loadMinuteSeries,
+            minuteFsChart, minuteSignalOn, initMinuteSignalFilter, isMinuteSignalKindOn, toggleMinuteSignalKind, loadAnalysis,
             ladderOpen, sectorOpen, conceptOpen, showAllConcepts,
             conceptZtAll, conceptZtStatsFiltered, sortedLadder, conceptBoardCls,
             sectorStatsFiltered, watchPool, ladderArr,
             histRecords, histStats, histPeriods, histLoading, histLoaded,
             histYear, histMonth, histAvailableYears, histMonthsForYear,
             histGroupedRecords, histScopeLabel, histAllLink,
+            histMonthlyTrend, histTrendChart, histAvgStats, histUpdatedAt, histBacktestRule, histActiveSuggestion,
+            histImprovements, histCompareRows, boardTags,
+            histGuideOpen, histTableOpen,
             statRate, statDetail, rateClass, rateBarColor, dailyEnv,
+            deltaClass, deltaText, numClass,
+            boardTotalReturn, boardShare, boardSharePct, prevBoardWinRate, boardWinRateDelta, boardWinRateDeltaText,
             onHistYearChange, onHistMonthChange, loadHistory,
             showFailed,
-            boardGroups, todayCount, totalFailed,
+            boardGroups, todayCount, totalFailed, ladderPromoRate,
             boardCls, failedColor,
             sectorStats, isSectorLeader,
-            runReview,
+            runReview, switchTab, ensureMonthlyLoaded,
             waveClass, waveColor, capitalHighlights,
-            ciTagClass, ciTagLabel, fmtPct, numClass,
+            ciTagClass, ciTagLabel, fmtNum, fmtPrice, fmtPct, fmtPctPlain, numClass,
             taActionCls,
+            sbzHistLine,
         }
     }
 }).mount('#app')

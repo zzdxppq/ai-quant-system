@@ -1,0 +1,49 @@
+# 生产 Docker：仅挂载 data / logs；scripts 与源码已打进镜像，勿挂载 /app 或 deploy/
+docker login registry.cn-hangzhou.aliyuncs.com
+
+mkdir -p /opt/ai-quant-system/data /opt/ai-quant-system/logs
+
+# 重新启动量化服务
+# 宿主机 .env 必须包含鉴权相关变量（auth-1.0）：
+#   ALLOWED_LOGIN_EMAILS=<邮箱1>,<邮箱2>      # 必设，逗号分隔，空 = 拒绝所有
+#   AUTH_SECRET=<64位 hex>                    # 必设，python -c "import secrets; print(secrets.token_hex(32))"
+#   AUTH_TOKEN_TTL_HOURS=12                   # 可选，默认 12
+#   AUTH_CODE_TTL_MINUTES=5                   # 可选，默认 5
+#   AUTH_CODE_MAX_ATTEMPTS=5                  # 可选，默认 5
+#   AUTH_CODE_RESEND_COOLDOWN=60              # 可选，默认 60s
+#   AUTH_SLIDING_REFRESH_THRESHOLD_HOURS=6    # 可选，默认 6
+#   AUTH_REQUIRED=1                           # 可选，0 = 旁路中间件（仅本地 dev）
+#   AUTH_LOGIN_PATH=/login                    # 可选
+# 其它邮件/数据变量仍按 scripts/deploy/ubuntu.env.example 准备
+# 镜像 tag 格式 YYYYMMDD.HHMM（构建时间），含 auth-1.0 鉴权升级
+docker pull registry.cn-hangzhou.aliyuncs.com/kczj/quant-ai:20260805.0048
+docker stop quant-ai
+docker rm -f quant-ai
+docker run -d \
+  --name quant-ai \
+  --restart=always \
+  --net=host \
+  --env-file /opt/ai-quant-system/.env \
+  -e API_HOST=0.0.0.0 \
+  -e API_PORT=8001 \
+  -e TZ=Asia/Shanghai \
+  -e SKIP_LIVE_RANKING_FETCH=1 \
+  -v /opt/ai-quant-system/data:/app/data \
+  -v /opt/ai-quant-system/logs:/app/logs \
+  registry.cn-hangzhou.aliyuncs.com/kczj/quant-ai:20260805.0048
+docker logs -f quant-ai
+
+# 部署后冒烟验证（鉴权必须开启，否则凌晨再被扫端口 POST API）：
+#   curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8001/api/cycle
+#   期望 401（无 token）
+#   curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8001/login
+#   期望 200
+# 然后浏览器开 http://<server>:8001/ → 应跳 /login → 邮箱+验证码登录
+
+# 深度防御（推荐）：限制 8001 端口只允许你自己的 IP 段访问
+#   ufw allow from <your_ip> to any port 8001 proto tcp
+#   ufw deny 8001
+# 或 nginx stream 代理 + IP 白名单
+
+
+

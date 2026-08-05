@@ -42,24 +42,72 @@ def _load_dotenv():
     if not env_file.exists():
         return
     try:
-        for line in env_file.read_text().splitlines():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, _, val = line.partition("=")
-            os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+            key = key.strip()
+            if key == "DATA_STORAGE_BACKEND":
+                # 由 _apply_data_storage_backend_from_env_file 统一写入 os.environ（可覆盖宿主机残留）
+                continue
+            if key == "DATABASE_ENGINE":
+                continue
+            if key == "SKIP_JSON_DOC_REGISTRY":
+                continue
+            os.environ.setdefault(key, val.strip().strip('"').strip("'"))
     except Exception:
         pass
 
 
-_load_dotenv()
+def _apply_data_storage_backend_from_env_file() -> None:
+    """业务 JSON 仅走 quant 库；固定为 quant，覆盖宿主机残留的旧值（json/sqlite/dual）。"""
+    os.environ["DATA_STORAGE_BACKEND"] = "quant"
 
-# 数据库
-DB_PATH = BASE_DIR / "data" / "quant.db"
+
+def _skip_json_doc_registry_from_env_file() -> bool | None:
+    env_file = BASE_DIR / ".env"
+    if not env_file.exists():
+        return None
+    try:
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            if key.strip() != "SKIP_JSON_DOC_REGISTRY":
+                continue
+            v = val.strip().strip('"').strip("'").lower()
+            if v in ("1", "true", "yes", "on"):
+                return True
+            if v in ("0", "false", "no", "off"):
+                return False
+    except Exception:
+        pass
+    return None
+
+
+def _apply_skip_json_doc_registry_from_env_file() -> None:
+    v = _skip_json_doc_registry_from_env_file()
+    if v is not None:
+        os.environ["SKIP_JSON_DOC_REGISTRY"] = "1" if v else "0"
+
+
+_load_dotenv()
+_apply_data_storage_backend_from_env_file()
+_apply_skip_json_doc_registry_from_env_file()
+
+_sjr = os.getenv("SKIP_JSON_DOC_REGISTRY", "0").strip().lower()
+SKIP_JSON_DOC_REGISTRY = _sjr in ("1", "true", "yes", "on")
+# SQLAlchemy ORM、structured/analytics/ledger_doc、relational 共用 DuckDB 文件
+DB_PATH = BASE_DIR / "data" / "quant.duckdb"
 
 # 数据目录
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
+
+# 应用 JSON 业务数据：仅 quant 库（DuckDB）；DATA_STORAGE_BACKEND 恒为 quant
+DATA_STORAGE_BACKEND = "quant"
 
 # 周期引擎参数
 CYCLE_CONFIG = {
@@ -96,6 +144,27 @@ SCREENER_CONFIG = {
     "exclude_bse": True,                # 排除北交所(8/4开头)
 }
 
+# 主选股 0 命中时的 1进2 兜底公式（通达信口径；有且仅有 1 只才采用）
+# PD1 量>1000手；PD2 换手>0.5%；PD3 涨幅4~8%；PD4 市值<100亿；PD5 昨日涨停；
+# 竞换手>0.3%；DYNAINFO(10)>1；排除 ST/688/30/北交
+SCREENER_1TO2_FALLBACK_CONFIG = {
+    "min_continuous_limit_up": 1,
+    "max_continuous_limit_up": 1,
+    "auction_gain_min": 4.0,
+    "auction_gain_max": 8.0,
+    "auction_turnover_min": 0.5,        # PD2；同时满足竞换手>0.3
+    "auction_turnover_soft_min": 0.3,   # 竞换手下限
+    "auction_volume_lots_min": 1000,
+    "auction_volume_lots_soft_min": 1,  # DYNAINFO(10)>1
+    "market_cap_min": 0,
+    "market_cap_max": 100,
+    "volume_ratio_min": 0,              # 公式无量比硬门槛
+    "exclude_st": True,
+    "exclude_kcb": True,
+    "exclude_cyb": True,
+    "exclude_bse": True,
+}
+
 # 选股执行时间
 SCREENER_CRON_HOUR = 9
 SCREENER_CRON_MINUTE = 27
@@ -103,3 +172,5 @@ SCREENER_CRON_MINUTE = 27
 # API
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
+# 反向代理子路径（如 /quant）；留空则本地直连根路径
+APP_ROOT_PATH = os.getenv("APP_ROOT_PATH", "").strip().rstrip("/")

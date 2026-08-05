@@ -1,0 +1,29 @@
+# 用法见 scripts/deploy/README.md「Docker 部署」
+services:
+  quant-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-quant-system:latest
+    container_name: quant-ai
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      API_HOST: "0.0.0.0"
+      API_PORT: "8001"
+      TZ: Asia/Shanghai
+    # 可选: cp scripts/deploy/ubuntu.env.example .env
+    env_file:
+      - .env
+    volumes:
+      # 命名卷（默认）。若要用本机 data/ 目录，见 README 改为 ./data:/app/data
+      - quant-data:/app/data
+      - quant-logs:/app/logs
+    # 单进程 + DuckDB 写库：不要 scale > 1
+    deploy:
+      replicas: 1
+
+volumes:
+  quant-data:
+  quant-logs:

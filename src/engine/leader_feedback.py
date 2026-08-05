@@ -12,7 +12,7 @@
 """
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -338,6 +338,62 @@ def _classify_lianban(
     )
 
 
+def lianban_feedback_from_auction_pct(
+    change_pct: float,
+    *,
+    board_count: int = 0,
+    name: str = "均",
+) -> dict[str, Any]:
+    """单只或均竞价 → signal / can_trade / aggression（与 _classify_lianban 同源）。"""
+    signal, can_trade, aggression, reason = _classify_lianban(
+        float(change_pct), -10.0, name, int(board_count or 0),
+    )
+    return {
+        "auction_change_pct": round(float(change_pct), 2),
+        "signal": signal.value,
+        "can_trade": can_trade,
+        "aggression": aggression,
+        "reason": reason,
+    }
+
+
+def aggregate_main_board_tier_feedback(rows: list[dict]) -> dict[str, Any] | None:
+    """最高连板档多只：角标/定性按竞价均值（与看板决策卡一致）。"""
+    if not rows:
+        return None
+    max_bc = 0
+    for r in rows:
+        try:
+            bc = int(r.get("board_count") or r.get("leader_gain_10d") or 0)
+        except (TypeError, ValueError):
+            bc = 0
+        max_bc = max(max_bc, bc)
+    if max_bc < 2:
+        return None
+    tier = [
+        r for r in rows
+        if int(r.get("board_count") or r.get("leader_gain_10d") or 0) == max_bc
+    ]
+    pcts: list[float] = []
+    for r in tier:
+        try:
+            p = r.get("auction_change_pct")
+            if p is not None:
+                pcts.append(float(p))
+        except (TypeError, ValueError):
+            continue
+    if not pcts:
+        return None
+    avg = round(sum(pcts) / len(pcts), 2)
+    fb = lianban_feedback_from_auction_pct(avg, board_count=max_bc, name="均")
+    return {
+        **fb,
+        "board_count": max_bc,
+        "tier_count": len(tier),
+        "avg_auction_pct": avg,
+    }
+
+
 def _is_main_board_code(code: str) -> bool:
     code = str(code)
     if code.startswith(("300", "301", "688", "8", "4")):
@@ -447,15 +503,18 @@ def compute_yesterday_main_board_auction(
     if hit_rate < 0.7:
         try:
             from src.data.sina_spot_api import fetch_a_share_list_sina
+
             full_df = fetch_a_share_list_sina()
             if full_df is not None and not full_df.empty:
                 full_hit_rate = _spot_hit_rate(full_df)
                 if full_hit_rate > hit_rate:
-                    print(f"[昨日主板涨停均价] 局部 spot 命中率 {hit_rate:.0%} 不足，"
-                          f"切换新浪全市场（命中率 {full_hit_rate:.0%}）")
+                    print(
+                        f"[昨日主板涨停均价] 局部命中率 {hit_rate:.0%} 不足，"
+                        f"改用当日竞价全量（命中率 {full_hit_rate:.0%}）"
+                    )
                     spot_df = full_df
         except Exception as e:
-            print(f"[昨日主板涨停均价] 新浪全市场拉取失败: {e}")
+            print(f"[昨日主板涨停均价] 竞价全量拉取失败: {e}")
 
     if spot_df is None or spot_df.empty:
         return None
@@ -524,14 +583,18 @@ def compute_yesterday_limit_down_today_auction(
     if not codes:
         return None
 
-    spot_codes = set(spot_df["code"].astype(str))
+    spot = spot_df.copy()
+    spot["_c6"] = spot["code"].astype(str).map(lambda x: "".join(c for c in str(x) if c.isdigit())[-6:].zfill(6))
+    spot_codes = set(spot["_c6"])
     changes = []
     pos = neg = ld = 0
     for c in codes:
-        c = str(c).zfill(6)
-        if c not in spot_codes:
+        c6 = str(c).zfill(6)
+        if len(c6) != 6:
             continue
-        row = spot_df[spot_df["code"].astype(str) == c].iloc[0]
+        if c6 not in spot_codes:
+            continue
+        row = spot[spot["_c6"] == c6].iloc[0]
         pre_close = float(row.get("pre_close", 0))
         open_price = float(row.get("open", 0))
         if pre_close <= 0 or open_price <= 0:
@@ -548,6 +611,8 @@ def compute_yesterday_limit_down_today_auction(
     if not changes:
         return None
 
+    from src.data.zt_pool_api import prev_trading_date_ymd
+
     avg = sum(changes) / len(changes)
     return {
         "pool_size": len(codes),
@@ -556,6 +621,7 @@ def compute_yesterday_limit_down_today_auction(
         "positive_count": pos,
         "negative_count": neg,
         "limit_down_count": ld,
+        "pool_date": prev_trading_date_ymd(),
     }
 
 
@@ -642,16 +708,16 @@ def find_main_board_leader_from_ranking(
     Returns:
         (code, name, gain_10d) or None
     """
-    import json
     from pathlib import Path
+
+    from src.data.json_io import load_json_file
 
     path = Path(ranking_file)
     if not path.exists():
         return None
 
-    try:
-        data = json.loads(path.read_text())
-    except Exception:
+    data = load_json_file(path)
+    if data is None:
         return None
 
     for item in data.get("ranking", []):

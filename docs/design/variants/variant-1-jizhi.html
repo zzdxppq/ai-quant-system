@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>9:27 克制看板 · 主推变体</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  审美方向承诺：3 色克制（仅灰/黄/红/绿-仅限盈亏标记）
+  字体：Space Grotesk（识别度强，告别 Inter/Roboto 默认）
+  网格：8px 基线，3 列 bento 但刻意打破右侧
+  不可磨灭元素：顶部"今日结论"一行大字 + 7 字符组节奏
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* ── Tokens ─────────────────────────── */
+    --c-bg: #0a0a0b;            /* 近黑，非纯黑 */
+    --c-surface: #15151a;
+    --c-surface-hi: #1e1e25;
+    --c-border: #2a2a32;
+    --c-text: #f0f0f2;
+    --c-text-dim: #888892;
+    --c-text-mute: #50505a;
+
+    --c-gray:   #50505a;        /* 不操作 */
+    --c-yellow: #d4a017;        /* 观察 */
+    --c-red:    #c1272d;        /* 强信号 */
+    --c-green:  #2d8659;        /* 仅盈亏标记 */
+
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+    --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+
+    --r-md: 8px; --r-lg: 12px; --r-xl: 16px;
+    --shadow-soft: 0 2px 8px rgba(0,0,0,0.3);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Space Grotesk', sans-serif;
+    background: var(--c-bg);
+    color: var(--c-text);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* ── 不可磨灭元素：今日结论条 ───────── */
+  .verdict {
+    padding: var(--sp-6) var(--sp-5);
+    border-bottom: 1px solid var(--c-border);
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-5);
+  }
+  .verdict-label {
+    font-size: 12px; letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--c-text-mute);
+  }
+  .verdict-text {
+    font-size: 36px; font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .verdict-text.strong { color: var(--c-red); }
+  .verdict-text.watch  { color: var(--c-yellow); }
+  .verdict-text.avoid  { color: var(--c-gray); }
+
+  /* ── 持仓状态条（无持仓时折叠） ─────── */
+  .position-bar {
+    background: var(--c-surface);
+    border-bottom: 1px solid var(--c-border);
+    padding: var(--sp-3) var(--sp-5);
+    display: flex; align-items: center; gap: var(--sp-5);
+    font-size: 13px;
+  }
+  .position-bar.empty { color: var(--c-text-mute); padding: var(--sp-2) var(--sp-5); font-size: 12px; }
+  .pos-stat { display: flex; gap: var(--sp-2); align-items: baseline; }
+  .pos-stat-label { color: var(--c-text-mute); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .pos-stat-value { font-weight: 600; }
+  .pos-stat-value.neg { color: var(--c-red); }
+  .pos-stat-value.pos { color: var(--c-green); }
+  .pos-divider { width: 1px; height: 16px; background: var(--c-border); }
+  .pos-spacer { flex: 1; }
+  .pos-alert {
+    padding: 2px 8px; border-radius: var(--r-md);
+    background: rgba(193, 39, 45, 0.15);
+    color: var(--c-red);
+    font-size: 11px; font-weight: 600;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pos-alert { animation: none; }
+  }
+
+  /* ── Tabs ───────────────────────────── */
+  .tabs {
+    display: flex; gap: 0;
+    border-bottom: 1px solid var(--c-border);
+    padding: 0 var(--sp-5);
+  }
+  .tab {
+    padding: var(--sp-3) var(--sp-4);
+    color: var(--c-text-mute);
+    font-size: 13px; font-weight: 500;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tab.active {
+    color: var(--c-text);
+    border-bottom-color: var(--c-red);
+  }
+
+  /* ── Bento Grid ─────────────────────── */
+  .bento {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: var(--sp-3);
+    padding: var(--sp-4);
+  }
+  .card {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-lg);
+    padding: var(--sp-4);
+  }
+  .card-label {
+    font-size: 10px; letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--c-text-mute);
+    margin-bottom: var(--sp-2);
+  }
+  .card-value {
+    font-size: 28px; font-weight: 700;
+    line-height: 1.1;
+  }
+  .card-sub {
+    font-size: 12px; color: var(--c-text-dim);
+    margin-top: var(--sp-1);
+  }
+
+  .col-3 { grid-column: span 3; }
+  .col-4 { grid-column: span 4; }
+  .col-5 { grid-column: span 5; }
+  .col-6 { grid-column: span 6; }
+  .col-7 { grid-column: span 7; }
+  .col-9 { grid-column: span 9; }
+
+  /* ── 信号徽章 ────────────────────────── */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: var(--r-md);
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .badge.strong { background: rgba(193, 39, 45, 0.15); color: var(--c-red); }
+  .badge.normal { background: rgba(212, 160, 23, 0.15); color: var(--c-yellow); }
+  .badge.watch  { background: rgba(80, 80, 90, 0.2); color: var(--c-text-dim); }
+  .badge.avoid  { background: rgba(80, 80, 90, 0.2); color: var(--c-gray); }
+
+  /* ── 持仓表格 ────────────────────────── */
+  table.positions {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  table.positions th {
+    text-align: left;
+    font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--c-text-mute);
+    font-weight: 500;
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid var(--c-border);
+  }
+  table.positions td {
+    padding: var(--sp-3);
+    border-bottom: 1px solid var(--c-border);
+  }
+  table.positions tr:hover td { background: var(--c-surface-hi); }
+  table.positions tr:focus-within td { background: var(--c-surface-hi); }
+  .pnl-pos { color: var(--c-green); font-weight: 600; }
+  .pnl-neg { color: var(--c-red); font-weight: 600; }
+  .signal-stale { color: var(--c-yellow); }
+
+  button {
+    background: transparent; border: 1px solid var(--c-border);
+    color: var(--c-text);
+    padding: 4px 10px; border-radius: var(--r-md);
+    font-size: 12px; cursor: pointer;
+    font-family: inherit;
+    min-height: 32px; /* 触控目标 ≥44px 接近 */
+  }
+  button:hover { background: var(--c-surface-hi); }
+  button:focus-visible { outline: 2px solid var(--c-red); outline-offset: 2px; }
+
+  /* ── 焦点指示：所有可交互元素 ────────── */
+  a:focus-visible, .tab:focus-visible {
+    outline: 2px solid var(--c-red); outline-offset: 2px;
+    border-radius: var(--r-md);
+  }
+
+  /* ── 移动端 ─────────────────────────── */
+  @media (max-width: 768px) {
+    .col-3, .col-4, .col-5, .col-6, .col-7, .col-9 { grid-column: span 12; }
+    .verdict-text { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ──────── 不可磨灭元素：今日结论 ──────── -->
+<section class="verdict" aria-label="今日操作结论">
+  <span class="verdict-label">9:27 结论</span>
+  <span class="verdict-text strong">开仓 · 6 层</span>
+  <span class="verdict-label" style="margin-left: auto;">2026-06-03</span>
+</section>
+
+<!-- ──────── 持仓状态条（始终可见） ──────── -->
+<nav class="position-bar" aria-label="持仓状态">
+  <div class="pos-stat">
+    <span class="pos-stat-label">总市值</span>
+    <span class="pos-stat-value mono">¥247,800</span>
+  </div>
+  <div class="pos-divider"></div>
+  <div class="pos-stat">
+    <span class="pos-stat-label">总盈亏</span>
+    <span class="pos-stat-value neg mono">-¥3,420</span>
+  </div>
+  <div class="pos-divider"></div>
+  <div class="pos-stat">
+    <span class="pos-stat-label">持仓</span>
+    <span class="pos-stat-value">3</span>
+  </div>
+  <div class="pos-divider"></div>
+  <span class="pos-alert" role="alert">1 触发止损预警</span>
+  <div class="pos-spacer"></div>
+  <a href="#position-tab" style="color: var(--c-text-dim); font-size: 12px; text-decoration: none;">查看持仓 →</a>
+</nav>
+
+<!-- ──────── Tabs ──────── -->
+<div class="tabs" role="tablist">
+  <div class="tab active" role="tab" aria-selected="true" tabindex="0">决策</div>
+  <div class="tab" role="tab" aria-selected="false" tabindex="0">持仓</div>
+  <div class="tab" role="tab" aria-selected="false" tabindex="0">趋势选股</div>
+  <div class="tab" role="tab" aria-selected="false" tabindex="0">回测</div>
+</div>
+
+<!-- ──────── Bento ──────── -->
+<main class="bento">
+
+  <!-- 周期状态 -->
+  <article class="card col-3" aria-label="周期状态">
+    <div class="card-label">周期</div>
+    <div class="card-value">完整周期</div>
+    <div class="card-sub">第 4 天 · 代表股 600123</div>
+  </article>
+
+  <!-- 龙头反馈 -->
+  <article class="card col-3" aria-label="龙头反馈">
+    <div class="card-label">龙头反馈</div>
+    <div class="card-value" style="color: var(--c-yellow);">+1.8%</div>
+    <div class="card-sub">正反馈 · 正常参与</div>
+  </article>
+
+  <!-- 信号 -->
+  <article class="card col-3" aria-label="交叉验证信号">
+    <div class="card-label">信号</div>
+    <div class="card-value"><span class="badge strong">STRONG</span></div>
+    <div class="card-sub">建议 6-9 层</div>
+  </article>
+
+  <!-- 持仓数 -->
+  <article class="card col-3" aria-label="当前持仓数">
+    <div class="card-label">持仓</div>
+    <div class="card-value">3</div>
+    <div class="card-sub">1 触发预警</div>
+  </article>
+
+  <!-- 今日选股 -->
+  <article class="card col-9" aria-label="今日选股">
+    <div class="card-label" style="margin-bottom: var(--sp-3);">今日选股 · 3 命中</div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <thead>
+        <tr>
+          <th style="text-align: left; color: var(--c-text-mute); font-size: 10px; letter-spacing: 0.1em; padding: 4px 8px;">代码</th>
+          <th style="text-align: left; color: var(--c-text-mute); font-size: 10px; letter-spacing: 0.1em; padding: 4px 8px;">名称</th>
+          <th style="text-align: right; color: var(--c-text-mute); font-size: 10px; letter-spacing: 0.1em; padding: 4px 8px;">连板</th>
+          <th style="text-align: right; color: var(--c-text-mute); font-size: 10px; letter-spacing: 0.1em; padding: 4px 8px;">竞价</th>
+          <th style="text-align: right; color: var(--c-text-mute); font-size: 10px; letter-spacing: 0.1em; padding: 4px 8px;">建议仓位</th>
+          <th style="text-align: left; color: var(--c-text-mute); font-size: 10px; letter-spacing: 0.1em; padding: 4px 8px;">信号</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td style="padding: 8px; font-family: 'JetBrains Mono', monospace;">600123</td><td style="padding: 8px;">XX 科技</td><td style="padding: 8px; text-align: right;">4</td><td style="padding: 8px; text-align: right; font-family: 'JetBrains Mono', monospace;">+5.2%</td><td style="padding: 8px; text-align: right;">6 层</td><td style="padding: 8px;"><span class="badge strong">STRONG</span></td></tr>
+        <tr><td style="padding: 8px; font-family: 'JetBrains Mono', monospace;">600456</td><td style="padding: 8px;">YY 材料</td><td style="padding: 8px; text-align: right;">3</td><td style="padding: 8px; text-align: right; font-family: 'JetBrains Mono', monospace;">+4.8%</td><td style="padding: 8px; text-align: right;">3 层</td><td style="padding: 8px;"><span class="badge normal">NORMAL</span></td></tr>
+        <tr><td style="padding: 8px; font-family: 'JetBrains Mono', monospace;">600789</td><td style="padding: 8px;">ZZ 设备</td><td style="padding: 8px; text-align: right;">2</td><td style="padding: 8px; text-align: right; font-family: 'JetBrains Mono', monospace;">+4.1%</td><td style="padding: 8px; text-align: right;">2 层</td><td style="padding: 8px;"><span class="badge watch">WATCH</span></td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <!-- 决策卡参考带 -->
+  <article class="card col-3" aria-label="情绪指标">
+    <div class="card-label">情绪</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); margin-top: var(--sp-2);">
+      <div>
+        <div class="card-label">昨炸板反馈</div>
+        <div class="card-value" style="font-size: 18px; color: var(--c-yellow);">-1.2%</div>
+      </div>
+      <div>
+        <div class="card-label">今一字家数</div>
+        <div class="card-value" style="font-size: 18px;">7</div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ──── 持仓 Tab 预览 ──── -->
+  <article class="card col-12" id="position-tab" aria-label="持仓详情" style="margin-top: var(--sp-3);">
+    <div class="card-label" style="margin-bottom: var(--sp-3);">持仓详情 · 3 笔</div>
+    <table class="positions">
+      <thead>
+        <tr>
+          <th>代码</th><th>名称</th>
+          <th style="text-align: right;">买入价</th>
+          <th style="text-align: right;">当前价</th>
+          <th style="text-align: right;">盈亏%</th>
+          <th>状态</th>
+          <th>信号对照</th>
+          <th>止盈/止损</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">600123</td><td>XX 科技</td>
+          <td class="mono" style="text-align: right;">10.50</td>
+          <td class="mono" style="text-align: right;">10.85</td>
+          <td class="pnl-pos" style="text-align: right;">+3.33%</td>
+          <td><span class="badge normal">持有</span></td>
+          <td>仍有效</td>
+          <td class="mono">+10% / -5%</td>
+          <td><button>平仓</button></td>
+        </tr>
+        <tr style="background: rgba(193, 39, 45, 0.05);">
+          <td class="mono">600456</td><td>YY 材料</td>
+          <td class="mono" style="text-align: right;">20.00</td>
+          <td class="mono" style="text-align: right;">19.20</td>
+          <td class="pnl-neg" style="text-align: right;">-4.00%</td>
+          <td><span class="badge watch">持有</span></td>
+          <td class="signal-stale">⚠ 已失效</td>
+          <td class="mono">+10% / <strong style="color: var(--c-red);">-5%</strong></td>
+          <td><button style="border-color: var(--c-red); color: var(--c-red);">平仓</button></td>
+        </tr>
+        <tr>
+          <td class="mono">600789</td><td>ZZ 设备</td>
+          <td class="mono" style="text-align: right;">8.30</td>
+          <td class="mono" style="text-align: right;">8.42</td>
+          <td class="pnl-pos" style="text-align: right;">+1.45%</td>
+          <td><span class="badge normal">持有</span></td>
+          <td>仍有效</td>
+          <td class="mono">+10% / -5%</td>
+          <td><button>平仓</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </article>
+
+</main>
+
+</body>
+</html>

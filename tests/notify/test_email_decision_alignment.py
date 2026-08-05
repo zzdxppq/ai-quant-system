@@ -1,7 +1,8 @@
 """Test for Story email-sync-1.1: 邮件推送内容逐字段对齐首页看板
 
 Test Design: docs/qa/assessments/email-sync-1.1-test-design-20260508.md
-Truth source: src/static/index.html:1196-1268 (dailyAdvice) + :505-600 (指标格)
+真源：latest_advice.json（含 dashboard v2）+ 选股表列与 index.html 钟馗捉妖表一致。
+旧版无 dashboard 时仍覆盖 6 格（hero-metrics v-else）。
 
 Run:
     pytest tests/notify/test_email_decision_alignment.py -v
@@ -215,8 +216,10 @@ def test_1_1_unit_014_warn_bucket_position_text():
             assert "1-2层" not in v
 
 
-def test_1_1_int_001_subject_renders_position_short_15(monkeypatch):
-    # BR-3.2: subject 含 "仓位1.5层"
+def test_1_1_int_001_subject_renders_openable_avg_position(monkeypatch):
+    """标题仓位取自可开仓个股平均，空 hits 时不带仓位后缀。"""
+    from datetime import datetime
+
     captured = {}
 
     def fake_send(subject, html):
@@ -227,17 +230,45 @@ def test_1_1_int_001_subject_renders_position_short_15(monkeypatch):
     monkeypatch.setattr(email_sender, "_send", fake_send)
     monkeypatch.setattr(email_sender, "SMTP_USER", "u@example.com")
     monkeypatch.setattr(email_sender, "SMTP_PASSWORD", "p")
+    monkeypatch.setattr(email_sender, "now_cn", lambda: datetime(2026, 5, 8, 9, 27, 10))
+    monkeypatch.setattr(
+        email_sender, "send_guard_allows", lambda **kw: (True, "ok"),
+    )
+    monkeypatch.setattr(
+        email_sender, "_load_yesterday_selections_for_email", lambda: ("", []),
+    )
+    monkeypatch.setattr(
+        email_sender,
+        "_load_advice_from_disk",
+        lambda: {
+            "bucket": "warn", "text": "⚠️ 谨慎参与", "position": "1.5 层",
+            "position_short": "1.5层", "reason": "", "color": "#fbbf24",
+            "bg": "#2a2a0a", "conclusion": "⚠️ 谨慎参与",
+        },
+    )
+    email_sender._TODAY_SENT_CACHE.clear()
 
     sent = _sent(limit_down=8, drop_over_9pct=2, w_avg=1.0,
                  prev_day_limit_down=3, prev_day_w_avg=0.5)
+    hits = [{
+        "code": "600001", "name": "测",
+        "auction_gain": 6.0,
+        "per_stock_decision": {
+            "can_open": True, "position_pct": 10, "action": "开仓",
+            "position_text": "10%（1层）", "ladder_label": "2进3",
+        },
+    }]
     ok = send_screener_report(
         cycle_phase="孕育期", cycle_day=1,
         representative=None, leader=_leader_full(),
-        hits=[], signals=[],
+        hits=hits, signals=[],
         sentiment_data=sent, ranking_data=None,
+        entry="cron",
     )
     assert ok is True
-    assert "仓位1.5层" in captured["subject"]
+    assert "1只命中" in captured["subject"]
+    assert "仓位1层" in captured["subject"]
+    assert "建议仓位" not in captured["html"]
 
 
 # ============================================================
@@ -630,14 +661,15 @@ def test_1_1_blind_error_002_market_dict_none():
     assert "跌幅>9%" not in advice["reason"]
 
 
-def test_1_1_blind_flow_001_loading_state_downstream_render_safe(monkeypatch):
-    # 全空数据 → bucket=go, position="—"
+def test_1_1_blind_flow_001_loading_state_downstream_render_safe(monkeypatch, tmp_path):
+    # 全空数据 → bucket=go, position="—"（隔离 DATA_DIR，避免读到工作区已有 latest_advice.json）
     captured = {}
     def fake_send(subject, html):
         captured["subject"] = subject
         captured["html"] = html
         return True
 
+    monkeypatch.setattr(email_sender, "DATA_DIR", tmp_path)
     monkeypatch.setattr(email_sender, "_send", fake_send)
     monkeypatch.setattr(email_sender, "SMTP_USER", "u@x")
     monkeypatch.setattr(email_sender, "SMTP_PASSWORD", "p")
@@ -654,3 +686,51 @@ def test_1_1_blind_flow_001_loading_state_downstream_render_safe(monkeypatch):
     assert "仓位—" in captured["subject"]
     # HTML 渲染未抛错
     assert "无命中标的" in captured["html"]
+
+
+def test_email_v2_dashboard_metrics_align_with_board():
+    """有 dashboard v2 时邮件 hero 仅保留仓位 + 跌停/跌>9% + 连板高标竞价。"""
+    advice = {
+        "bucket": "go",
+        "text": "🟢 正常参与",
+        "position": "3 层",
+        "position_short": "3层",
+        "reason": "测试决策摘要",
+        "color": "#ef4444",
+        "bg": "#2a0f0f",
+        "conclusion": "🟢 正常仓位（3层）",
+        "dashboard": {
+            "participate": {
+                "limit_down_main_board": 2,
+                "drop_over_9pct": 5,
+                "relay_decision_index": 1.2,
+                "relay_decision_detail": {"verdict": "良好", "pool_date": "20260512"},
+                "b1_rate": 16.0,
+                "space_board_auction_pct": 1.0,
+                "space_board_label": "红盘(+2.0%)",
+                "space_board_name": "测试票",
+                "space_board_board_count": 3,
+                "space_board_source": "main_board_lianban",
+            },
+            "reference": {
+                "yesterday_limit_down_avg": -0.5,
+                "pool_weighted_auction_top30": 0.3,
+                "yesterday_zb_avg": 0.8,
+            },
+        },
+    }
+    html = _build_html(
+        cycle_phase="孕育期", cycle_day=1,
+        leader=None, hits=[], signals=[],
+        sentiment_data={}, ranking_data=None, advice=advice,
+    )
+    assert "竞价跌停（主板）" in html
+    assert "昨日连板高标竞价" in html
+    assert "建议仓位" in html
+    assert "3 层" in html
+    assert "测试票" in html
+    hero_part = html.split("今日选股", 1)[0]
+    assert "加权接力情绪指数" not in hero_part
+    assert "1进2成功率" not in hero_part
+    assert "梯队加权竞价(10日)" not in hero_part
+    assert "昨日炸板平均反馈" not in hero_part

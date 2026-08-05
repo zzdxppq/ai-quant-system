@@ -23,16 +23,28 @@ from matplotlib import font_manager as _fm
 import matplotlib.pyplot as plt
 import mplfinance as mpf
 
-# 中文字体：服务器装的 Noto Serif CJK
+# 中文字体：Linux Noto（若存在）+ Windows 常见黑体 / 回退
 _CJK_FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc"
+_CN_SANS = [
+    "Microsoft YaHei",
+    "SimHei",
+    "DengXian",
+    "PingFang SC",
+    "Noto Sans CJK SC",
+    "Noto Sans CJK JP",
+    "DejaVu Sans",
+    "sans-serif",
+]
 try:
-    if not any("Noto Serif CJK" in f.name for f in _fm.fontManager.ttflist):
+    if Path(_CJK_FONT_PATH).is_file() and not any(
+        "Noto Serif CJK" in f.name for f in _fm.fontManager.ttflist
+    ):
         _fm.fontManager.addfont(_CJK_FONT_PATH)
-    plt.rcParams["font.sans-serif"] = ["Noto Sans CJK JP", "DejaVu Sans"]
-    plt.rcParams["font.serif"] = ["Noto Sans CJK JP", "DejaVu Serif"]
-    plt.rcParams["axes.unicode_minus"] = False
 except Exception:
     pass
+plt.rcParams["font.sans-serif"] = _CN_SANS
+plt.rcParams["font.serif"] = _CN_SANS
+plt.rcParams["axes.unicode_minus"] = False
 import numpy as np
 import pandas as pd
 
@@ -310,6 +322,13 @@ def _compute_mixian(C: np.ndarray, H: np.ndarray, L: np.ndarray, cc: np.ndarray)
 
 # ── 渲染 ─────────────────────────────────────────────────────────
 
+
+def _chart_title(code: str, name: str, suffix: str) -> str:
+    """避免 Linux 无中文字体时标题乱码，仅用 ASCII + 代码/名称。"""
+    nm = (str(name or "").strip() or str(code or "").strip())
+    return f"{code} {nm} - {suffix}"
+
+
 def render_kline_chart(
     code: str,
     name: str,
@@ -327,15 +346,28 @@ def render_kline_chart(
     if df is None or df.empty or len(df) < 35:
         return _render_empty(code, name, "数据不足（需 ≥35 根日K）")
 
+    # 同日多根时保留最后一条；归一到日历日，避免同日多时刻索引导致 mplfinance 少画一根
+    d = df.copy()
+    d["date"] = pd.to_datetime(d["date"], errors="coerce").dt.normalize()
+    d = d.dropna(subset=["date"]).sort_values("date").drop_duplicates(subset=["date"], keep="last")
+    df = d.reset_index(drop=True)
+    if len(df) < 35:
+        return _render_empty(code, name, "数据不足（需 ≥35 根日K）")
+
     # 1) 全量计算指标
     ind = compute_indicators(df)
     if not ind:
         return _render_empty(code, name, "指标计算失败")
 
-    # 2) 取最近 days 根作为显示范围
+    # 2) 取最近 days 根作为显示范围（索引唯一，避免重复日吞 K）
     show = df.tail(days).copy()
-    show.index = pd.to_datetime(show["date"])
+    show["date"] = pd.to_datetime(show["date"], errors="coerce").dt.normalize()
+    show = show.dropna(subset=["date"]).sort_values("date")
+    show = show.drop_duplicates(subset=["date"], keep="last")
+    show.index = pd.DatetimeIndex(show["date"], freq=None)
     plot_df = show[["open", "high", "low", "close", "volume"]]
+    if plot_df.index.duplicated().any():
+        plot_df = plot_df[~plot_df.index.duplicated(keep="last")]
 
     # 切片 indicator 数组对齐显示窗口
     n_full = len(df)
@@ -413,21 +445,25 @@ def render_kline_chart(
             "axes.labelcolor": "#a0aec0",
             "xtick.color": "#a0aec0",
             "ytick.color": "#a0aec0",
-            "font.sans-serif": ["Noto Sans CJK JP", "DejaVu Sans"],
-            "font.serif": ["Noto Sans CJK JP", "DejaVu Serif"],
+            "font.sans-serif": _CN_SANS,
+            "font.serif": _CN_SANS,
             "axes.unicode_minus": False,
         },
     )
 
-    fig, axes = mpf.plot(
-        plot_df, type="candle", style=style,
-        title=f"\n{code} {name} · 防线 + 形态",
-        addplot=apds if apds else None,
-        volume=True, ylabel="价格", ylabel_lower="量",
-        figsize=(14, 8),
-        returnfig=True,
-        warn_too_much_data=999,
-    )
+    try:
+        fig, axes = mpf.plot(
+            plot_df, type="candle", style=style,
+            title=f"\n{_chart_title(code, name, 'daily K defense')}",
+            addplot=apds if apds else None,
+            volume=True, ylabel="Price", ylabel_lower="Vol",
+            figsize=(14, 8),
+            returnfig=True,
+            warn_too_much_data=999,
+        )
+    except Exception as e:
+        plt.close("all")
+        return _render_empty(code, name, f"日K渲染失败: {e!s}"[:200])
 
     ax_main = axes[0]
 
@@ -467,11 +503,110 @@ def render_kline_chart(
 
     # 4) 输出 PNG
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=80, bbox_inches="tight",
-                facecolor="#0a0e1a", edgecolor="none")
+    fig.savefig(
+        buf,
+        format="png",
+        dpi=80,
+        bbox_inches="tight",
+        pad_inches=0.18,
+        facecolor="#0a0e1a",
+        edgecolor="none",
+    )
     plt.close(fig)
     buf.seek(0)
     return buf.read()
+
+
+def render_weekly_kline_chart(
+    code: str,
+    name: str,
+    df: pd.DataFrame,
+    weeks: int = 120,
+) -> bytes:
+    """周 K 蜡烛 + MA5 / MA10 / MA21 / MA240（周级别均线周期）。
+
+    MA240 需约 240 根周 K 才有意义；不足时仍画 K+短周期均线，且仅在有非 NaN 点时叠加 MA240
+    （mplfinance 对全 NaN 的 addplot 会抛错）。
+    """
+    min_bars = 30
+    if df is None or df.empty or len(df) < min_bars:
+        return _render_empty(code, name, f"周K 数据不足（需 ≥{min_bars} 根）")
+
+    d = df.copy()
+    d["date"] = pd.to_datetime(d["date"], errors="coerce")
+    d = d.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+    if len(d) < min_bars:
+        return _render_empty(code, name, f"周K 数据不足（需 ≥{min_bars} 根）")
+
+    c = d["close"].astype(float)
+    d["ma5"] = c.rolling(5, min_periods=1).mean()
+    d["ma10"] = c.rolling(10, min_periods=1).mean()
+    d["ma21"] = c.rolling(21, min_periods=1).mean()
+    # 标准 240 周均线：不足 240 根时为 NaN，由下游决定是否绘制
+    d["ma240"] = c.rolling(240, min_periods=240).mean()
+
+    w = max(40, min(200, int(weeks)))
+    show = d.tail(w).copy()
+    show.index = show["date"]
+    plot_df = show[["open", "high", "low", "close", "volume"]]
+
+    ma5 = show.set_index("date")["ma5"]
+    ma10 = show.set_index("date")["ma10"]
+    ma21 = show.set_index("date")["ma21"]
+    ma240 = show.set_index("date")["ma240"]
+
+    apds = [
+        mpf.make_addplot(ma5, color="#fbbf24", width=1.0, label="MA5"),
+        mpf.make_addplot(ma10, color="#60a5fa", width=1.0, label="MA10"),
+        mpf.make_addplot(ma21, color="#a78bfa", width=1.0, label="MA21"),
+    ]
+    if ma240.notna().any():
+        apds.append(mpf.make_addplot(ma240, color="#f472b6", width=1.1, label="MA240"))
+
+    ma_note = "MA5/10/21/240" if ma240.notna().any() else "MA5/10/21 no MA240"
+    style = mpf.make_mpf_style(
+        base_mpf_style="nightclouds",
+        marketcolors=mpf.make_marketcolors(
+            up="#ef4444", down="#10b981",
+            wick={"up": "#ef4444", "down": "#10b981"},
+            edge={"up": "#ef4444", "down": "#10b981"},
+            volume={"up": "#7f1d1d", "down": "#065f46"},
+        ),
+        gridcolor="#1e2a45", facecolor="#0a0e1a", figcolor="#0a0e1a",
+        rc={
+            "axes.labelcolor": "#a0aec0",
+            "xtick.color": "#a0aec0",
+            "ytick.color": "#a0aec0",
+            "font.sans-serif": _CN_SANS,
+            "font.serif": _CN_SANS,
+            "axes.unicode_minus": False,
+        },
+    )
+
+    try:
+        fig, axes = mpf.plot(
+            plot_df,
+            type="candle",
+            style=style,
+            title=f"\n{_chart_title(code, name, f'weekly K {ma_note}')}",
+            addplot=apds,
+            volume=True,
+            ylabel="Price",
+            ylabel_lower="Vol",
+            figsize=(14, 8),
+            returnfig=True,
+            warn_too_much_data=999,
+        )
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=80, bbox_inches="tight",
+                    facecolor="#0a0e1a", edgecolor="none")
+        plt.close(fig)
+        buf.seek(0)
+        return buf.read()
+    except Exception as e:
+        plt.close("all")
+        return _render_empty(code, name, f"周K 渲染失败：{e!s}"[:200])
 
 
 def analyze_stock_action(
@@ -525,7 +660,9 @@ def analyze_stock_action(
 
     today = df.iloc[-1]
     close = float(today["close"])
-    prev_close = float(df.iloc[-2]["close"]) if len(df) >= 2 else 0.0
+    from src.data.sina_kline_api import resolve_prev_close
+
+    prev_close = resolve_prev_close(code)
     gain = (close / prev_close - 1) * 100 if prev_close > 0 else 0.0
     volume_lots = float(today.get("volume", 0)) / 100  # 股 → 手
 
@@ -564,68 +701,113 @@ def analyze_stock_action(
         "above_both": above_both,
     })
 
-    # ── 走 v3.3 决策规则（与今日选股-决策列同源）──
-    psd, checks = _evaluate_v33(hit_dict=auction_ctx.get("hit_dict"),
-                                 auction_ctx=auction_ctx,
-                                 market_ctx=market_ctx,
-                                 df=df)
+    # ── 走 v4.0 决策规则（与今日选股-决策列同源）──
+    psd, checks, hit = _evaluate_v33(
+        hit_dict=auction_ctx.get("hit_dict"),
+        auction_ctx=auction_ctx,
+        market_ctx=market_ctx,
+        df=df,
+    )
+
+    b1_rate = market_ctx.get("b1_rate")
+    if b1_rate is not None:
+        try:
+            from src.engine.screener_decision import _env_level
+            market_ctx["b1_env_level"] = _env_level(float(b1_rate))
+        except Exception:
+            pass
 
     operable = bool(psd.get("can_open"))
     position = psd.get("position_text") or "0% (空仓)"
+    env_veto = psd.get("veto_reason") in ("no_1to2", "high_board_gate")
+    board = int(hit.get("continuous_limit_up", 0) or 0)
 
-    # 止损位（与原逻辑一致：双线/起拔/秘线/开盘价回退）
-    if qiba is not None and mixian is not None:
-        lower = min(qiba, mixian)
-        stop_loss = f"跌破 {lower:.2f}（起拔/秘线较低者）-3%（约 {lower * 0.97:.2f}）即清仓"
-    elif qiba is not None:
-        stop_loss = f"跌破起拔线 {qiba:.2f} -3%（约 {qiba * 0.97:.2f}）即清仓"
-    elif mixian is not None:
-        stop_loss = f"跌破秘线 {mixian:.2f} -3%（约 {mixian * 0.97:.2f}）即清仓"
-    else:
-        stop_loss = "跌破今日开盘价 -3% 即清仓"
+    # 止损位（环境否决时不展示，避免误导）
+    stop_loss = None
+    if not env_veto:
+        if qiba is not None and mixian is not None:
+            lower = min(qiba, mixian)
+            stop_loss = f"跌破 {lower:.2f}（起拔/秘线较低者）-3%（约 {lower * 0.97:.2f}）即清仓"
+        elif qiba is not None:
+            stop_loss = f"跌破起拔线 {qiba:.2f} -3%（约 {qiba * 0.97:.2f}）即清仓"
+        elif mixian is not None:
+            stop_loss = f"跌破秘线 {mixian:.2f} -3%（约 {mixian * 0.97:.2f}）即清仓"
+        else:
+            stop_loss = "跌破今日开盘价 -3% 即清仓"
 
-    # 买入/逆转条件：从 v3.3 失败原因反推；可开仓时给目标条件
+    buy_condition = None
+    reversal_condition = None
+    recommended_ladder = psd.get("ladder_label") or ""
+
     if operable:
         ladder = psd.get("ladder_label", "")
         if ladder.startswith("2进3"):
-            buy_condition = "v3.3 全部条件已满足；建议按建议仓位入场。盘中破开盘价 -2% 即出。"
+            buy_condition = "v4.0 全部条件已满足；建议按建议仓位入场。盘中破开盘价 -2% 即出。"
         elif ladder.startswith("3进4") or ladder.startswith("4进5") or ladder.startswith("5进6"):
-            buy_condition = "v3.3 高位接力条件已满足；建议按建议仓位入场。盘中破开盘价或起拔线即出。"
+            buy_condition = "v4.0 高位接力条件已满足；建议按建议仓位入场。盘中破开盘价或起拔线即出。"
         else:
             buy_condition = "已满足开仓条件，按建议仓位入场。"
-        reversal_condition = None
+    elif env_veto and board == 2:
+        recommended_ladder = "空仓（1进2<8%，仅观察更高梯队）"
+        reversal_condition = "1进2成功率回升至≥8%且硬门槛达标，再按质量分档参与2进3。"
     else:
         buy_condition = "暂不参与（详见综合打分中未达条件）"
-        # 把失败的 check 串成逆转条件
         unmet = [c for c in checks if c.get("pass") is False]
         if unmet:
-            reversal_condition = "；".join(c.get("need", c.get("label", "")) for c in unmet)
+            parts = []
+            for c in unmet:
+                hint = c.get("hint") or c.get("need") or c.get("label", "")
+                parts.append(f"{c.get('label', '')}{hint}".strip())
+            reversal_condition = "；".join(parts) + "，再评估是否参与。"
         else:
-            reversal_condition = psd.get("reason", "等待 v3.3 规则全部达标")
+            reversal_condition = psd.get("reason", "等待 v4.0 规则全部达标")
+
+    if env_veto:
+        checks_title = "📋 综合打分（环境未达标，以下仅作记录）"
+        checks_conclusion = "→ 结论：环境否决，不开仓。"
+    elif operable:
+        checks_title = "📋 综合打分（v4.0 决策规则逐项）"
+        checks_conclusion = "→ 结论：条件满足，可按建议仓位操作。"
+    else:
+        checks_title = "📋 综合打分（v4.0 决策规则逐项）"
+        checks_conclusion = "→ 结论：条件未达，暂不参与。"
+
+    ladder = recommended_ladder or psd.get("ladder_label") or ""
+    if operable:
+        summary = f"可操作 · {position}" + (f" · {ladder}" if ladder else "") + (" · 双线已突破" if above_both else "")
+    else:
+        rsn = str(psd.get("reason") or "条件未达").strip()
+        summary = f"暂不操作 · {rsn[:160]}" if rsn else "暂不操作 · 条件未达"
 
     out.update({
         "operable": operable,
         "position": position,
         "ladder_label": psd.get("ladder_label"),
+        "recommended_ladder": recommended_ladder,
         "reason": psd.get("reason"),
         "buy_condition": buy_condition,
         "stop_loss": stop_loss,
         "reversal_condition": reversal_condition,
         "checks": checks,
-        "veto_b1": (psd.get("veto_reason") == "table_zero"),
+        "checks_title": checks_title,
+        "checks_conclusion": checks_conclusion,
+        "env_veto": env_veto,
+        "veto_b1": env_veto,
+        "summary": summary,
     })
     return out
 
 
 # =====================================================================
-# v3.3 决策映射器：用今日选股的 compute_per_stock_decision 出仓位 + 列条件
+# v4.0 决策映射器：用今日选股的 compute_per_stock_decision 出仓位 + 列条件
 # =====================================================================
 def _evaluate_v33(hit_dict, auction_ctx, market_ctx, df):
-    """从可用上下文构建 hit & market_env，调 v3.3 规则；并产出"综合打分"明细。
+    """从可用上下文构建 hit & market_env，调 v4.0 规则；并产出"综合打分"明细。
 
-    Returns: (psd, checks)
+    Returns: (psd, checks, hit)
       psd: compute_per_stock_decision 原 dict
-      checks: list[{label, value, pass(bool|None), need(str)}]
+      checks: list[{label, value, hint, pass, verdict?}]
+      hit: 合并后的 ScreenerHit 字段 dict
     """
     from src.engine.screener_decision import compute_per_stock_decision, _env_level
 
@@ -654,6 +836,7 @@ def _evaluate_v33(hit_dict, auction_ctx, market_ctx, df):
         "b1_rate": market_ctx.get("b1_rate"),
         "concentration": market_ctx.get("concentration"),
         "market_limit_down": market_ctx.get("market_limit_down"),
+        "space_red": market_ctx.get("space_red"),
     }
     # concept_zt_stats / space_board 不在 K 线 ctx 里，留空（影响仅在 5+板的备选概念条件）
     psd = compute_per_stock_decision(
@@ -661,10 +844,11 @@ def _evaluate_v33(hit_dict, auction_ctx, market_ctx, df):
         concept_zt_stats=market_ctx.get("concept_zt_stats") or [],
         space_board_today=market_ctx.get("space_board_today"),
         market_highest_board=market_ctx.get("market_highest_board"),
+        highest_board_tier_today=market_ctx.get("highest_board_tier_today"),
     )
 
     checks = _v33_checks(hit, market_env, psd)
-    return psd, checks
+    return psd, checks, hit
 
 
 def _count_consecutive_lu_from_kline(df, code: str) -> int:
@@ -690,95 +874,122 @@ def _count_consecutive_lu_from_kline(df, code: str) -> int:
         return 0
 
 
+def _check_item(label: str, value: str, passed: bool, hint: str, *, env_veto: bool = False) -> dict:
+    """单条综合打分：value 仅数值，hint 为 (需≥xx) / (达标)，verdict 为否决说明。"""
+    item = {
+        "label": label,
+        "value": value,
+        "hint": hint if not passed else "(达标)",
+        "pass": passed,
+        "need": hint.strip("()") if not passed else "达标",
+    }
+    if not passed:
+        item["verdict"] = "一票否决" if env_veto else "未达标"
+    return item
+
+
 def _v33_checks(hit: dict, env: dict, psd: dict) -> list[dict]:
-    """产出 v3.3 综合打分明细：每条规则的 label/value/pass/need"""
-    from src.engine.screener_decision import _env_level
+    """产出 v4.0 综合打分明细：每条规则的 label/value/hint/pass/verdict"""
     out: list[dict] = []
     board = int(hit.get("continuous_limit_up", 0) or 0)
     b1 = env.get("b1_rate")
     conc = env.get("concentration")
     at = hit.get("auction_turnover")
     prev_to = hit.get("prev_day_turnover")
-    prev_vr = hit.get("prev_volume_ratio")
+    prev_ar = hit.get("prev_amount_ratio")
     prev_yizi = hit.get("prev_day_yizi")
-    mc = hit.get("market_cap")
+    space_red = env.get("space_red")
 
-    # 1) 1进2 档位
+    # 1) 1进2 环境门槛（2进3 硬门槛 ≥8%；其它梯队仍参考 ≥12%）
     if b1 is not None:
         try:
             b1f = float(b1)
-            lvl = _env_level(b1f)
-            out.append({
-                "label": "1进2 成功率",
-                "value": f"{b1f:.1f}% · {lvl}",
-                "pass": (b1f >= 12),
-                "need": "≥12%（极弱势 < 12 不开 2进3）",
-            })
+            need = 8 if board == 2 else 12
+            out.append(_check_item(
+                "1进2 成功率",
+                f"{b1f:.1f}%",
+                b1f >= need,
+                f"(需≥{need}%)",
+                env_veto=(b1f < need),
+            ))
         except Exception:
             pass
 
-    # 2) 板块集中度（梯队差异：2进3 ≥30 / 3+板 ≥25）
+    # 2) 板块集中度（2进3 仅 3 层硬要求；展示仍用 ≥30；3+板 ≥25）
     threshold_conc = 30 if board == 2 else 25 if board >= 3 else None
     if threshold_conc is not None and conc is not None:
         try:
             cf = float(conc)
-            out.append({
-                "label": "板块集中度",
-                "value": f"{cf:.1f}%",
-                "pass": (cf >= threshold_conc),
-                "need": f"≥{threshold_conc}% 或 概念涨停 ≥{3 if board==2 else 2}只",
-            })
+            out.append(_check_item(
+                "板块集中度",
+                f"{cf:.1f}%",
+                cf >= threshold_conc,
+                f"(需≥{threshold_conc}%)",
+            ))
         except Exception:
             pass
 
-    # 3) 竞价换手（梯队差异）
-    threshold_at = 0.6 if board == 2 else 0.5 if board >= 3 else None
+    # 3) 竞价换手（2进3 硬门槛 ≥0.3；3+板 >0.5）
+    if board == 2:
+        threshold_at, at_op = 0.3, ">="
+    elif board >= 3:
+        threshold_at, at_op = 0.5, ">"
+    else:
+        threshold_at, at_op = None, ""
     if threshold_at is not None:
         try:
             af = float(at) if at is not None else None
-            out.append({
-                "label": "竞价换手",
-                "value": f"{af:.2f}%" if af is not None else "—",
-                "pass": (af is not None and af > threshold_at),
-                "need": f">{threshold_at}%",
-            })
+            ok = (af is not None and af >= threshold_at) if at_op == ">=" else (
+                af is not None and af > threshold_at
+            )
+            out.append(_check_item(
+                "竞价换手",
+                f"{af:.2f}%" if af is not None else "—",
+                ok,
+                f"(需{at_op}{threshold_at}%)",
+            ))
         except Exception:
             pass
 
-    # 4-5) 缩量换手板过滤（仅 board=2 且非一字板）
+    # 4-5) 昨换手 / 成交额比（2进3 非一字：≥3% / ≥0.74 边缘、≥0.8 正常）
     if board == 2 and prev_yizi is False:
-        # 昨日换手 ≥8%（20-100亿适用）
-        if mc is not None:
-            try:
-                mcf = float(mc)
-                if 20 <= mcf <= 100:
-                    pf = float(prev_to) if prev_to is not None else None
-                    out.append({
-                        "label": "昨日换手率",
-                        "value": f"{pf:.2f}%" if pf is not None else "—",
-                        "pass": (pf is not None and pf >= 8),
-                        "need": "≥8%（20-100亿市值适用）",
-                    })
-            except Exception:
-                pass
-        # 量比 ≥1.2
         try:
-            vrf = float(prev_vr) if prev_vr is not None else None
-            out.append({
-                "label": "昨日/前日量比",
-                "value": f"{vrf:.2f}" if vrf is not None else "—",
-                "pass": (vrf is not None and vrf >= 1.2),
-                "need": "≥1.2（温和放量 20%+）",
-            })
+            pf = float(prev_to) if prev_to is not None else None
+            out.append(_check_item(
+                "昨日换手率",
+                f"{pf:.2f}%" if pf is not None else "—",
+                pf is not None and pf >= 3,
+                "(需≥3%)",
+            ))
+        except Exception:
+            pass
+        try:
+            from src.engine.screener_decision import PAR_2TO3_EDGE, PAR_2TO3_HARD
+
+            arf = float(prev_ar) if prev_ar is not None else None
+            ok = arf is not None and arf >= PAR_2TO3_EDGE
+            note = f"(边缘≥{PAR_2TO3_EDGE}/正常≥{PAR_2TO3_HARD})"
+            if arf is not None and PAR_2TO3_EDGE <= arf < PAR_2TO3_HARD:
+                note = f"(边缘票 {arf:.2f})"
+            out.append(_check_item(
+                "昨日/前日成交额比",
+                f"{arf:.2f}" if arf is not None else "—",
+                ok,
+                note,
+            ))
         except Exception:
             pass
     elif board == 2 and prev_yizi:
-        out.append({
-            "label": "二板形态",
-            "value": "一字板",
-            "pass": True,
-            "need": "一字板免缩量过滤",
-        })
+        out.append(_check_item("二板形态", "一字板", True, "(一字板免缩量过滤)"))
+
+    # 6) 高标红/绿盘
+    if board == 2 and space_red is not None:
+        out.append(_check_item(
+            "高标竞价",
+            "红盘" if space_red else "绿盘",
+            True if space_red else (b1 is not None and float(b1) >= 12),
+            "(红盘更优；绿盘需晋级率≥12%)",
+        ))
 
     return out
 

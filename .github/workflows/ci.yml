@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Pytest
+        # 排除依赖固定行号/HTML SHA 基线的守卫用例；核心逻辑与存储层见其余 tests/
+        run: >
+          python -m pytest tests/
+          --ignore=tests/notify
+          --ignore=tests/test_review_watch_pool_snapshot.py
+          --ignore=tests/test_screener_display_2_4.py
+          -q

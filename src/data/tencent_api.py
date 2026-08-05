@@ -158,6 +158,21 @@ def enrich_screener_hits(hits: list, market_cap_min: float = 20.0,
 
     info = {str(row["code"]).strip(): row for _, row in df.iterrows()}
 
+    # 竞价时段量比自算：并行预热 5 日均量缓存，避免串行拉 K
+    from src.config import now_cn as _now
+    _t = _now()
+    in_auction = _t.hour == 9 and _t.minute < 30
+    if in_auction and hits:
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            from src.engine.screener import _get_avg_volume_5d
+
+            codes_need = [str(h.code) for h in hits]
+            with ThreadPoolExecutor(max_workers=min(6, len(codes_need))) as pool:
+                list(pool.map(_get_avg_volume_5d, codes_need))
+        except Exception:
+            pass
+
     filtered = []
     for h in hits:
         row = info.get(str(h.code).strip())
@@ -188,11 +203,10 @@ def enrich_screener_hits(hits: list, market_cap_min: float = 20.0,
                 print(f"  剔除 {h.code} {h.name}: 流通市值 {mc:.1f}亿 < {market_cap_min}亿")
                 continue
         # 量比：竞价时段自算，非竞价用腾讯值
-        from src.config import now_cn as _now
-        _t = _now()
         actual_vr = vr
-        if _t.hour == 9 and _t.minute < 30:
-            # 竞价时段：自算
+        vr_self_calc = False
+        if in_auction:
+            # 竞价时段：自算；仅自算成功时才用量比硬过滤（第三方 0.96 等不可信）
             try:
                 from src.engine.screener import _get_avg_volume_5d
                 avg_vol = _get_avg_volume_5d(str(h.code))
@@ -200,14 +214,16 @@ def enrich_screener_hits(hits: list, market_cap_min: float = 20.0,
                     cur_vol = float(row.get("volume", 0))
                     if cur_vol > 0:
                         actual_vr = cur_vol / (avg_vol / 240)
+                        vr_self_calc = True
             except Exception:
                 pass
-
-        if vr > 0:
-            h.volume_ratio = round(actual_vr, 2)
-        if actual_vr > 0 and actual_vr < volume_ratio_min:
-            print(f"  剔除 {h.code} {h.name}: 量比 {actual_vr:.2f} < {volume_ratio_min}")
-            continue
+            if vr_self_calc and actual_vr > 0:
+                h.volume_ratio = round(actual_vr, 2)
+            if vr_self_calc and actual_vr > 0 and actual_vr < volume_ratio_min:
+                print(f"  剔除 {h.code} {h.name}: 量比 {actual_vr:.2f} < {volume_ratio_min}")
+                continue
+        elif vr > 0:
+            h.volume_ratio = round(vr, 2)
 
         filtered.append(h)
 

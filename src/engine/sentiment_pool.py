@@ -15,14 +15,13 @@
 
 加权：rank=1 权重最大，rank=30 权重最小（线性递减）
 """
-import json
-from dataclasses import dataclass, asdict
-from datetime import datetime
+from dataclasses import asdict, dataclass
 from typing import Optional
 
 import pandas as pd
 
 from src.config import DATA_DIR, now_cn
+from src.data.json_io import dump_json_file, load_json_file
 
 
 @dataclass
@@ -185,12 +184,15 @@ def compute_pool_sentiment(
 def compute_market_auction_stats(
     spot_df: pd.DataFrame | None = None,
     full_market_threshold: int = 1000,
+    *,
+    allow_full_market_fallback: bool = True,
 ) -> Optional[MarketAuctionStats]:
     """全市场竞价风向标：一字涨停数 / 跌幅>9% / 跌停数
 
     要求样本必须接近全市场（A股 5000+ 只）才能准确反映风向。
     若传入 spot_df 样本 < full_market_threshold（说明是东财 top500 等局部样本），
-    主动用新浪 stock_zh_a_spot 拉全市场重统计，避免"跌停 0 只"这种假象。
+    且 allow_full_market_fallback=True 时，主动用新浪 stock_zh_a_spot 拉全市场重统计。
+    9:26 cron 应先 fetch_auction_spot_full 传入本函数，避免用昨夜落盘竞价数据。
     """
     sample_too_small = (
         spot_df is None
@@ -198,6 +200,12 @@ def compute_market_auction_stats(
         or len(spot_df) < full_market_threshold
     )
     if sample_too_small:
+        if not allow_full_market_fallback:
+            print(
+                f"[市场风向] 样本 {0 if spot_df is None or spot_df.empty else len(spot_df)} 只，"
+                "9:26 不扩全市场，跳过重算"
+            )
+            return None
         # 走新浪拉全市场（~5200 只）
         try:
             from src.data.sina_spot_api import fetch_a_share_list_sina
@@ -320,13 +328,12 @@ def compute_market_auction_stats(
         # 3) 板块查表 — 优先 industry_cache.json（全市场 5000+ 覆盖），fallback latest_ranking
         try:
             ind_map: dict = {}
-            ic_file = DATA_DIR / "industry_cache.json"
-            if ic_file.exists():
-                ind_map = json.loads(ic_file.read_text())
+            raw = load_json_file(DATA_DIR / "industry_cache.json")
+            if isinstance(raw, dict):
+                ind_map = raw
             # ranking 兜底（万一缓存里没命中 — 一般 industry_cache 已覆盖全市场）
-            ranking_file = DATA_DIR / "latest_ranking.json"
-            if ranking_file.exists():
-                rd = json.loads(ranking_file.read_text())
+            rd = load_json_file(DATA_DIR / "latest_ranking.json")
+            if rd is not None:
                 for r in (rd.get("ranking") or []):
                     code = str(r.get("code", ""))
                     if code and code not in ind_map and r.get("industry"):
@@ -347,15 +354,13 @@ def compute_market_auction_stats(
             c_map = load_stock_to_concepts() or {}
             if c_map:
                 # 全市场涨停聚合 — 用 limit_up_cache 最新一天
-                lu_cache_file = DATA_DIR / "limit_up_cache.json"
+                lu_cache = load_json_file(DATA_DIR / "limit_up_cache.json") or {}
                 heats = []
-                if lu_cache_file.exists():
-                    lu_cache = json.loads(lu_cache_file.read_text()) or {}
-                    if lu_cache:
-                        latest_d = sorted(lu_cache.keys())[-1]
-                        heats = aggregate_concept_limit_ups(
-                            lu_cache.get(latest_d, []) or [], c_map,
-                        )
+                if isinstance(lu_cache, dict) and lu_cache:
+                    latest_d = sorted(lu_cache.keys())[-1]
+                    heats = aggregate_concept_limit_ups(
+                        lu_cache.get(latest_d, []) or [], c_map,
+                    )
                 for s in flat_list:
                     cs = list(c_map.get(s["code"]) or [])
                     s["top_concepts"] = top_concepts_for_stock(cs, heats, top_n=2) if heats else cs[:2]
@@ -380,23 +385,45 @@ def compute_market_auction_stats(
 def load_pool_from_ranking() -> list[str]:
     """从 latest_ranking.json 读取 top30 池代码（按 10 日涨幅排序）"""
     path = DATA_DIR / "latest_ranking.json"
-    if not path.exists():
-        return []
     try:
-        data = json.loads(path.read_text())
-        return [str(r["code"]) for r in data.get("ranking", [])]
+        data = load_json_file(path)
+        if data is not None:
+            return [str(r["code"]) for r in data.get("ranking", [])]
     except Exception:
-        return []
+        pass
+    return []
+
+
+def _relay_zt_is_main_board_nst(code: str, name: str | None = None) -> bool:
+    """加权接力情绪指数样本过滤：仅沪/深主板（60/00 开头），排除科创/创业/北交/ST。
+
+    与看板口径对齐：剔除 300/301、688、北交所（8/4 开头）；名称含 ST/*ST 剔除。
+    """
+    c = str(code).strip().zfill(6)
+    if len(c) != 6 or not c.isdigit():
+        return False
+    if c.startswith(("300", "301", "688", "8", "4")):
+        return False
+    if not (c.startswith("60") or c.startswith("00")):
+        return False
+    n = (name or "").upper()
+    if "ST" in n or "*ST" in n:
+        return False
+    return True
 
 
 def compute_relay_sentiment_index(spot_df) -> Optional[dict]:
-    """加权接力情绪指数（用户口径，主板 2 板以上接力专员）
+    """加权接力情绪指数（主板涨停池样本）
+
+    样本: 东财当日涨停池中，满足主板（代码 60/00 开头，且非 300/301/688/8/4），
+    且名称非 ST/*ST 的个股；在 spot 中有有效今开、昨收者参与统计。
+    lbc 缺失或为 0 的与首板同档（不丢弃主板涨停样本）。
 
     公式: 加权情绪 = 首板溢价×0.2 + 2板溢价×0.5 + 3板及以上溢价×0.3
       · 溢价 = 当日竞价涨幅 = (open/pre_close - 1) * 100
-      · 首板 = continuous_limit_up == 1
-      · 2板 = continuous_limit_up == 2
-      · 3板+ = continuous_limit_up >= 3
+      · 首板档 = lbc <= 1（含 lbc==0）
+      · 2板 = lbc == 2
+      · 3板+ = lbc >= 3
 
     阈值:
       ≥1.5%  → 良好
@@ -407,15 +434,15 @@ def compute_relay_sentiment_index(spot_df) -> Optional[dict]:
         index: float,
         verdict: '良好'/'一般'/'差',
         first_board: {avg, count}, two_board: {...}, three_plus: {...},
-    } 或 None（无样本）
+    } 或 None（过滤后无样本）
     """
     if spot_df is None or spot_df.empty:
         return None
 
     # 拉今日涨停池，含 continuous_limit_up
     try:
-        from src.data.zt_pool_api import fetch_zt_pool
-        pool = fetch_zt_pool() or {}
+        from src.data.zt_pool_api import fetch_zt_pool_with_retry
+        pool = fetch_zt_pool_with_retry() or {}
     except Exception:
         pool = {}
     if not pool:
@@ -431,11 +458,10 @@ def compute_relay_sentiment_index(spot_df) -> Optional[dict]:
 
     by_tier: dict[int, list[float]] = {1: [], 2: [], 3: []}  # 3 表示 ≥3
     for code, info in pool.items():
-        board = int(info.get("lbc", 0) or 0)
-        if board <= 0:
+        nm = str(info.get("name") or "")
+        if not _relay_zt_is_main_board_nst(code, nm):
             continue
-        # 主板过滤：用户口径专员主板 2 板以上接力
-        # 但首板/2板/3板+ 计算包括所有股票池，便于市场温度感知
+        board = int(info.get("lbc", 0) or 0)
         row = spot_map.get(str(code).zfill(6))
         if row is None:
             continue
@@ -447,11 +473,14 @@ def compute_relay_sentiment_index(spot_df) -> Optional[dict]:
         if op <= 0 or pc <= 0:
             continue
         ag = (op / pc - 1) * 100
-        bucket = 1 if board == 1 else (2 if board == 2 else 3)
+        bucket = 1 if board <= 1 else (2 if board == 2 else 3)
         by_tier[bucket].append(ag)
 
     def _avg(lst: list[float]) -> float:
         return round(sum(lst) / len(lst), 2) if lst else 0.0
+
+    if not any(by_tier[i] for i in (1, 2, 3)):
+        return None
 
     a1, a2, a3 = _avg(by_tier[1]), _avg(by_tier[2]), _avg(by_tier[3])
     index_val = round(a1 * 0.2 + a2 * 0.5 + a3 * 0.3, 2)
@@ -497,10 +526,66 @@ def save_sentiment(
         data["relay_sentiment_index"] = rsi
 
     path = DATA_DIR / "latest_sentiment.json"
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    dump_json_file(path, data)
     # 追加到 sentiment_history.json（用于明日对比）
     if market_stats:
         _append_sentiment_history(market_stats, rsi)
+
+
+def refresh_relay_sentiment_index(spot_df=None) -> Optional[dict]:
+    """用当前全市场 spot 重算「加权接力情绪指数」并写回 latest_sentiment.json，
+    并尝试同步 sentiment_history 中当日条目的 relay_sentiment_index（若有）。
+
+    不依赖 latest_ranking 池；梯队情绪其它字段不变。
+    """
+    if spot_df is None:
+        from src.data.fetcher import fetch_realtime_spot
+
+        spot_df = fetch_realtime_spot()
+    if spot_df is None or getattr(spot_df, "empty", True):
+        print("[接力指数] spot 为空，跳过")
+        return None
+
+    rsi = compute_relay_sentiment_index(spot_df)
+    path = DATA_DIR / "latest_sentiment.json"
+    data = load_json_file(path)
+    if data is None:
+        print("[接力指数] latest_sentiment 无数据（库/备份均未命中），跳过")
+        return None
+
+    date_str = str(data.get("date") or now_cn().strftime("%Y-%m-%d %H:%M:%S"))
+    if rsi is not None:
+        rsi = dict(rsi)
+        rsi["prev_index"] = _get_prev_day_relay_sentiment_index(date_str)
+        data["relay_sentiment_index"] = rsi
+        print(
+            f"[接力指数] index={rsi.get('index')}% verdict={rsi.get('verdict')} "
+            f"首板n={rsi['first_board']['count']} 2板n={rsi['two_board']['count']} 3+n={rsi['three_plus']['count']}"
+        )
+    else:
+        data.pop("relay_sentiment_index", None)
+        print("[接力指数] 主板过滤后无样本，已移除 relay_sentiment_index")
+
+    dump_json_file(path, data)
+
+    try:
+        today_d = date_str[:10]
+        hp = _history_file()
+        hist = load_json_file(hp)
+        if not isinstance(hist, list):
+            hist = []
+        for h in reversed(hist):
+            if str(h.get("date", ""))[:10] == today_d:
+                if rsi is not None:
+                    h["relay_sentiment_index"] = float(rsi.get("index") or 0)
+                else:
+                    h.pop("relay_sentiment_index", None)
+                break
+        dump_json_file(hp, hist)
+    except Exception as e:
+        print(f"[接力指数] 同步 sentiment_history 失败: {e}")
+
+    return rsi
 
 
 def _history_file() -> "Path":
@@ -510,12 +595,8 @@ def _history_file() -> "Path":
 
 def _load_sentiment_history() -> list:
     p = _history_file()
-    if not p.exists():
-        return []
-    try:
-        return json.loads(p.read_text())
-    except Exception:
-        return []
+    data = load_json_file(p)
+    return data if isinstance(data, list) else []
 
 
 def _append_sentiment_history(
@@ -541,7 +622,7 @@ def _append_sentiment_history(
         entry["relay_sentiment_index"] = float(relay_sentiment_index.get("index") or 0)
     history.append(entry)
     history = history[-60:]
-    _history_file().write_text(json.dumps(history, ensure_ascii=False, indent=2))
+    dump_json_file(_history_file(), history)
 
 
 def _get_prev_day_limit_down(today_date: str) -> Optional[int]:
@@ -582,13 +663,40 @@ def _get_prev_day_weighted_auction(today_date: str) -> Optional[float]:
 
 
 def get_prev_limit_down_codes() -> list:
-    """读取上一交易日的竞价跌停股代码列表（用于今日竞价反馈统计）"""
+    """读取上一交易日跌停股代码（用于今日竞价反馈统计）。
+
+    优先：daily_sentiment.market_json 竞价跌停列表；
+    其次：ledger sentiment_history.limit_down_codes；
+    兜底：东财收盘跌停池（akshare dtgc，上一交易日）。
+    """
+    try:
+        from src.data.analytics_store import load_prev_day_limit_down_codes
+
+        codes = load_prev_day_limit_down_codes()
+        if codes:
+            return codes
+    except Exception:
+        pass
     from src.config import now_cn
     history = _load_sentiment_history()
-    if not history:
-        return []
-    today_d = now_cn().strftime("%Y-%m-%d")
-    past = [h for h in history if h.get("date", "")[:10] != today_d]
-    if not past:
-        return []
-    return past[-1].get("limit_down_codes") or []
+    if history:
+        today_d = now_cn().strftime("%Y-%m-%d")
+        past = [h for h in history if h.get("date", "")[:10] != today_d]
+        if past:
+            hist_codes = past[-1].get("limit_down_codes") or []
+            if hist_codes:
+                return [str(c).zfill(6) for c in hist_codes]
+    try:
+        from src.data.zt_pool_api import fetch_dt_pool, prev_trading_date_ymd
+
+        ymd = prev_trading_date_ymd()
+        pool = fetch_dt_pool(ymd)
+        if pool:
+            print(
+                f"[昨日跌停反馈] 库内竞价跌停列表为空，改用收盘跌停池 "
+                f"date={ymd} n={len(pool)}"
+            )
+            return list(pool.keys())
+    except Exception as e:
+        print(f"[昨日跌停反馈] 收盘跌停池兜底失败: {e}")
+    return []

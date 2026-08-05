@@ -6,8 +6,11 @@
 注意：新浪接口字段精简，**不含** volume_ratio / market_cap / turnover / pe，
 screener 在使用时需对缺失字段做 "有则过滤，无则放行" 降级。
 """
+import os
 import time
 import pandas as pd
+
+os.environ.setdefault("TQDM_DISABLE", "1")
 
 
 def fetch_a_share_list_sina() -> pd.DataFrame:
@@ -125,11 +128,12 @@ def fetch_limit_up_history_sina(
 
     # 额外纳入涨停缓存中近期出现过的所有股票（确保连板不断裂）
     try:
-        import json
         from src.config import DATA_DIR
+        from src.data.json_io import load_json_file
+
         cache_file = DATA_DIR / "limit_up_cache.json"
-        if cache_file.exists():
-            cache = json.loads(cache_file.read_text())
+        cache = load_json_file(cache_file)
+        if isinstance(cache, dict):
             cached_codes = set()
             for records in cache.values():
                 for r in records:

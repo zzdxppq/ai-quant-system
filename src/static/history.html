@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>选股记录 · AI量化周期看板</title>
+    <title>选股回测 · AI量化周期看板</title>
     <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -34,7 +34,78 @@
         .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
 
         /* 胜率面板 */
-        .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+        .stats-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 12px; }
+        .stats-row .stat-card { padding: 14px 12px; }
+        .stats-row .stat-card .rate { font-size: 26px; }
+        .stats-row .stat-card:first-child .rate { font-size: 30px; color: #f3f4f6 !important; }
+        .info-banner {
+            font-size: 11px; color: #8892a8; margin-bottom: 10px;
+            padding: 8px 12px; background: #1a1f2e; border-radius: 8px; line-height: 1.5;
+        }
+        .scope-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+        .scope-bar .scope-label { font-size: 12px; color: #6b7280; margin-right: 4px; }
+        .priority-block { margin-bottom: 12px; }
+        .chart-card { margin-top: 10px; }
+        .chart-card.compact-equity { margin-top: 8px; }
+        /* 诊断：Tab + 横条 / 热力表，固定高度不占屏 */
+        .diag-panel {
+            margin-top: 10px; background: #111827; border: 1px solid #1e2a45;
+            border-radius: 10px; padding: 10px 12px 12px;
+        }
+        .diag-panel .card-title { margin-bottom: 8px; font-size: 13px; }
+        .diag-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+        .diag-tab {
+            padding: 4px 12px; font-size: 12px; cursor: pointer;
+            background: #1a2040; color: #a0aec0; border: 1px solid #3a4568;
+            border-radius: 6px; transition: all 0.15s;
+        }
+        .diag-tab:hover { border-color: #60a5fa; color: #93c5fd; }
+        .diag-tab.active { background: #2563eb; color: #fff; border-color: #3b82f6; }
+        .diag-body { min-height: 108px; }
+        .hbar-row {
+            display: grid; grid-template-columns: 52px 1fr 72px;
+            align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px;
+        }
+        .hbar-row:last-child { margin-bottom: 0; }
+        .hbar-label { color: #a0aec0; white-space: nowrap; }
+        .hbar-track {
+            height: 14px; background: #1a2040; border-radius: 4px; overflow: hidden;
+        }
+        .hbar-fill { height: 100%; border-radius: 4px; min-width: 2px; transition: width 0.2s; }
+        .hbar-meta { text-align: right; color: #e0e6ed; font-variant-numeric: tabular-nums; font-size: 11px; }
+        .hbar-meta.empty { color: #4b5563; }
+        .cross-heat { width: 100%; font-size: 11px; border-collapse: collapse; }
+        .cross-heat th, .cross-heat td {
+            padding: 5px 6px; text-align: center; border: 1px solid #1a2540;
+        }
+        .cross-heat th { color: #6b7280; font-weight: 500; background: #0d1220; }
+        .cross-heat th.row-hd { text-align: left; color: #60a5fa; min-width: 48px; }
+        .cross-heat td { font-variant-numeric: tabular-nums; }
+        .cross-heat td.empty { color: #4b5563; background: #0a0e18; }
+        .cross-heat td small { display: block; font-size: 9px; color: #6b7280; margin-top: 1px; }
+        .equity-chart-wrap { position: relative; margin-top: 8px; }
+        .equity-chart-layout { display: flex; align-items: flex-start; gap: 6px; }
+        .equity-yaxis {
+            flex: 0 0 52px; height: 200px; display: flex; flex-direction: column;
+            justify-content: space-between; align-items: flex-end;
+            padding: 10px 0; font-size: 10px; color: #6b7280;
+            font-variant-numeric: tabular-nums; line-height: 1;
+        }
+        .equity-plot { flex: 1; min-width: 0; }
+        .equity-svg { width: 100%; height: 200px; display: block; }
+        .equity-xlabels { display: flex; justify-content: space-between; font-size: 10px; color: #6b7280; margin-top: 4px; padding: 0 4px; }
+        .guidance-grid { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 12px; margin-top: 0; margin-bottom: 10px; }
+        .guidance-card { background: #0d1220; border-radius: 8px; padding: 12px 14px; border: 1px solid #1a2540; }
+        .guidance-card h4 { font-size: 13px; margin-bottom: 10px; }
+        .guidance-card.exec h4 { color: #34d399; }
+        .guidance-card.risk h4 { color: #ef4444; }
+        .guidance-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+        .guidance-table th, .guidance-table td { padding: 6px 8px; border-bottom: 1px solid #1e2a45; text-align: left; }
+        .guidance-table tr.skip td { color: #6b7280; }
+        .guidance-mantra {
+            margin-top: 8px; margin-bottom: 0; padding: 8px 12px; background: #1a1f2e;
+            border-radius: 6px; font-size: 12px; color: #fbbf24; text-align: center;
+        }
         .stat-card {
             background: #111827; border: 1px solid #1e2a45; border-radius: 12px;
             padding: 20px; text-align: center;
@@ -92,6 +163,7 @@
         }
         .btn-mini:hover:not(:disabled) { border-color:#60a5fa; color:#60a5fa; }
         .btn-mini:disabled { opacity:0.4; cursor:not-allowed; }
+        .btn-mini.active { background:#2563eb; color:#fff; border-color:#3b82f6; }
         .pager {
             display:flex; align-items:center; gap:8px;
             justify-content:center; padding:14px 0 4px; margin-top:10px;
@@ -99,146 +171,291 @@
         }
         .pager-info { font-size:12px; color:#8892a8; padding:0 6px; }
 
+        .page-tabs { display:flex; gap:8px; margin-bottom:16px; }
+        .tab-btn {
+            padding:8px 20px; font-size:13px; cursor:pointer;
+            background:#1a2040; color:#a0aec0; border:1px solid #3a4568;
+            border-radius:8px; transition:all 0.2s;
+        }
+        .tab-btn.active { background:#2563eb; color:#fff; border-color:#3b82f6; }
+        .rule-banner {
+            font-size:12px; color:#8892a8; margin-bottom:14px;
+            padding:10px 14px; background:#0d1220; border-radius:8px;
+            border-left:3px solid #60a5fa;
+        }
+        .chart-bar-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:12px; }
+        .chart-bar-label { width:72px; color:#a0aec0; flex-shrink:0; }
+        .chart-bar-track { flex:1; height:18px; background:#1a2040; border-radius:4px; overflow:hidden; }
+        .dim-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; margin-top:16px; }
+        .dim-table { width:100%; font-size:12px; }
+        .dim-table th, .dim-table td { padding:6px 8px; border-bottom:1px solid #1e2a45; }
+
+        @media (max-width: 1100px) {
+            .stats-row { grid-template-columns: repeat(3, 1fr); }
+            .guidance-grid { grid-template-columns: 1fr; }
+            .hbar-row { grid-template-columns: 44px 1fr 64px; gap: 4px; }
+        }
         @media (max-width: 768px) {
             .stats-row { grid-template-columns: repeat(2, 1fr); }
         }
     </style>
 </head>
 <body>
+<script>
+/* 鉴权守卫（auth-1.0）：body 顶部、最早执行
+   - localStorage 已有有效 token → 放行（后台 me 探活）
+   - 过期 / 无 token → 清 + 跳 /login
+   注意：head 注入的 APP_ROOT / fetch 拦截在它之前已加载；head 注入 patch 的
+   fetch 会自动带 Authorization 头，所以下面的 /api/auth/me 一次能拿到 200/401
+*/
+(function () {
+  try {
+    var t = localStorage.getItem("auth_token");
+    var exp = localStorage.getItem("auth_expires");
+    var now = Date.now();
+    var loginPath = (window.appPath ? window.appPath("/login") : "/login");
+    if (!t || (exp && new Date(exp).getTime() < now)) {
+      try {
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("auth_email");
+        localStorage.removeItem("auth_expires");
+      } catch (e) {}
+      location.replace(loginPath);
+      return;
+    }
+    // 后台探活；401 时 fetch 拦截器会跳，这里不重复跳
+    var meUrl = window.appPath ? window.appPath("/api/auth/me") : "/api/auth/me";
+    fetch(meUrl, { headers: { "Authorization": "Bearer " + t } })
+      .then(function (r) {
+        if (r.status === 401) {
+          try {
+            localStorage.removeItem("auth_token");
+            localStorage.removeItem("auth_email");
+            localStorage.removeItem("auth_expires");
+          } catch (e) {}
+          location.replace(loginPath);
+        }
+      })
+      .catch(function () { /* 网络错误不阻塞页面渲染 */ });
+  } catch (e) { /* localStorage 不可用时不阻塞 */ }
+})();
+</script>
 <div id="app">
     <div class="header">
-        <h1>选股记录</h1>
+        <h1>选股回测</h1>
         <div class="nav">
             <a href="/">看板</a>
             <a href="/ranking">10日涨幅榜</a>
             <a href="/review">复盘</a>
+            <a href="/history" class="active">回测</a>
         </div>
     </div>
 
     <div class="container">
-        <!-- 胜率统计 -->
+        <div class="page-tabs">
+            <button type="button" class="tab-btn" :class="{active: activeTab === 'stats'}" @click="activeTab = 'stats'">统计</button>
+            <button type="button" class="tab-btn" :class="{active: activeTab === 'detail'}" @click="activeTab = 'detail'">明细</button>
+        </div>
+        <div v-show="activeTab === 'stats'">
+        <div class="scope-bar">
+            <span class="scope-label">时间范围</span>
+            <button class="btn-mini" :class="{active: quickScope === 'month'}" @click="setScope('month')">本月</button>
+            <button class="btn-mini" :class="{active: quickScope === '3m'}" @click="setScope('3m')">近3个月</button>
+            <button class="btn-mini" :class="{active: quickScope === '6m'}" @click="setScope('6m')">近6个月</button>
+            <button class="btn-mini" :class="{active: quickScope === 'year'}" @click="setScope('year')">今年</button>
+            <button class="btn-mini" :class="{active: quickScope === 'all'}" @click="setScope('all')">全部</button>
+        </div>
+        <div class="info-banner">
+            收益回测规则：<strong style="color:#e0e6ed;">收盘买→次日收盘卖</strong>
+            · 交易：仅<strong style="color:#10b981;">策略开仓</strong>计入；空仓信号只记样本
+            · 组合：按<strong style="color:#60a5fa;">个股真实建议仓位</strong>加权，按交易日复利
+            · 系统最新交易日期：<strong style="color:#60a5fa;">{{ backtest.latest_trade_date || '—' }}</strong>
+            · {{ backtest.meta?.daily_metrics_note || '基础指标每个交易日收盘后更新' }}
+            · {{ backtest.meta?.weekly_metrics_note || '周度指标每周五收盘后更新' }}
+            <span v-if="backtest.meta?.weekly_metrics_updated">（最近：{{ backtest.meta.weekly_metrics_updated }}）</span>
+        </div>
+
+        <div class="priority-block">
         <div class="stats-row">
             <div class="stat-card">
-                <div class="label">本周胜率</div>
-                <div class="rate" :class="rateClass(stats.weekly)">
-                    {{ stats.weekly.win_rate }}%
-                </div>
-                <div class="detail">{{ stats.weekly.wins }}/{{ stats.weekly.trades }} 笔</div>
+                <div class="label">交易总笔数</div>
+                <div class="rate" style="color:#e0e6ed;">{{ backtest.summary?.return_settled ?? '—' }}</div>
+                <div class="detail">策略开仓且已结算</div>
             </div>
             <div class="stat-card">
-                <div class="label">本月胜率</div>
-                <div class="rate" :class="rateClass(stats.monthly)">
-                    {{ stats.monthly.win_rate }}%
-                </div>
-                <div class="detail">{{ stats.monthly.wins }}/{{ stats.monthly.trades }} 笔</div>
+                <div class="label">样本数</div>
+                <div class="rate" style="color:#a0aec0;">{{ backtest.summary?.sample_count ?? '—' }}</div>
+                <div class="detail">有结算收益的信号</div>
             </div>
             <div class="stat-card">
-                <div class="label">本年胜率</div>
-                <div class="rate" :class="rateClass(stats.yearly)">
-                    {{ stats.yearly.win_rate }}%
+                <div class="label">交易/样本</div>
+                <div class="rate" style="color:#60a5fa;">
+                    {{ backtest.summary?.trade_sample_ratio != null ? backtest.summary.trade_sample_ratio + '%' : '—' }}
                 </div>
-                <div class="detail">{{ stats.yearly.wins }}/{{ stats.yearly.trades }} 笔</div>
+                <div class="detail">开仓占比</div>
             </div>
             <div class="stat-card">
-                <div class="label">总胜率</div>
-                <div class="rate" :class="rateClass(stats.total)">
-                    {{ stats.total.win_rate }}%
+                <div class="label">胜率</div>
+                <div class="rate" :class="rateClass({ win_rate: backtest.summary?.return_win_rate || 0, trades: backtest.summary?.return_settled || 0 })">
+                    {{ backtest.summary?.return_win_rate != null ? backtest.summary.return_win_rate + '%' : '—' }}
                 </div>
-                <div class="detail">{{ stats.total.wins }}/{{ stats.total.trades }} 笔</div>
+                <div class="detail">开仓单笔收益 &gt; 0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">平均单笔收益</div>
+                <div class="rate" :class="numClass(backtest.summary?.avg_return)">
+                    {{ backtest.summary?.avg_return != null ? fmtPct(backtest.summary.avg_return) : '—' }}
+                </div>
+                <div class="detail">%</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">累计收益</div>
+                <div class="rate" :class="numClass(backtest.summary?.total_return_pct)">
+                    {{ backtest.summary?.total_return_pct != null ? fmtPct(backtest.summary.total_return_pct) : '—' }}
+                </div>
+                <div class="detail">建议仓位加权·按日复利</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">盈亏比</div>
+                <div class="rate" style="color:#fbbf24;">{{ backtest.summary?.profit_loss_ratio ?? '—' }}</div>
+                <div class="detail">均盈 / |均亏|</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">最大回撤</div>
+                <div class="rate" style="color:#10b981;">
+                    {{ backtest.summary?.max_drawdown_pct != null ? '-' + backtest.summary.max_drawdown_pct.toFixed(2) + '%' : '—' }}
+                </div>
+                <div class="detail">权益峰谷回撤</div>
             </div>
         </div>
 
-        <!-- 分维度胜率 -->
-        <div class="card" v-if="stats.by_board && Object.keys(stats.by_board).length">
-            <div class="card-title" style="font-size:14px;color:#8892a8;">分维度胜率</div>
-            <div style="display:flex;gap:24px;flex-wrap:wrap;">
-                <!-- 按连板 -->
-                <div style="flex:1;min-width:200px;">
-                    <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">按连板类型</div>
-                    <div v-for="(s, label) in stats.by_board" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
-                        <span style="width:50px;color:#a0aec0;">{{ label }}</span>
-                        <div style="flex:1;height:16px;background:#1a2040;border-radius:4px;overflow:hidden;">
-                            <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: rateBarColor(s.win_rate), display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
-                                {{ s.win_rate }}%
-                            </div>
-                        </div>
-                        <span style="width:40px;color:#6b7280;font-size:11px;">{{ s.wins }}/{{ s.trades }}</span>
-                    </div>
-                </div>
-                <!-- 按市场情绪 -->
-                <div style="flex:1;min-width:200px;" v-if="stats.by_emotion && Object.keys(stats.by_emotion).length">
-                    <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">按市场情绪</div>
-                    <div v-for="(s, label) in stats.by_emotion" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
-                        <span style="width:100px;color:#a0aec0;font-size:11px;">{{ label }}</span>
-                        <div style="flex:1;height:16px;background:#1a2040;border-radius:4px;overflow:hidden;">
-                            <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: rateBarColor(s.win_rate), display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
-                                {{ s.win_rate }}%
-                            </div>
-                        </div>
-                        <span style="width:40px;color:#6b7280;font-size:11px;">{{ s.wins }}/{{ s.trades }}</span>
-                    </div>
-                </div>
-                <!-- 按是否周期股 -->
-                <div style="flex:1;min-width:200px;" v-if="stats.by_cycle_stock && Object.keys(stats.by_cycle_stock).length">
-                    <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">按是否周期股</div>
-                    <div v-for="(s, label) in stats.by_cycle_stock" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
-                        <span style="width:70px;color:#a0aec0;">{{ label }}</span>
-                        <div style="flex:1;height:16px;background:#1a2040;border-radius:4px;overflow:hidden;">
-                            <div :style="{width: s.win_rate+'%', height:'100%', borderRadius:'4px', background: rateBarColor(s.win_rate), display:'flex', alignItems:'center', paddingLeft:'4px', fontSize:'10px', fontWeight:600, color:'#fff'}">
-                                {{ s.win_rate }}%
-                            </div>
-                        </div>
-                        <span style="width:40px;color:#6b7280;font-size:11px;">{{ s.wins }}/{{ s.trades }}</span>
-                    </div>
-                </div>
-                <!-- 按结果 -->
-                <div style="flex:1;min-width:200px;" v-if="stats.by_outcome && Object.keys(stats.by_outcome).length">
-                    <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">按结果分类</div>
-                    <div v-for="(s, label) in stats.by_outcome" :key="label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:13px;">
-                        <span style="width:70px;color:#a0aec0;">{{ label }}</span>
-                        <span style="font-weight:700;color:#e0e6ed;">{{ s.trades }} 笔</span>
-                        <span style="color:#6b7280;font-size:11px;">占比 {{ stats.total.trades > 0 ? (s.trades / stats.total.trades * 100).toFixed(0) : 0 }}%</span>
-                    </div>
-                </div>
+        <div class="guidance-grid" v-if="backtest.summary?.return_settled && backtest.trading_guidance?.rules?.length">
+            <div class="guidance-card exec">
+                <h4>✅ 执行规则</h4>
+                <table class="guidance-table">
+                    <thead><tr><th>优先级</th><th>连板</th><th>竞价</th><th>胜率</th><th>仓位</th></tr></thead>
+                    <tbody>
+                        <tr v-for="row in backtest.trading_guidance.rules" :key="row.board + row.auction + row.priority"
+                            :class="{ skip: row.skip }">
+                            <td>{{ row.skip ? '❌' : (row.priority || '—') }}</td>
+                            <td>{{ row.board }}</td>
+                            <td>{{ row.auction }}</td>
+                            <td>{{ row.win_rate }}</td>
+                            <td>{{ row.position }}</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
-            <!-- 开仓指导（资深龙头选手视角） -->
-            <div v-if="stats.suggestion" style="margin-top:14px;padding:14px 16px;background:#0d1220;border-left:4px solid #fbbf24;border-radius:6px;">
-                <div style="font-size:11px;color:#fbbf24;margin-bottom:8px;font-weight:600;letter-spacing:0.5px;">📌 开仓指导 · 龙头视角</div>
-                <div v-if="typeof stats.suggestion === 'string'" style="font-size:13px;color:#e0e6ed;line-height:1.6;">{{ stats.suggestion }}</div>
-                <template v-else>
-                    <div v-if="stats.suggestion.headline" style="font-size:14px;color:#e0e6ed;line-height:1.5;font-weight:600;margin-bottom:8px;">
-                        {{ stats.suggestion.headline }}
+            <div class="guidance-card risk">
+                <h4>❌ 风险规避</h4>
+                <p style="font-size:13px;color:#c9d1d9;line-height:1.7;">{{ backtest.trading_guidance.risk_summary }}</p>
+            </div>
+        </div>
+        <div class="guidance-mantra" v-if="backtest.trading_guidance?.mantra">{{ backtest.trading_guidance.mantra }}</div>
+
+        <div class="card chart-card compact-equity" v-if="backtest.summary?.return_settled">
+            <div class="card-title">收益曲线与最大回撤 <span style="font-weight:400;color:#6b7280;">（纵轴：累计收益率）</span></div>
+            <div v-if="!equityChart.points.length" class="empty-state" style="padding:24px;">暂无数据</div>
+            <div v-else class="equity-chart-wrap">
+                <div class="equity-chart-layout">
+                    <div class="equity-yaxis" aria-hidden="true">
+                        <span v-for="(t, yi) in equityChart.yTicks" :key="'y-' + yi">{{ t.label }}</span>
                     </div>
-                    <div v-if="stats.suggestion.rules && stats.suggestion.rules.length" style="margin-bottom:6px;">
-                        <div style="font-size:11px;color:#34d399;font-weight:600;margin-bottom:3px;">✓ 执行规则</div>
-                        <div v-for="r in stats.suggestion.rules" :key="r"
-                             style="font-size:12px;color:#c9d1d9;line-height:1.6;padding:2px 0;">• {{ r }}</div>
+                    <div class="equity-plot">
+                <svg class="equity-svg" viewBox="0 0 800 200" preserveAspectRatio="none">
+                    <defs>
+                        <linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#ef4444" stop-opacity="0.35"/>
+                            <stop offset="100%" stop-color="#ef4444" stop-opacity="0.05"/>
+                        </linearGradient>
+                    </defs>
+                    <line v-for="(t, yi) in equityChart.yTicks" :key="'grid-' + yi"
+                          x1="0" :y1="t.y" x2="800" :y2="t.y"
+                          stroke="#1e2a45" stroke-width="1"/>
+                    <rect v-if="equityChart.ddRect"
+                          :x="equityChart.ddRect.x" y="0"
+                          :width="equityChart.ddRect.w" height="200"
+                          fill="url(#ddGrad)"/>
+                    <polyline :points="equityChart.line" fill="none" stroke="#60a5fa" stroke-width="2" vector-effect="non-scaling-stroke"/>
+                </svg>
+                        <div v-if="equityChart.xLabels && equityChart.xLabels.length" class="equity-xlabels">
+                            <span v-for="(lb, i) in equityChart.xLabels" :key="i">{{ lb }}</span>
+                        </div>
                     </div>
-                    <div v-if="stats.suggestion.risks && stats.suggestion.risks.length" style="margin-bottom:6px;">
-                        <div style="font-size:11px;color:#ef4444;font-weight:600;margin-bottom:3px;">⚠ 风险/规避</div>
-                        <div v-for="r in stats.suggestion.risks" :key="r"
-                             style="font-size:12px;color:#c9d1d9;line-height:1.6;padding:2px 0;">• {{ r }}</div>
-                    </div>
-                    <div v-if="stats.suggestion.notes && stats.suggestion.notes.length"
-                         style="margin-top:8px;padding-top:6px;border-top:1px dashed #2a3050;">
-                        <div v-for="r in stats.suggestion.notes" :key="r"
-                             style="font-size:11px;color:#8892a8;line-height:1.5;padding:1px 0;">{{ r }}</div>
-                    </div>
-                </template>
+                </div>
+                <div v-if="equityChart.ddLabel" style="font-size:11px;color:#ef4444;margin-top:6px;padding-left:58px;">
+                    最大回撤区间：{{ equityChart.ddLabel }}（-{{ (backtest.summary?.max_drawdown_pct || 0).toFixed(2) }}%）
+                </div>
             </div>
         </div>
 
+
+        <div class="diag-panel" v-if="backtest.summary?.return_settled">
+            <div class="card-title">胜率诊断</div>
+            <div class="diag-tabs">
+                <button type="button" class="diag-tab" :class="{ active: diagTab === 'board' }" @click="diagTab = 'board'">连板</button>
+                <button type="button" class="diag-tab" :class="{ active: diagTab === 'b1' }" @click="diagTab = 'b1'">1进2晋级率</button>
+                <button type="button" class="diag-tab" :class="{ active: diagTab === 'cross' }" @click="diagTab = 'cross'">连板×竞价</button>
+            </div>
+            <div v-show="diagTab === 'board'" class="diag-body">
+                <div class="hbar-row" v-for="item in boardChartItems" :key="item.label">
+                    <span class="hbar-label">{{ item.label }}</span>
+                    <div class="hbar-track">
+                        <div class="hbar-fill" :style="hbarStyle(item)"></div>
+                    </div>
+                    <span class="hbar-meta" :class="{ empty: !item.trades }">
+                        {{ item.trades ? item.win_rate + '% · ' + item.trades + '笔' : '—' }}
+                    </span>
+                </div>
+            </div>
+            <div v-show="diagTab === 'b1'" class="diag-body">
+                <div class="hbar-row" v-for="item in b1ChartItems" :key="item.label">
+                    <span class="hbar-label">{{ item.label }}</span>
+                    <div class="hbar-track">
+                        <div class="hbar-fill" :style="hbarStyle(item)"></div>
+                    </div>
+                    <span class="hbar-meta" :class="{ empty: !item.trades }">
+                        {{ item.trades ? item.win_rate + '% · ' + item.trades + '笔' : '—' }}
+                    </span>
+                </div>
+            </div>
+            <div v-show="diagTab === 'cross'" class="diag-body">
+                <table class="cross-heat">
+                    <thead>
+                        <tr>
+                            <th class="row-hd">连板</th>
+                            <th v-for="ab in auctionChartOrder" :key="ab">{{ ab }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="board in crossBoardOrder" :key="board">
+                            <th class="row-hd">{{ board }}</th>
+                            <td v-for="ab in auctionChartOrder" :key="ab"
+                                :class="heatCellClass(board, ab)"
+                                :style="heatCellStyle(board, ab)">
+                                <template v-if="crossCell(board, ab).trades">
+                                    {{ crossCell(board, ab).win_rate }}%
+                                    <small>{{ crossCell(board, ab).trades }}笔</small>
+                                </template>
+                                <template v-else>—</template>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+
+        </div>
+
+        </div>
+
+        <div v-show="activeTab === 'detail'">
         <!-- 记录表 -->
         <div class="card">
             <div class="card-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;">
                 <span>历史选股记录（共 {{ filteredRecords.length }} 条<span v-if="filteredRecords.length !== records.length"> · 全量 {{ records.length }}</span>）</span>
-                <div style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px;color:#a0aec0;flex-wrap:wrap;">
-                    <span>起始</span>
-                    <input type="date" v-model="startDate" @change="onFilterChange" :max="endDate || undefined" class="date-input">
-                    <span>结束</span>
-                    <input type="date" v-model="endDate" @change="onFilterChange" :min="startDate || undefined" class="date-input">
-                    <button class="btn-mini" @click="clearFilter" v-if="startDate || endDate">清除</button>
-                </div>
+
             </div>
             <div style="max-height:600px;overflow-y:auto">
                 <table v-if="pagedRecords.length">
@@ -247,7 +464,7 @@
                             <th>日期</th>
                             <th>代码</th>
                             <th>名称</th>
-                            <th>连板</th>
+                            <th>连板 / 晋级</th>
                             <th>开盘价</th>
                             <th>竞价涨幅</th>
                             <th title="竞价换手率(%)">竞价换手</th>
@@ -256,19 +473,16 @@
                             <th>次日竞价</th>
                             <th>次日收盘涨幅</th>
                             <th>10日涨幅</th>
-                            <th title="当日复盘 1进2 成功率">1进2</th>
+                            <th title="选股日依赖的昨日1进2晋级率（归档时复盘 scorecard）">1进2</th>
                             <th title="当日板块/概念集中度">集中度</th>
-                            <th>周期股</th>
-                            <th>周期计数</th>
                             <th>胜负</th>
                             <th title="v3.3 决策快照（开仓/空仓 + 仓位 + 梯队）">决策</th>
-                            <th>备注</th>
                         </tr>
                     </thead>
                     <tbody>
                         <template v-for="(group, date) in groupedRecords" :key="date">
                             <tr>
-                                <td colspan="20" class="date-group">
+                                <td colspan="17" class="date-group">
                                     {{ date }}（{{ group.length }} 只）
                                     <span v-if="dailyEnv(group)" style="margin-left:16px;font-weight:400;font-size:12px;color:#a0aec0;">
                                         <template v-if="dailyEnv(group).market_limit_down !== null && dailyEnv(group).market_limit_down !== undefined">
@@ -290,28 +504,20 @@
                                 <td>{{ r.date }}</td>
                                 <td>{{ r.code }}</td>
                                 <td>{{ r.name }}</td>
-                                <td>{{ r.continuous_limit_up }}板</td>
-                                <td>{{ r.open_price || '-' }}</td>
+                                <td>
+                                    <span>{{ r.continuous_limit_up }}板</span>
+                                    <span v-if="r.board_label" style="color:#60a5fa;margin-left:4px;font-size:11px;">{{ r.board_label }}</span>
+                                </td>
+                                <td>{{ fmtPrice(r.open_price) }}</td>
                                 <td :class="numClass(r.auction_gain)">{{ fmtPct(r.auction_gain) }}</td>
-                                <td>{{ r.auction_turnover != null ? r.auction_turnover + '%' : '—' }}</td>
-                                <td>{{ r.close_price || '-' }}</td>
+                                <td>{{ fmtPctPlain(r.auction_turnover) }}</td>
+                                <td>{{ fmtPrice(r.close_price) }}</td>
                                 <td :class="numClass(r.day_change)">{{ fmtPct(r.day_change) }}</td>
                                 <td :class="numClass(r.next_day_auction_gain)">{{ fmtPct(r.next_day_auction_gain) }}</td>
                                 <td :class="numClass(r.next_day_close_gain)">{{ fmtPct(r.next_day_close_gain) }}</td>
-                                <td :class="(r.gain_10d||0) >= 0 ? 'gain-pos' : 'gain-neg'">
-                                    {{ r.gain_10d ? (r.gain_10d > 0 ? '+' : '') + r.gain_10d + '%' : '-' }}
-                                </td>
-                                <td>{{ r.b1_rate != null ? r.b1_rate + '%' : '—' }}</td>
-                                <td>{{ r.concentration != null ? r.concentration + '%' : '—' }}</td>
-                                <td>
-                                    <span v-if="r.is_cycle_stock === true" class="tag" style="background:#3b0a0a;color:#ef4444;">是</span>
-                                    <span v-else-if="r.is_cycle_stock === false" class="tag" style="background:#0a2a1a;color:#10b981;">否</span>
-                                    <span v-else class="tag tag-pending">-</span>
-                                </td>
-                                <td>
-                                    <span v-if="r.top30_streak" style="color:#fbbf24;font-weight:600;">{{ r.top30_streak }}天</span>
-                                    <span v-else style="color:#4b5563;">-</span>
-                                </td>
+                                <td :class="numClass(r.gain_10d)">{{ fmtPct(r.gain_10d) }}</td>
+                                <td>{{ fmtPctPlain(r.b1_rate) }}</td>
+                                <td>{{ fmtPctPlain(r.concentration) }}</td>
                                 <td>
                                     <span v-if="r.is_win === true" class="tag tag-win">盈</span>
                                     <span v-else-if="r.is_win === false" class="tag tag-lose">亏</span>
@@ -332,10 +538,6 @@
                                     </template>
                                     <span v-else style="color:#4b5563;">—</span>
                                 </td>
-                                <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">
-                                    <span v-if="r.sanbanzhu" style="color:#ef4444;font-weight:600;" :title="r.sanbanzhu_detail">⚠️三板组</span>
-                                    <span v-if="r.board_label" style="color:#6b7280;">{{ r.board_label }}</span>
-                                </td>
                             </tr>
                         </template>
                     </tbody>
@@ -351,6 +553,7 @@
                 <button class="btn-mini" :disabled="page >= totalPages" @click="page = totalPages">»</button>
             </div>
         </div>
+        </div>
     </div>
 </div>
 
@@ -359,17 +562,14 @@ const { createApp, ref, computed, onMounted } = Vue
 
 createApp({
     setup() {
+        const activeTab = ref('stats')
+        const diagTab = ref('cross')
+        const backtest = ref({ summary: {}, by_board: {}, by_b1_tier: {}, by_board_cross_auction: {}, equity_curve: [], trading_guidance: {}, meta: {} })
         const records = ref([])
-        const stats = ref({
-            total: { trades: 0, wins: 0, win_rate: 0 },
-            weekly: { trades: 0, wins: 0, win_rate: 0 },
-            monthly: { trades: 0, wins: 0, win_rate: 0 },
-            yearly: { trades: 0, wins: 0, win_rate: 0 },
-        })
-
         // 日期区间筛选 + 分页
-        const startDate = ref('')   // YYYY-MM-DD
+        const startDate = ref('')
         const endDate = ref('')
+        const quickScope = ref('all')
         const page = ref(1)
         const pageSize = 20
 
@@ -429,12 +629,139 @@ createApp({
             return groups
         })
 
-        function onFilterChange() { page.value = 1 }
+        function onFilterChange() { page.value = 1; loadBacktest() }
         function clearFilter() {
             startDate.value = ''
             endDate.value = ''
+            quickScope.value = 'all'
             page.value = 1
+            loadBacktest()
         }
+
+        function setScope(scope) {
+            quickScope.value = scope
+            const now = new Date()
+            const today = now.toISOString().slice(0, 10)
+            if (scope === 'month') {
+                startDate.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01'
+                endDate.value = today
+            } else if (scope === '3m') {
+                const d = new Date(now)
+                d.setMonth(d.getMonth() - 3)
+                startDate.value = d.toISOString().slice(0, 10)
+                endDate.value = today
+            } else if (scope === '6m') {
+                const d = new Date(now)
+                d.setMonth(d.getMonth() - 6)
+                startDate.value = d.toISOString().slice(0, 10)
+                endDate.value = today
+            } else if (scope === 'year') {
+                startDate.value = now.getFullYear() + '-01-01'
+                endDate.value = today
+            } else {
+                startDate.value = ''
+                endDate.value = ''
+            }
+            page.value = 1
+            loadBacktest()
+        }
+
+
+        const BOARD_ORDER = ['2进3', '3进4', '4进5', '5板以上']
+        const B1_ORDER = ['<12%', '12~15%', '≥15%']
+        const AUCTION_ORDER = ['4~5%', '5~6%', '6~7.5%']
+
+        function chartItems(map, order) {
+            return order.map(label => {
+                const s = (map || {})[label] || {}
+                return { label, win_rate: s.win_rate ?? 0, trades: s.trades || 0 }
+            })
+        }
+        const boardChartItems = computed(() => chartItems(backtest.value.by_board, BOARD_ORDER))
+        const b1ChartItems = computed(() => chartItems(backtest.value.by_b1_tier, B1_ORDER))
+        const crossBoardOrder = computed(() => BOARD_ORDER)
+        const auctionChartOrder = AUCTION_ORDER
+
+        function barHeight(wr) { return Math.max(4, Math.min(100, wr || 0)) }
+        function hbarStyle(item) {
+            const wr = item.trades ? (item.win_rate || 0) : 0
+            return {
+                width: barHeight(wr) + '%',
+                background: rateBarColor(wr),
+            }
+        }
+        function crossCell(board, ab) {
+            return ((backtest.value.by_board_cross_auction || {})[board] || {})[ab] || { win_rate: 0, trades: 0 }
+        }
+        function heatCellClass(board, ab) {
+            const c = crossCell(board, ab)
+            return c.trades ? '' : 'empty'
+        }
+        function heatCellStyle(board, ab) {
+            const c = crossCell(board, ab)
+            if (!c.trades) return {}
+            const wr = c.win_rate || 0
+            let bg = 'rgba(16, 185, 129, 0.18)'
+            if (wr >= 60) bg = 'rgba(239, 68, 68, 0.32)'
+            else if (wr >= 40) bg = 'rgba(251, 191, 36, 0.26)'
+            return { background: bg }
+        }
+
+        function formatEquityYTick(v) {
+            const abs = Math.abs(v)
+            const digits = abs >= 100 ? 0 : abs >= 10 ? 1 : 2
+            return (v >= 0 ? '+' : '') + v.toFixed(digits) + '%'
+        }
+
+        const equityChart = computed(() => {
+            const curve = backtest.value.equity_curve || []
+            const pts = curve.filter(e => e.cumulative_pct != null)
+            if (!pts.length) {
+                return { points: [], line: '', ddRect: null, ddLabel: '', xLabels: [], yTicks: [] }
+            }
+            const vals = pts.map(p => p.cumulative_pct)
+            const min = Math.min(...vals), max = Math.max(...vals)
+            const span = max - min || 1
+            const W = 800, H = 200
+            const tickCount = 4
+            const yTicks = []
+            if (span < 1e-6) {
+                const y = H / 2
+                yTicks.push({ value: min, y, label: formatEquityYTick(min) })
+            } else {
+                for (let i = tickCount; i >= 0; i--) {
+                    const v = min + (span * i) / tickCount
+                    const y = H - ((v - min) / span) * (H - 20) - 10
+                    yTicks.push({ value: v, y, label: formatEquityYTick(v) })
+                }
+            }
+            const coords = pts.map((p, i) => {
+                const x = pts.length === 1 ? W / 2 : (i / (pts.length - 1)) * W
+                const y = H - ((p.cumulative_pct - min) / span) * (H - 20) - 10
+                return { x, y, date: p.date }
+            })
+            const line = coords.map(c => `${c.x},${c.y}`).join(' ')
+            const dd = backtest.value.summary?.max_drawdown_range || {}
+            let ddRect = null, ddLabel = ''
+            if (dd.peak_date && dd.trough_date) {
+                const i0 = pts.findIndex(p => p.date >= dd.peak_date)
+                const i1 = pts.findIndex(p => p.date >= dd.trough_date)
+                if (i0 >= 0 && i1 >= 0) {
+                    const x0 = coords[i0].x, x1 = coords[i1].x
+                    ddRect = { x: Math.min(x0, x1), w: Math.abs(x1 - x0) || 4 }
+                    ddLabel = dd.peak_date + ' → ' + dd.trough_date
+                }
+            }
+            const xLabels = []
+            if (coords.length > 0) {
+                if (coords.length <= 8) {
+                    coords.forEach(c => xLabels.push(String(c.date || '').slice(5)))
+                } else {
+                    xLabels.push(String(coords[0].date || '').slice(5), '…', String(coords[coords.length - 1].date || '').slice(5))
+                }
+            }
+            return { points: coords, line, ddRect, ddLabel, xLabels, yTicks }
+        })
 
         function rateClass(s) {
             if (!s || s.trades === 0) return ''
@@ -454,9 +781,26 @@ createApp({
             return v >= 0 ? 'gain-pos' : 'gain-neg'
         }
 
+        function fmtNum(v, digits = 2) {
+            if (v == null || v === '') return '—'
+            const n = Number(v)
+            if (!Number.isFinite(n)) return '—'
+            return n.toFixed(digits)
+        }
+        function fmtPrice(v) {
+            return fmtNum(v, 2)
+        }
         function fmtPct(v) {
-            if (v == null) return '-'
-            return (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
+            if (v == null || v === '') return '—'
+            const n = Number(v)
+            if (!Number.isFinite(n)) return '—'
+            return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
+        }
+        function fmtPctPlain(v) {
+            if (v == null || v === '') return '—'
+            const n = Number(v)
+            if (!Number.isFinite(n)) return '—'
+            return n.toFixed(2) + '%'
         }
 
         // 当日市场环境：取分组中第一条记录的 3 项指标（同一天所有记录都冗余存了同一组值）
@@ -474,15 +818,45 @@ createApp({
             }
         }
 
-        async function loadData() {
+        async function loadBacktest() {
+            const empty = {
+                summary: {}, by_board: {}, by_b1_tier: {}, by_board_cross_auction: {},
+                equity_curve: [], trading_guidance: {}, meta: {},
+            }
             try {
-                const res = await fetch('/api/screener-history').then(r => r.json())
+                const q = new URLSearchParams()
+                if (startDate.value) q.set('from_date', startDate.value)
+                if (endDate.value) q.set('to_date', endDate.value)
+                const data = await fetch('/api/screener-backtest?' + q.toString()).then(r => r.json())
+                backtest.value = { ...empty, ...data }
+            } catch (e) {
+                console.error('回测统计失败', e)
+                backtest.value = { ...empty, ...(backtest.value || {}) }
+            }
+        }
+
+        async function loadData() {
+            const bt = loadBacktest()
+            try {
+                const res = await fetch('/api/screener-history?light=1').then(r => r.json())
                 records.value = res.records || []
-                stats.value = res.stats || stats.value
                 page.value = 1
             } catch (e) {
                 console.error('加载选股记录失败:', e)
             }
+            await bt
+        }
+
+        function sbzHistLine(r) {
+            if (!r || r.sanbanzhu) return ''
+            const d = String(r.sanbanzhu_detail || '').trim()
+            if (!d || d.includes('未获取到龙虎榜') || d.includes('无龙虎榜数据') || d.includes('未上榜，未检测')) {
+                return '未上榜，未检测'
+            }
+            if (d.includes('未发现三板组')) return '已检测：未见三板组席位'
+            if (d.includes('发现1个')) return '已检测：仅单席位命中'
+            if (d.includes('检查失败')) return d
+            return d.length > 36 ? d.slice(0, 36) + '…' : d
         }
 
         onMounted(() => {
@@ -491,11 +865,12 @@ createApp({
         })
 
         return {
-            records, stats, groupedRecords,
-            startDate, endDate, page, pageSize,
+            activeTab, backtest, records, groupedRecords,
+            startDate, endDate, quickScope, page, pageSize,
             filteredRecords, pagedRecords, totalPages,
-            onFilterChange, clearFilter,
-            rateClass, rateBarColor, numClass, fmtPct, dailyEnv,
+            setScope, diagTab, boardChartItems, b1ChartItems, crossBoardOrder, auctionChartOrder,
+            barHeight, hbarStyle, crossCell, heatCellClass, heatCellStyle, equityChart,
+            rateClass, rateBarColor, numClass, fmtPrice, fmtPct, fmtPctPlain, dailyEnv,
         }
     }
 }).mount('#app')

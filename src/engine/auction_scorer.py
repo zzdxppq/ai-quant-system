@@ -9,12 +9,11 @@
 输出：
   总分 + 仓位建议（满仓/半仓/不开仓） + 止损位 + 否决项
 """
-import json
 from collections import Counter
-from dataclasses import dataclass, field, asdict
-from typing import Optional
+from dataclasses import asdict, dataclass, field
 
 from src.config import DATA_DIR, now_cn
+from src.data.json_io import dump_json_file, load_json_file
 
 
 @dataclass
@@ -439,9 +438,7 @@ def score_all_hits(hits: list[dict]) -> list[dict]:
         results.append(asdict(score))
 
     # 保存
-    (DATA_DIR / "latest_auction_scores.json").write_text(
-        json.dumps(results, ensure_ascii=False, indent=2)
-    )
+    dump_json_file(DATA_DIR / "latest_auction_scores.json", results)
 
     return results
 
@@ -455,10 +452,8 @@ def _check_consecutive_good_emotion() -> int:
     """
     try:
         history_file = DATA_DIR / "sentiment_history.json"
-        if not history_file.exists():
-            return 0
-        history = json.loads(history_file.read_text())
-        if not history:
+        history = load_json_file(history_file)
+        if not isinstance(history, list) or not history:
             return 0
 
         # 按日期降序
@@ -482,37 +477,35 @@ def _check_consecutive_good_emotion() -> int:
 def _get_market_highest_board() -> int:
     """获取市场最高连板数"""
     try:
-        cache_file = DATA_DIR / "limit_up_cache.json"
-        if cache_file.exists():
-            cache = json.loads(cache_file.read_text())
-            sorted_dates = sorted(cache.keys(), reverse=True)
-            if not sorted_dates:
-                return 0
-            latest = sorted_dates[0]
-            max_board = 0
-            for s in cache[latest]:
-                code = s.get("code", "")
-                count = 1
-                for d in sorted_dates[1:]:
-                    codes_in_day = [r.get("code", "") for r in cache.get(d, [])]
-                    if code in codes_in_day:
-                        count += 1
-                    else:
-                        break
-                max_board = max(max_board, count)
-            return max_board
+        cache = load_json_file(DATA_DIR / "limit_up_cache.json")
+        if not isinstance(cache, dict):
+            return 0
+        sorted_dates = sorted(cache.keys(), reverse=True)
+        if not sorted_dates:
+            return 0
+        latest = sorted_dates[0]
+        max_board = 0
+        for s in cache[latest]:
+            code = s.get("code", "")
+            count = 1
+            for d in sorted_dates[1:]:
+                codes_in_day = [r.get("code", "") for r in cache.get(d, [])]
+                if code in codes_in_day:
+                    count += 1
+                else:
+                    break
+            max_board = max(max_board, count)
+        return max_board
     except Exception:
         pass
     return 0
 
 
-def _load_json(filename: str) -> Optional[dict]:
+def _load_json(filename: str) -> dict | None:
     f = DATA_DIR / filename
-    if f.exists():
-        try:
-            return json.loads(f.read_text())
-        except Exception:
-            pass
+    data = load_json_file(f)
+    if isinstance(data, dict):
+        return data
     return None
 
 
@@ -533,11 +526,11 @@ def _get_limit_up_with_industry(ranking_list: list) -> list[dict]:
         pass
 
     cache_file = DATA_DIR / "limit_up_cache.json"
-    if not cache_file.exists():
+    cache = load_json_file(cache_file)
+    if not isinstance(cache, dict):
         return []
 
     try:
-        cache = json.loads(cache_file.read_text())
         latest = sorted(cache.keys())[-1] if cache else ""
         if not latest:
             return []

@@ -10,6 +10,9 @@ venv/
 # Runtime data
 #data/*.db
 #data/*.json
+data/*.duckdb
+data/kline_cache/
+backups/
 
 # IDE & tool configs
 .mcp.json

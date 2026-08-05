@@ -560,14 +560,16 @@ def test_2_4_int_002_scheduler_calls_enrich_before_write():
             enrich_line = i
         if "latest_screener.json" in ln and "write_text" in ln and write_line is None:
             write_line = i
+        if "latest_screener.json" in ln and "dump_json_file" in ln and write_line is None:
+            write_line = i
         # Look-ahead: write_text may be on the next line
-    # Re-scan for write_text since `(DATA_DIR / "latest_screener.json").write_text(` may span lines
+    # Re-scan for write_text / dump_json_file since call may span lines
     if write_line is None:
         for i, ln in enumerate(lines, start=1):
             if 'latest_screener.json' in ln:
-                # check if "write_text" appears on same or next 2 lines
+                # check if "write_text" or "dump_json_file" appears on same or next 2 lines
                 window = "\n".join(lines[i - 1:i + 2])
-                if "write_text" in window:
+                if "write_text" in window or "dump_json_file" in window:
                     write_line = i
                     break
     assert enrich_line is not None

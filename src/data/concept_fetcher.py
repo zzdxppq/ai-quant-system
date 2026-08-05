@@ -15,13 +15,13 @@
 - load_stock_to_concepts() → {code: [concept_name, ...]}
 - load_concept_to_stocks() → {concept_name: [code, ...]}
 """
-import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
 
 from src.config import DATA_DIR, now_cn
+from src.data.json_io import dump_json_file, load_json_file
 
 _PUSH2_URL = "https://push2delay.eastmoney.com/api/qt/clist/get"
 _HEADERS = {
@@ -129,13 +129,11 @@ def fetch_concept_constituents(bk_code: str) -> list[str]:
 
 
 def _save(data: dict) -> None:
-    tmp = CACHE_PATH.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
-    tmp.replace(CACHE_PATH)
+    dump_json_file(CACHE_PATH, data)
 
 
 def _save_partial(concepts: dict) -> None:
-    PARTIAL_PATH.write_text(json.dumps({"concepts": concepts}, ensure_ascii=False, indent=2))
+    dump_json_file(PARTIAL_PATH, {"concepts": concepts})
 
 
 def build_concept_cache(workers: int = 3, save_every: int = 50) -> dict:
@@ -216,12 +214,8 @@ def build_concept_cache(workers: int = 3, save_every: int = 50) -> dict:
 
 
 def _load_cache() -> dict:
-    if not CACHE_PATH.exists():
-        return {}
-    try:
-        return json.loads(CACHE_PATH.read_text())
-    except Exception:
-        return {}
+    data = load_json_file(CACHE_PATH)
+    return data if isinstance(data, dict) else {}
 
 
 def load_stock_to_concepts() -> dict[str, list[str]]:
