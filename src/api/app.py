@@ -2213,27 +2213,33 @@ async def update_user_decision(request: dict):
 
 @app.post("/api/limit-up-cache/refresh")
 async def refresh_limit_up_cache(days: int = 5):
-    """拉取当日涨停池并写入 limit_up_cache（东财→新浪；历史不足时 sina K 线回溯）。"""
+    """拉取当日涨停池并写入 limit_up_cache（东财→新浪；zt_pool 覆盖今日+昨日）。"""
     try:
         from src.config import now_cn
         from src.data.fetcher import fetch_limit_up_history
 
         from src.data.fetcher import sync_limit_up_cache_from_zt_pool
+        from src.data.zt_pool_api import prev_trading_date_ymd
 
         hist = await run_in_threadpool(fetch_limit_up_history, int(days))
         today_key = now_cn().strftime("%Y%m%d")
         date_counts = {str(k): int(len(v)) for k, v in (hist or {}).items()}
-        zt_n = 0
-        if date_counts.get(today_key, 0) == 0:
-            zt_n = await run_in_threadpool(sync_limit_up_cache_from_zt_pool, today_key)
-            if zt_n > 0:
-                hist2 = await run_in_threadpool(fetch_limit_up_history, int(days))
-                date_counts = {str(k): int(len(v)) for k, v in (hist2 or {}).items()}
+        zt_n = await run_in_threadpool(sync_limit_up_cache_from_zt_pool, today_key)
+        prev_key = prev_trading_date_ymd()
+        zt_prev = 0
+        if prev_key and prev_key != today_key:
+            zt_prev = await run_in_threadpool(sync_limit_up_cache_from_zt_pool, prev_key)
+        if zt_n > 0 or zt_prev > 0:
+            hist2 = await run_in_threadpool(fetch_limit_up_history, int(days))
+            date_counts = {str(k): int(len(v)) for k, v in (hist2 or {}).items()}
         return JSONResponse({
             "status": "ok",
             "today_key": today_key,
+            "prev_key": prev_key,
             "today_count": date_counts.get(today_key, 0),
+            "prev_count": date_counts.get(prev_key, 0),
             "zt_pool_fallback": zt_n,
+            "zt_pool_prev": zt_prev,
             "dates": date_counts,
         })
     except Exception as e:

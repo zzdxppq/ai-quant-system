@@ -2,9 +2,10 @@
 
 v4.0 仓位层
 ====================
-  · 2进3：重点参与 / 正常参与 → 3 层=30%；轻仓试错 / 边缘票 → 2 层=20%
+  · 2进3：重点参与 / 正常参与 → 3 层=30%；规则内轻仓试错 / 边缘票 → 2 层=20%
+  · 2进3 单票未达标兜底 / 1进2 零票公式兜底 → 1 层=10%
   · 3进4 / 4进5+ 基础：3 层=30%；升仓 4 层=40%
-  · 兼容读侧：旧 1 层=10% / 1.5 层=15% 文案仍可识别
+  · 兼容读侧：旧 1.5 层=15% 文案仍可识别
 
 升仓（3→4 层，满足任一组全部条件）
   · 4进5：竞价 5~6% 且晋级率 12~15%
@@ -20,8 +21,8 @@ from typing import Optional
 
 RULES_VERSION = "v4.0"
 
-LAYER_1_PCT = 10  # 兼容旧数据/减半后读侧
-LAYER_2_PCT = 20  # 轻仓试错 / 边缘票 / 单票·1进2 兜底
+LAYER_1_PCT = 10  # 2进3 单票兜底 / 1进2 零票公式兜底
+LAYER_2_PCT = 20  # 2进3 规则内「轻仓试错 / 边缘票」
 LAYER_1_5_PCT = 15  # 兼容旧数据/读侧
 LAYER_3_PCT = 30  # 正常参与 / 重点参与 / 3进4+ 基础
 LAYER_4_PCT = 40
@@ -400,7 +401,7 @@ def build_light_trial_decision(
     reason_note: str = "",
     tier_tag: str = "轻仓试错",
 ) -> dict:
-    """轻仓试错 2层（单票不达标兜底 / 1进2 零票公式兜底）。"""
+    """强制轻仓试错 1层（仅 2进3 单票不达标兜底 / 1进2 零票公式兜底）。"""
     board = int(hit.get("continuous_limit_up", 0) or 0)
     ladder_label = f"{board}进{board + 1}" if board >= 1 else "首板"
     env = market_env or {}
@@ -411,7 +412,7 @@ def build_light_trial_decision(
     except (TypeError, ValueError):
         ld_i = None
     target_pct, halved, overheated = _apply_global_position_adjust(
-        float(LAYER_2_PCT), b1=b1, limit_down=ld_i,
+        float(LAYER_1_PCT), b1=b1, limit_down=ld_i,
     )
     ag = _auction_gain_pct(hit)
     at = _float_or_none(hit.get("auction_turnover"))
@@ -442,15 +443,27 @@ def build_light_trial_decision(
     }
 
 
+def _hit_board_count(hit: dict) -> int:
+    try:
+        return int(hit.get("continuous_limit_up") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def apply_single_hit_light_trial(
     hits: list[dict],
     market_env: Optional[dict] = None,
 ) -> bool:
-    """今日选股有且仅有 1 只且策略不开仓 → 强制轻仓试错 2层（看板+邮件共用）。"""
+    """今日有且仅有 1 只「2进3」且策略不开仓 → 强制轻仓试错 1层。
+
+    3进4+ 不强制改仓，保持原决策（含 0 仓）。
+    """
     if len(hits) != 1:
         return False
     h = hits[0]
     if not isinstance(h, dict):
+        return False
+    if _hit_board_count(h) != 2:
         return False
     psd = h.get("per_stock_decision")
     if isinstance(psd, dict) and psd.get("can_open") is True:
@@ -460,7 +473,7 @@ def apply_single_hit_light_trial(
         prev_reason = str(psd.get("reason") or "")
     note = "单票兜底"
     if prev_reason:
-        note = f"单票兜底（原条件未达）"
+        note = "单票兜底（原条件未达）"
     h["per_stock_decision"] = build_light_trial_decision(
         h, market_env, reason_note=note, tier_tag="轻仓试错",
     )

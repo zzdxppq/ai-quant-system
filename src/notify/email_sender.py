@@ -318,17 +318,29 @@ def _hit_can_open(hit: dict) -> bool:
         return False
 
 
-def _email_openable_hits(hits: list[dict] | None) -> list[dict]:
-    """过滤掉 0 层（不开仓）个股；Web 看板仍展示全量。
+def _email_hit_board(hit: dict) -> int:
+    try:
+        return int(hit.get("continuous_limit_up") or 0)
+    except (TypeError, ValueError):
+        return 0
 
-    例外：今日有且仅有 1 只命中时，即使决策空仓也推送（调用方应已强制轻仓试错；
-    此处再兜底一次，避免漏推）。
+
+def _email_openable_hits(hits: list[dict] | None) -> list[dict]:
+    """邮件推送名单。
+
+    - 可开仓（can_open）一律推送
+    - 3进4+：按原策略，即使建议 0 仓也推送
+    - 2进3 有且仅有 1 只且未开仓：强制轻仓试错 1层后推送
     """
     rows = [h for h in (hits or []) if isinstance(h, dict)]
-    openable = [h for h in rows if _hit_can_open(h)]
-    if openable:
-        return openable
-    if len(rows) == 1:
+    out: list[dict] = []
+    for h in rows:
+        board = _email_hit_board(h)
+        if _hit_can_open(h) or board >= 3:
+            out.append(h)
+    if out:
+        return out
+    if len(rows) == 1 and _email_hit_board(rows[0]) == 2:
         h = dict(rows[0])
         psd = h.get("per_stock_decision")
         if not (isinstance(psd, dict) and psd.get("can_open") is True):

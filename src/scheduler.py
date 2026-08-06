@@ -487,6 +487,17 @@ def _refresh_limit_up_cache_with_fallback() -> dict[str, pd.DataFrame] | None:
             n = sync_limit_up_cache_from_zt_pool(today_key)
             label = "同步" if is_trading_day() else "兜底"
             print(f"  涨停缓存 zt_pool {label}: {n} 只 ({today_key})")
+            # 上一交易日也用 zt_pool 覆盖：盘前选股连板看「昨日」池；
+            # 涨幅榜把差一档(如 9.99%)误写入昨日键会导致 2进3 被算成 3进4
+            try:
+                from src.data.zt_pool_api import prev_trading_date_ymd
+
+                prev_key = prev_trading_date_ymd()
+                if prev_key and prev_key != today_key:
+                    pn = sync_limit_up_cache_from_zt_pool(prev_key)
+                    print(f"  涨停缓存 zt_pool 昨日覆盖: {pn} 只 ({prev_key})")
+            except Exception as pe:
+                print(f"  昨日 zt_pool 覆盖失败: {pe}")
             if hist is None and n > 0:
                 from src.data.fetcher import fetch_limit_up_history
 
@@ -1144,7 +1155,7 @@ def run_screener_update(skip_email: bool | None = None, api_explicit: bool = Fal
         from src.engine.screener_decision import apply_single_hit_light_trial
 
         if apply_single_hit_light_trial(hits_data.get("hits") or [], market_env):
-            print("  [选股决策] 单票兜底：强制轻仓试错 2层")
+            print("  [选股决策] 2进3 单票兜底：强制轻仓试错 1层")
     except Exception as e:
         print(f"[选股决策] per_stock_decision 注入失败: {e}")
 

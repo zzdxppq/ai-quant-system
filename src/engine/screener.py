@@ -318,6 +318,36 @@ def _trading_limit_up_dates(limit_up_history: dict[str, pd.DataFrame]) -> list[s
     return out
 
 
+def _filter_sealed_limit_up_df(df: pd.DataFrame) -> pd.DataFrame:
+    """剔除有价但未封涨停价的行（差一档如 9.99%）；无价行保留（依赖 zt_pool 覆盖）。"""
+    if df is None or df.empty:
+        return df if df is not None else pd.DataFrame()
+    from src.data.limit_up_seal import is_limit_up_sealed
+
+    col = _find_code_column(df)
+    if not col:
+        return df
+    has_pre = "pre_close" in df.columns
+    has_close = "close" in df.columns
+    if not (has_pre and has_close):
+        return df
+
+    keep = []
+    for _, row in df.iterrows():
+        code = _norm_code6(str(row[col]))
+        try:
+            pre = float(row["pre_close"]) if pd.notna(row["pre_close"]) else 0.0
+            cl = float(row["close"]) if pd.notna(row["close"]) else 0.0
+        except (TypeError, ValueError):
+            keep.append(True)
+            continue
+        if pre > 0 and cl > 0:
+            keep.append(is_limit_up_sealed(code, pre, cl))
+        else:
+            keep.append(True)
+    return df.loc[keep].reset_index(drop=True)
+
+
 def _detect_continuous_limit_up(limit_up_history: dict[str, pd.DataFrame]) -> dict[str, int]:
     """检测「昨日起向前」的连续涨停天数（严格对齐通达信 LIANBAN 语义）
 
@@ -340,8 +370,8 @@ def _detect_continuous_limit_up(limit_up_history: dict[str, pd.DataFrame]) -> di
     if not past_dates:
         return {}
 
-    # 上一交易日涨停池
-    yesterday_df = limit_up_history[past_dates[0]]
+    # 上一交易日涨停池（有收盘价/昨收时剔除差一档未封板）
+    yesterday_df = _filter_sealed_limit_up_df(limit_up_history[past_dates[0]])
     if yesterday_df.empty:
         return {}
     col = _find_code_column(yesterday_df)
@@ -361,7 +391,7 @@ def _detect_continuous_limit_up(limit_up_history: dict[str, pd.DataFrame]) -> di
     for date_str in past_dates[1:]:
         if not active:
             break
-        df = limit_up_history[date_str]
+        df = _filter_sealed_limit_up_df(limit_up_history[date_str])
         if df.empty:
             break
         col = _find_code_column(df)

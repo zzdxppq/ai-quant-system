@@ -538,7 +538,7 @@ def _zt_pool_lbc(zt_pool: dict, code: str) -> int:
 
 
 def _limit_up_close_thr(code: str) -> float:
-    """主板/创业板收盘涨停近似阈值（%）。"""
+    """主板/创业板收盘涨停近似阈值（%）。仅作无价兜底；有 close/pre_close 时应用涨停价封板。"""
     c6 = _norm_zt_code(code)
     if c6.startswith(("300", "301", "688")):
         return 19.4
@@ -558,13 +558,22 @@ def _spot_close_pct(row: dict | None) -> float | None:
     return None
 
 
+def _spot_is_limit_up_sealed(code: str, row: dict | None) -> bool:
+    """spot 行是否收盘封板（涨停价）；无价时不认纯涨幅阈值。"""
+    if not row or not isinstance(row, dict):
+        return False
+    from src.data.limit_up_seal import is_limit_up_sealed
+
+    return is_limit_up_sealed(code, row.get("pre_close"), row.get("close"))
+
+
 def _merge_today_limit_up_codes(
     today_limit_up: list[dict],
     zt_today: dict,
     spot_map: dict | None = None,
     extra_codes: set[str] | None = None,
 ) -> set[str]:
-    """当日收盘涨停 code 集合：本地 cache + 东财涨停池 + spot 触板（连板晋级真源优先 zt_pool）。"""
+    """当日收盘涨停 code 集合：本地 cache + 东财涨停池 + spot 封板（连板晋级真源优先 zt_pool）。"""
     codes = {
         _norm_zt_code(s.get("code"))
         for s in (today_limit_up or [])
@@ -578,8 +587,7 @@ def _merge_today_limit_up_codes(
         for c6, row in spot_map.items():
             if not c6:
                 continue
-            pct = _spot_close_pct(row if isinstance(row, dict) else None)
-            if pct is not None and pct >= _limit_up_close_thr(c6):
+            if _spot_is_limit_up_sealed(c6, row if isinstance(row, dict) else None):
                 codes.add(c6)
     for c6 in extra_codes or set():
         nc = _norm_zt_code(c6)
@@ -1806,7 +1814,9 @@ def _build_relay_env(
                     if close > 0 and pre > 0:
                         today_pct = round((close / pre - 1) * 100, 2)
                         if not today_zt:
-                            today_zt = today_pct >= _limit_up_close_thr(yc)
+                            from src.data.limit_up_seal import is_limit_up_sealed
+
+                            today_zt = is_limit_up_sealed(yc, pre, close)
                     if op > 0 and pre > 0:
                         today_open_pct = round((op / pre - 1) * 100, 2)
                 except (TypeError, ValueError):
@@ -1928,7 +1938,9 @@ def hydrate_relay_env_from_stores(relay_env: dict | None, review_date: str = "")
             if close > 0 and pre > 0:
                 today_pct = round((close / pre - 1) * 100, 2)
                 if today_held is not True:
-                    today_held = today_pct >= _limit_up_close_thr(yc)
+                    from src.data.limit_up_seal import is_limit_up_sealed
+
+                    today_held = is_limit_up_sealed(yc, pre, close)
             if op > 0 and pre > 0:
                 today_open_pct = round((op / pre - 1) * 100, 2)
     except Exception:

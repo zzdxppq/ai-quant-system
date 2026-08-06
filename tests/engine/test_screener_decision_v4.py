@@ -237,12 +237,12 @@ def test_1to2_fallback_opens_light_trial():
         _env(b1=13.0),
     )
     assert psd["can_open"]
-    assert psd["position_pct"] == LAYER_2_PCT
+    assert psd["position_pct"] == LAYER_1_PCT
     assert psd.get("tier_tag") == "轻仓试错"
     assert psd.get("forced_light_trial")
 
 
-def test_apply_single_hit_light_trial():
+def test_apply_single_hit_light_trial_only_2to3():
     from src.engine.screener_decision import apply_single_hit_light_trial
 
     hits = [
@@ -260,7 +260,27 @@ def test_apply_single_hit_light_trial():
     ]
     assert apply_single_hit_light_trial(hits, _env())
     assert hits[0]["per_stock_decision"]["can_open"]
-    assert hits[0]["per_stock_decision"]["position_pct"] == LAYER_2_PCT
+    assert hits[0]["per_stock_decision"]["position_pct"] == LAYER_1_PCT
+
+
+def test_apply_single_hit_skips_3to4():
+    from src.engine.screener_decision import apply_single_hit_light_trial
+
+    hits = [
+        {
+            "code": "600001",
+            "continuous_limit_up": 3,
+            "auction_gain": 4.0,
+            "per_stock_decision": {
+                "can_open": False,
+                "position_pct": 0,
+                "reason": "条件未达",
+            },
+        }
+    ]
+    assert not apply_single_hit_light_trial(hits, _env())
+    assert hits[0]["per_stock_decision"]["can_open"] is False
+    assert hits[0]["per_stock_decision"]["position_pct"] == 0
 
 
 def test_layers_from_position_pct_avg():

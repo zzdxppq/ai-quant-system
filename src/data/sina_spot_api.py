@@ -82,25 +82,37 @@ def fetch_a_share_list_sina() -> pd.DataFrame:
 def fetch_limit_up_stocks_sina(
     df: pd.DataFrame | None = None, threshold: float = 9.8
 ) -> pd.DataFrame:
-    """从新浪 spot 筛选今日涨停股（change_pct >= threshold）
+    """从新浪 spot 筛选今日涨停股（按涨停价封板，非涨幅阈值）
 
     Args:
         df: 可选，复用已拉取的 spot DataFrame，避免二次请求
+        threshold: 兼容旧调用；仅作粗筛下限，最终以涨停价判定
     """
+    from src.data.limit_up_seal import is_limit_up_sealed
+
     if df is None:
         df = fetch_a_share_list_sina()
     if df.empty:
         return df
 
-    # 主板 >=9.8%，创业板/科创板 >=19.5%
+    # 粗筛减小计算量，再按涨停价精筛（避免差一档误入）
     is_gem = df["code"].astype(str).str.startswith(("300", "301", "688"))
-    limit_up = df[
-        (is_gem & (df["change_pct"] >= 19.5))
-        | (~is_gem & (df["change_pct"] >= threshold))
+    rough_floor = min(float(threshold), 9.5)
+    rough = df[
+        (is_gem & (df["change_pct"] >= 19.0))
+        | (~is_gem & (df["change_pct"] >= rough_floor))
     ].copy()
+    if rough.empty:
+        return rough
+
+    sealed_mask = rough.apply(
+        lambda r: is_limit_up_sealed(r["code"], r.get("pre_close"), r.get("close")),
+        axis=1,
+    )
+    limit_up = rough[sealed_mask].copy()
 
     if not limit_up.empty:
-        print(f"新浪涨停股: {len(limit_up)} 只")
+        print(f"新浪涨停股: {len(limit_up)} 只（涨停价封板）")
 
     return limit_up[["code", "name", "change_pct"]].reset_index(drop=True)
 
@@ -163,10 +175,7 @@ def fetch_limit_up_history_sina(
         if kline is None or kline.empty or len(kline) < 2:
             continue
 
-        # 精确判定涨停：close >= round(prev * rate, 2) - 0.005
-        # 对齐通达信 ZTPRICE(REF(C,1), 0.1) 四舍五入到分的判定
-        is_gem = code.startswith(("300", "301", "688"))
-        rate = 1.20 if is_gem else 1.10
+        from src.data.limit_up_seal import is_limit_up_sealed
 
         closes = kline["close"].astype(float).tolist()
         dates = kline["date"].astype(str).tolist()
@@ -175,8 +184,7 @@ def fetch_limit_up_history_sina(
             curr = closes[j]
             if prev <= 0:
                 continue
-            limit_price = round(prev * rate, 2)
-            if curr >= limit_price - 0.005:
+            if is_limit_up_sealed(code, prev, curr):
                 date_str = dates[j].replace("-", "")[:8]
                 if len(date_str) == 8:
                     daily_lu.setdefault(date_str, []).append(

@@ -16,7 +16,7 @@ mkdir -p /opt/ai-quant-system/data /opt/ai-quant-system/logs
 #   AUTH_LOGIN_PATH=/login                    # 可选
 # 其它邮件/数据变量仍按 scripts/deploy/ubuntu.env.example 准备
 # 镜像 tag 格式 YYYYMMDD.HHMM（构建时间），含 auth-1.0 鉴权升级
-docker pull registry.cn-hangzhou.aliyuncs.com/kczj/quant-ai:20260805.0048
+docker pull registry.cn-hangzhou.aliyuncs.com/kczj/quant-ai:20260805.2340
 docker stop quant-ai
 docker rm -f quant-ai
 docker run -d \
@@ -30,7 +30,7 @@ docker run -d \
   -e SKIP_LIVE_RANKING_FETCH=1 \
   -v /opt/ai-quant-system/data:/app/data \
   -v /opt/ai-quant-system/logs:/app/logs \
-  registry.cn-hangzhou.aliyuncs.com/kczj/quant-ai:20260805.0048
+  registry.cn-hangzhou.aliyuncs.com/kczj/quant-ai:20260805.2340
 docker logs -f quant-ai
 
 # 部署后冒烟验证（鉴权必须开启，否则凌晨再被扫端口 POST API）：

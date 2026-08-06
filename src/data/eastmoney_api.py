@@ -382,30 +382,41 @@ def calc_10d_gain_ranking(top_n: int = 100) -> pd.DataFrame:
 def fetch_limit_up_stocks(date: str = None) -> pd.DataFrame:
     """获取涨停股列表
 
-    通过东方财富的涨停板筛选获取
+    通过东方财富涨跌幅榜拉取后，按「收盘价 ≥ 涨停价」封板判定（非涨幅≥9.8%）。
+    避免差一档（如 9.99%）被误计入连板。
 
     Args:
-        date: 日期 YYYYMMDD，默认今天
+        date: 日期 YYYYMMDD，默认今天（当前接口为实时榜，date 仅保留兼容）
 
     Returns:
         DataFrame: code, name, change_pct, limit_up_type
     """
-    # 使用涨跌幅排行（降序），筛选涨幅>=9.8%的（接近涨停）；A股涨停数远<300
+    # 使用涨跌幅排行（降序）；A股涨停数远<300
     all_df = fetch_a_share_list(page_size=300, sort_field="f3", sort_order=1)
     if all_df.empty:
         return pd.DataFrame()
 
-    # 筛选涨停（主板涨幅>=9.8%，创业板/科创板>=19.5%）
-    limit_up = all_df[
-        ((all_df["code"].str.startswith(("300", "301", "688"))) & (all_df["change_pct"] >= 19.5)) |
-        (~all_df["code"].str.startswith(("300", "301", "688")) & (all_df["change_pct"] >= 9.8))
+    from src.data.limit_up_seal import is_limit_up_sealed
+
+    # 粗筛减小计算量，再按涨停价精筛
+    rough = all_df[
+        ((all_df["code"].str.startswith(("300", "301", "688"))) & (all_df["change_pct"] >= 19.0)) |
+        (~all_df["code"].str.startswith(("300", "301", "688")) & (all_df["change_pct"] >= 9.5))
     ].copy()
+
+    def _sealed(row) -> bool:
+        return is_limit_up_sealed(row["code"], row.get("pre_close"), row.get("close"))
+
+    if rough.empty:
+        return pd.DataFrame()
+
+    limit_up = rough[rough.apply(_sealed, axis=1)].copy()
 
     # 排除北交所
     limit_up = limit_up[~limit_up["code"].str.startswith(("8", "4"))]
 
     if not limit_up.empty:
-        print(f"涨停股: {len(limit_up)} 只")
+        print(f"涨停股: {len(limit_up)} 只（涨停价封板）")
 
     return limit_up[["code", "name", "change_pct"]].reset_index(drop=True)
 
